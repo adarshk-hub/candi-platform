@@ -11,7 +11,10 @@ const globalForRegistry = globalThis as unknown as {
 
 export const centralPool =
   globalForRegistry.centralPool ??
-  new Pool({ connectionString: process.env.DATABASE_URL })
+  new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  })
 
 if (process.env.NODE_ENV !== 'production') globalForRegistry.centralPool = centralPool
 
@@ -38,10 +41,7 @@ export async function resolveClient(nameOrSlug: string): Promise<ClientRecord | 
 }
 
 // Returns a cached pool for a client's own database, decrypting the stored
-// connection string on first use per warm serverless instance. Until a
-// client has database_url_enc set, this throws — for Candid Schools today,
-// that value should just be the encrypted form of the existing DATABASE_URL
-// (see scripts/encrypt-value.js), so it resolves back to the same database.
+// connection string on first use per warm serverless instance.
 export async function getClientPool(clientId: string): Promise<Pool> {
   const cached = clientPools.get(clientId)
   if (cached) return cached
@@ -55,7 +55,10 @@ export async function getClientPool(clientId: string): Promise<Pool> {
     throw new Error(`No database configured for client ${clientId} — set clients.database_url_enc first.`)
   }
 
-  const pool = new Pool({ connectionString: decrypt(encrypted) })
+  const pool = new Pool({
+    connectionString: decrypt(encrypted),
+    ssl: { rejectUnauthorized: false },
+  })
   clientPools.set(clientId, pool)
   return pool
 }
