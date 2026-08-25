@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { centralPool, resolveClient, getClientPool } from '@/lib/clientRegistry'
+import { resolveClient, getClientPool } from '@/lib/clientRegistry'
 import { signSession } from '@/lib/auth'
 
 type UserRow = {
@@ -18,35 +18,22 @@ const USER_SELECT =
 
 export async function POST(req: NextRequest) {
   const { client: clientNameOrSlug, email, password } = await req.json()
-  if (!email || !password) {
-    return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
+  if (!clientNameOrSlug || !email || !password) {
+    return NextResponse.json({ error: 'Client, email and password required' }, { status: 400 })
   }
 
-  let user: UserRow | undefined
-  let resolvedClientId: string | null = null
-  let resolvedClientName: string | null = null
-
-  if (clientNameOrSlug) {
-    // Client-side login (client_admin / client_counsellor): resolve the
-    // client by name/slug first, then check credentials against that
-    // client's own database. Today this still points back at the same
-    // shared database for Candid Schools — see scripts/multi-tenant-registry.sql.
-    const client = await resolveClient(clientNameOrSlug)
-    if (!client) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
-    }
-    const pool = await getClientPool(client.id)
-    const result = await pool.query<UserRow>(USER_SELECT, [email])
-    user = result.rows[0]
-    resolvedClientId = client.id
-    resolvedClientName = client.name
-  } else {
-    // No client given: agency staff (agency_admin / agency_staff) aren't
-    // tied to one client, so they authenticate against the central table
-    // directly, same as today.
-    const result = await centralPool.query<UserRow>(USER_SELECT, [email])
-    user = result.rows[0]
+  // Every login — client staff and agency staff alike — resolves a client
+  // by name first, then checks credentials against that client's own
+  // database. There is no central/shared login path any more: each session
+  // is scoped to exactly one client's data, with no exceptions.
+  const client = await resolveClient(clientNameOrSlug)
+  if (!client) {
+    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
+
+  const pool = await getClientPool(client.id)
+  const result = await pool.query<UserRow>(USER_SELECT, [email])
+  const user = result.rows[0]
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
@@ -55,13 +42,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This account has been deactivated.' }, { status: 401 })
   }
 
-  const clientId = resolvedClientId ?? user.client_id
-
   const token = signSession({
     id: user.id,
     email: user.email,
     role: user.role as any,
-    clientId,
+    clientId: client.id,
     fullName: user.full_name,
   })
 
@@ -69,8 +54,8 @@ export async function POST(req: NextRequest) {
     id: user.id,
     email: user.email,
     role: user.role,
-    clientId,
-    clientName: resolvedClientName,
+    clientId: client.id,
+    clientName: client.name,
     fullName: user.full_name,
   })
   res.cookies.set('cc_session', token, {
