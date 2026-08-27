@@ -52,6 +52,12 @@ export interface SendCapiEventParams {
   pipelineStage?: string | null
   customData?: Record<string, any>
   eventSourceUrl?: string | null
+  // When set, the event is handed to this Zapier "Catch Hook" URL instead
+  // of being POSTed to graph.facebook.com directly. Everything else about
+  // this function — the payload shape, the capi_event_log row, the return
+  // value — stays the same either way. Leave unset (the default for every
+  // existing client) to keep sending straight to Meta exactly as before.
+  zapierWebhookUrl?: string | null
 }
 
 export interface SendCapiEventResult {
@@ -79,6 +85,7 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<SendCa
     pipelineStage = null,
     customData,
     eventSourceUrl,
+    zapierWebhookUrl,
   } = params
 
   const userData: Record<string, any> = {}
@@ -109,36 +116,78 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<SendCa
 
   let result: SendCapiEventResult
   try {
-    const res = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${pixelId}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const json = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      result = { ok: false, error: json?.error?.message || `Meta returned ${res.status}`, fbtraceId: json?.error?.fbtrace_id }
-    } else {
-      // Meta can return HTTP 200 with a valid fbtrace_id while actually
-      // processing zero events (bad event_time, dataset state, etc.),
-      // explained in `messages`. Treat that as a failure too, or a broken
-      // integration looks identical to a working one from this log alone.
-      const received = typeof json?.events_received === 'number' ? json.events_received : undefined
-      if (received === 0) {
-        const detail = Array.isArray(json?.messages) && json.messages.length
-          ? JSON.stringify(json.messages)
-          : 'no explanation returned'
-        result = {
-          ok: false,
-          error: `Meta accepted the request but processed 0 events (${detail})`,
-          fbtraceId: json?.fbtrace_id,
-        }
+    if (zapierWebhookUrl) {
+      // Zapier path: hand off the raw event data to a Zapier "Catch Hook"
+      // trigger instead of calling Meta ourselves. We send both the raw,
+      // unhashed match fields (Zapier's native Meta Conversions API action
+      // hashes email/phone itself) and the already-built Meta-shaped event,
+      // so whichever your Zap ends up using is available without a second
+      // round of changes here. NOTE: a 2xx from this webhook only confirms
+      // Zapier received it — not that Meta accepted it. Check the Zap's own
+      // run history (or Meta Events Manager) to confirm actual delivery;
+      // this function has no way to know that part.
+      const res = await fetch(zapierWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          lead_id: leadId,
+          pixel_id: pixelId,
+          event_name: eventName,
+          event_id: eventId,
+          event_time: eventTime,
+          pipeline_stage: pipelineStage,
+          test_event_code: testEventCode || undefined,
+          email: match.email || undefined,
+          phone: match.phone || undefined,
+          external_id: match.externalId || undefined,
+          fbc: match.fbc || undefined,
+          fbp: match.fbp || undefined,
+          meta_lead_id: match.leadId || undefined,
+          custom_data: customData || undefined,
+          // Full Meta-shaped payload too, in case your Zap forwards this
+          // verbatim rather than remapping fields from the flat ones above.
+          meta_event_payload: eventPayload,
+        }),
+      })
+      if (res.ok) {
+        result = { ok: true }
       } else {
-        result = { ok: true, fbtraceId: json?.fbtrace_id }
+        const text = await res.text().catch(() => '')
+        result = { ok: false, error: `Zapier webhook returned ${res.status}${text ? `: ${text.slice(0, 300)}` : ''}` }
+      }
+    } else {
+      const res = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${pixelId}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        result = { ok: false, error: json?.error?.message || `Meta returned ${res.status}`, fbtraceId: json?.error?.fbtrace_id }
+      } else {
+        // Meta can return HTTP 200 with a valid fbtrace_id while actually
+        // processing zero events (bad event_time, dataset state, etc.),
+        // explained in `messages`. Treat that as a failure too, or a broken
+        // integration looks identical to a working one from this log alone.
+        const received = typeof json?.events_received === 'number' ? json.events_received : undefined
+        if (received === 0) {
+          const detail = Array.isArray(json?.messages) && json.messages.length
+            ? JSON.stringify(json.messages)
+            : 'no explanation returned'
+          result = {
+            ok: false,
+            error: `Meta accepted the request but processed 0 events (${detail})`,
+            fbtraceId: json?.fbtrace_id,
+          }
+        } else {
+          result = { ok: true, fbtraceId: json?.fbtrace_id }
+        }
       }
     }
   } catch (err: any) {
-    result = { ok: false, error: err?.message || 'Network error calling Meta Conversions API' }
+    result = { ok: false, error: err?.message || `Network error calling ${zapierWebhookUrl ? 'the Zapier webhook' : 'Meta Conversions API'}` }
   }
 
   await query(
@@ -151,7 +200,7 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<SendCa
       eventId,
       pipelineStage,
       result.ok ? 'sent' : 'failed',
-      result.fbtraceId || null,
+      result.fbtraceId || (zapierWebhookUrl && result.ok ? 'via Zapier — not Meta-confirmed' : null),
       result.error || null,
       JSON.stringify(eventPayload),
     ]
