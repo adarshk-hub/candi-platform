@@ -8,11 +8,12 @@ interface ClientCapiConfig {
   meta_pixel_id: string | null
   meta_capi_test_event_code: string | null
   capi_stage_events: Record<string, string>
+  zapier_capi_webhook_url: string | null
 }
 
 async function getClientCapiConfig(clientId: string): Promise<ClientCapiConfig | null> {
   const rows = await query<ClientCapiConfig>(
-    `SELECT id, capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events
+    `SELECT id, capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url
      FROM clients WHERE id = $1`,
     [clientId]
   )
@@ -87,9 +88,13 @@ export async function fireCapiEventForLead(params: {
     // the shared marketing/ads-insights token used for ad-spend sync, which
     // may not carry dataset-write permission even as an admin System User.
     // Falls back to the shared token so nothing breaks if META_CAPI_ACCESS_TOKEN
-    // isn't set yet.
+    // isn't set yet. Not required at all when routing through Zapier — that
+    // path authenticates to Meta using Zapier's own connected account, not
+    // this token, so we only enforce it on the direct-to-Meta path below.
     const accessToken = process.env.META_CAPI_ACCESS_TOKEN || process.env.META_MARKETING_API_ACCESS_TOKEN
-    if (!accessToken) {
+    const zapierWebhookUrl = config.zapier_capi_webhook_url || null
+
+    if (!zapierWebhookUrl && !accessToken) {
       await logCapiSkipped({
         clientId: lead.client_id,
         leadId: lead.id,
@@ -104,11 +109,12 @@ export async function fireCapiEventForLead(params: {
       clientId: lead.client_id,
       leadId: lead.id,
       pixelId: config.meta_pixel_id,
-      accessToken,
+      accessToken: accessToken || '',
       testEventCode: config.meta_capi_test_event_code || undefined,
       eventName,
       eventId: `${eventIdSeed}:${eventName}`,
       pipelineStage: trigger,
+      zapierWebhookUrl,
       match: {
         email: lead.email,
         phone: lead.second_phone || lead.whatsapp_number,
