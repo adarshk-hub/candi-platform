@@ -9,7 +9,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const rows = await query(
-    `SELECT capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events
+    `SELECT capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url
      FROM clients WHERE id = $1`,
     [params.id]
   )
@@ -44,13 +44,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(JSON.stringify(body.capiStageEvents))
     setClauses.push(`capi_stage_events = $${values.length}`)
   }
+  if (body.zapierCapiWebhookUrl !== undefined) {
+    values.push(body.zapierCapiWebhookUrl || null)
+    setClauses.push(`zapier_capi_webhook_url = $${values.length}`)
+  }
   if (setClauses.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 
   try {
     values.push(params.id)
     const rows = await query(
       `UPDATE clients SET ${setClauses.join(', ')} WHERE id = $${values.length}
-       RETURNING capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events`,
+       RETURNING capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url`,
       values
     )
     return NextResponse.json(rows[0])
