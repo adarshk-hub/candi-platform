@@ -11,17 +11,6 @@ export async function GET(req: NextRequest) {
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Institutes can set their own preferred page size via Settings >
-  // Customize > Display Preferences; agency roles (viewing across clients)
-  // and any client without a saved preference fall back to the default.
-  let PAGE_SIZE = DEFAULT_PAGE_SIZE
-  if (session.clientId) {
-    const [row] = await query<{ leads_per_page: number }>('SELECT leads_per_page FROM clients WHERE id = $1', [
-      session.clientId,
-    ])
-    if (row?.leads_per_page) PAGE_SIZE = row.leads_per_page
-  }
-
   const sp = req.nextUrl.searchParams
   const page = Math.max(1, Number(sp.get('page') || '1'))
   const search = sp.get('search')?.trim() || ''
@@ -64,10 +53,20 @@ export async function GET(req: NextRequest) {
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
-  const [{ count }] = await query<{ count: string }>(
-    `SELECT COUNT(*)::int AS count FROM leads l ${whereSql}`,
-    params
-  )
+  // Institutes can set their own preferred page size via Settings >
+  // Customize > Display Preferences; agency roles (viewing across clients)
+  // and any client without a saved preference fall back to the default.
+  // Run this alongside the count query below — neither depends on the
+  // other's result — instead of waiting on them one at a time.
+  const pageSizeQuery = session.clientId
+    ? query<{ leads_per_page: number }>('SELECT leads_per_page FROM clients WHERE id = $1', [session.clientId])
+    : Promise.resolve([] as { leads_per_page: number }[])
+
+  const [pageSizeRows, [{ count }]] = await Promise.all([
+    pageSizeQuery,
+    query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM leads l ${whereSql}`, params),
+  ])
+  const PAGE_SIZE = pageSizeRows[0]?.leads_per_page || DEFAULT_PAGE_SIZE
 
   const offset = (page - 1) * PAGE_SIZE
   const rows = await query(
