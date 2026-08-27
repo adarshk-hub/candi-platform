@@ -25,19 +25,30 @@ export interface ClientRecord {
   id: string
   name: string
   slug: string | null
+  database_url_enc: string | null
 }
 
 // Matches by slug first, falling back to the display name, both
 // case-insensitive — so "candid-schools" and "Candid Schools" both work
-// from the login form.
+// from the login form. Also selects database_url_enc so callers who already
+// have the ClientRecord (e.g. login) can seed the pool cache via
+// getClientPoolFromRecord() below instead of paying for a second centralPool
+// round-trip to look it up again.
 export async function resolveClient(nameOrSlug: string): Promise<ClientRecord | null> {
   const result = await centralPool.query<ClientRecord>(
-    `SELECT id, name, slug FROM clients
+    `SELECT id, name, slug, database_url_enc FROM clients
      WHERE lower(slug) = lower($1) OR lower(name) = lower($1)
      LIMIT 1`,
     [nameOrSlug.trim()]
   )
   return result.rows[0] ?? null
+}
+
+function buildPool(encrypted: string): Pool {
+  return new Pool({
+    connectionString: decrypt(encrypted),
+    ssl: { rejectUnauthorized: false },
+  })
 }
 
 // Returns a cached pool for a client's own database, decrypting the stored
@@ -55,10 +66,22 @@ export async function getClientPool(clientId: string): Promise<Pool> {
     throw new Error(`No database configured for client ${clientId} — set clients.database_url_enc first.`)
   }
 
-  const pool = new Pool({
-    connectionString: decrypt(encrypted),
-    ssl: { rejectUnauthorized: false },
-  })
+  const pool = buildPool(encrypted)
   clientPools.set(clientId, pool)
+  return pool
+}
+
+// Same as getClientPool, but for callers that already have a ClientRecord
+// (from resolveClient) — skips the redundant centralPool lookup by id.
+export function getClientPoolFromRecord(client: ClientRecord): Pool {
+  const cached = clientPools.get(client.id)
+  if (cached) return cached
+
+  if (!client.database_url_enc) {
+    throw new Error(`No database configured for client ${client.id} — set clients.database_url_enc first.`)
+  }
+
+  const pool = buildPool(client.database_url_enc)
+  clientPools.set(client.id, pool)
   return pool
 }
