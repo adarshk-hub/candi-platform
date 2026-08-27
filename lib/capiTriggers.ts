@@ -81,7 +81,14 @@ export async function fireCapiEventForLead(params: {
       return
     }
 
-    const accessToken = process.env.META_MARKETING_API_ACCESS_TOKEN
+    // CAPI writes to a specific Dataset and can need a token scoped to that
+    // dataset specifically (generated via Events Manager > your Dataset >
+    // Settings > Conversions API > Generate Access Token) — separate from
+    // the shared marketing/ads-insights token used for ad-spend sync, which
+    // may not carry dataset-write permission even as an admin System User.
+    // Falls back to the shared token so nothing breaks if META_CAPI_ACCESS_TOKEN
+    // isn't set yet.
+    const accessToken = process.env.META_CAPI_ACCESS_TOKEN || process.env.META_MARKETING_API_ACCESS_TOKEN
     if (!accessToken) {
       await logCapiSkipped({
         clientId: lead.client_id,
