@@ -5,7 +5,7 @@ import { getSession, AGENCY_ROLES, Role } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 
-const ALL_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin', 'client_counsellor']
+const ALL_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin', 'client_staff', 'client_counsellor']
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
