@@ -119,7 +119,17 @@ export async function fireCapiEventForLead(params: {
         clientUserAgent,
         leadId: leadgenIdFromExternalRef(lead.external_ref),
       },
-      customData,
+      // Meta's CRM integration guide requires these two fields inside
+      // custom_data for an event to be recognized as coming through a
+      // connected CRM funnel (as opposed to a generic server event) — see
+      // Events Manager > Connect data > CRM > "Send a CRM event". Merged
+      // with any caller-supplied customData so callers can still add their
+      // own fields without overwriting these.
+      customData: {
+        event_source: 'crm',
+        lead_event_source: 'Candi Connect',
+        ...customData,
+      },
     })
   } catch (err) {
     // Config lookup itself failed (DB hiccup, etc.) — log to server console
