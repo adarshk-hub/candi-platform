@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, X, User, Ban, CheckCircle2 } from 'lucide-react'
 
-type Role = 'agency_admin' | 'agency_staff' | 'client_admin' | 'client_counsellor'
+type Role = 'agency_admin' | 'agency_staff' | 'client_admin' | 'client_staff' | 'client_counsellor'
 
 interface UserRow {
   id: string
@@ -19,6 +19,7 @@ const ROLE_LABEL: Record<Role, string> = {
   agency_admin: 'Agency Admin',
   agency_staff: 'Agency Staff',
   client_admin: 'Institute Admin',
+  client_staff: 'Staff (no Settings access)',
   client_counsellor: 'Counsellor',
 }
 
@@ -218,12 +219,12 @@ function UserForm({
   const roleOptions: Role[] = existing
     ? isAgencyRole(existing.role)
       ? ['agency_admin', 'agency_staff']
-      : ['client_admin', 'client_counsellor']
+      : ['client_admin', 'client_staff', 'client_counsellor']
     : isAgency
-      ? ['agency_admin', 'agency_staff', 'client_admin', 'client_counsellor']
-      : ['client_admin', 'client_counsellor']
+      ? ['agency_admin', 'agency_staff', 'client_admin', 'client_staff', 'client_counsellor']
+      : ['client_admin', 'client_staff', 'client_counsellor']
 
-  const needsClientPicker = isAgency && (role === 'client_admin' || role === 'client_counsellor')
+  const needsClientPicker = isAgency && (role === 'client_admin' || role === 'client_staff' || role === 'client_counsellor')
 
   async function save() {
     if (!fullName.trim() || !email.trim()) return
