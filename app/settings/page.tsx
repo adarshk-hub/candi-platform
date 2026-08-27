@@ -20,7 +20,7 @@ function getBaseUrl() {
 export default async function SettingsPage() {
   const session = getServerSession()
   if (!session) redirect('/login')
-  if (session.role === 'client_counsellor') redirect('/leads')
+  if (session.role === 'client_counsellor' || session.role === 'client_staff') redirect('/leads')
 
   const baseUrl = getBaseUrl()
   const isAgency = AGENCY_ROLES.includes(session.role)
