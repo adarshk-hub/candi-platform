@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { resolveClient, getClientPool } from '@/lib/clientRegistry'
+import { resolveClient, getClientPoolFromRecord } from '@/lib/clientRegistry'
 import { signSession } from '@/lib/auth'
 
 type UserRow = {
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
 
-  const pool = await getClientPool(client.id)
+  const pool = getClientPoolFromRecord(client)
   const result = await pool.query<UserRow>(USER_SELECT, [email])
   const user = result.rows[0]
 
