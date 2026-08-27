@@ -30,6 +30,7 @@ const ROLE_LABEL: Record<string, string> = {
   agency_admin: 'Admin',
   agency_staff: 'Staff',
   client_admin: 'Client Admin',
+  client_staff: 'Staff',
   client_counsellor: 'Counsellor',
 }
 
@@ -152,7 +153,7 @@ export default function Sidebar({
       </nav>
 
       <div className={clsx('w-full space-y-1 border-t border-border pt-3', collapsed && 'flex flex-col items-center')}>
-        {user?.role !== 'client_counsellor' && (
+        {user?.role !== 'client_counsellor' && user?.role !== 'client_staff' && (
           <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === '/settings'} collapsed={collapsed} />
         )}
         <ThemeToggle collapsed={collapsed} />
