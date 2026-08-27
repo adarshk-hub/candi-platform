@@ -119,7 +119,23 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<SendCa
     if (!res.ok) {
       result = { ok: false, error: json?.error?.message || `Meta returned ${res.status}`, fbtraceId: json?.error?.fbtrace_id }
     } else {
-      result = { ok: true, fbtraceId: json?.fbtrace_id }
+      // Meta can return HTTP 200 with a valid fbtrace_id while actually
+      // processing zero events (bad event_time, dataset state, etc.),
+      // explained in `messages`. Treat that as a failure too, or a broken
+      // integration looks identical to a working one from this log alone.
+      const received = typeof json?.events_received === 'number' ? json.events_received : undefined
+      if (received === 0) {
+        const detail = Array.isArray(json?.messages) && json.messages.length
+          ? JSON.stringify(json.messages)
+          : 'no explanation returned'
+        result = {
+          ok: false,
+          error: `Meta accepted the request but processed 0 events (${detail})`,
+          fbtraceId: json?.fbtrace_id,
+        }
+      } else {
+        result = { ok: true, fbtraceId: json?.fbtrace_id }
+      }
     }
   } catch (err: any) {
     result = { ok: false, error: err?.message || 'Network error calling Meta Conversions API' }
