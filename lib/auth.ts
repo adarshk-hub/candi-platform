@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken'
 import { NextRequest } from 'next/server'
 
-export type Role = 'agency_admin' | 'agency_staff' | 'client_admin' | 'client_counsellor'
+export type Role = 'agency_admin' | 'agency_staff' | 'client_admin' | 'client_staff' | 'client_counsellor'
 
 export interface SessionUser {
   id: string
