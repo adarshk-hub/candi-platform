@@ -65,7 +65,7 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-fg">{lead.full_name}</h2>
-                  <p className="mt-1 text-sm text-muted">Lead ID: {lead.id.slice(0, 8)}</p>
+                  <p className="mt-1 text-sm text-muted">Lead #{lead.lead_number}</p>
                   <p className="text-sm text-muted">Created {formatDateTime(lead.created_at)}</p>
                 </div>
                 <button onClick={onClose} className="text-muted2 hover:text-fg">
