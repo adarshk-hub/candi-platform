@@ -3,6 +3,9 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
+
+const SECTION_LABELS: Record<string, string> = { lead_source: 'Lead Source', service: 'Services', company_type: 'Company Type' }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -33,6 +36,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       `UPDATE client_option_items SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
       values
     )
+    await logSettingsActivity(
+      existing.client_id,
+      session,
+      SECTION_LABELS[existing.list_key] || existing.list_key,
+      `Updated "${existing.value}"`
+    )
     return NextResponse.json(rows[0])
   } catch (err: any) {
     return handleWriteError(err)
@@ -46,5 +55,11 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!canCustomize(session, existing.client_id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   await query('DELETE FROM client_option_items WHERE id = $1', [params.id])
+  await logSettingsActivity(
+    existing.client_id,
+    session,
+    SECTION_LABELS[existing.list_key] || existing.list_key,
+    `Deleted "${existing.value}"`
+  )
   return NextResponse.json({ ok: true })
 }
