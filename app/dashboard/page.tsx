@@ -19,6 +19,20 @@ export default async function DashboardPage({
   }
 
   if (session.role === 'agency_admin' || session.role === 'agency_staff') {
+    // The full agency-wide overview (AgencyDashboard) is being deferred for
+    // now — clicking "Dashboard" should land straight on the same rich
+    // per-institute pipeline view a client_admin sees, not the old
+    // cross-client summary. Redirects to the same institute ordering
+    // AgencyDashboard's own "Institutes" list uses (by name), so this is
+    // just "start on the first one" rather than a different order.
+    const first = (await query<{ id: string }>('SELECT id FROM clients ORDER BY name LIMIT 1'))[0]
+    if (first) {
+      const qs = new URLSearchParams()
+      if (searchParams.from) qs.set('from', searchParams.from)
+      if (searchParams.to) qs.set('to', searchParams.to)
+      const suffix = qs.toString() ? `?${qs.toString()}` : ''
+      redirect(`/dashboard/${first.id}${suffix}`)
+    }
     return <AgencyDashboard from={searchParams.from} to={searchParams.to} />
   }
 
