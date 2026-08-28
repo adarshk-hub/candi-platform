@@ -2,6 +2,7 @@
 
 export interface Lead {
   id: string
+  lead_number: number
   full_name: string
   child_name: string | null
   whatsapp_number: string
