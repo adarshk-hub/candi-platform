@@ -77,15 +77,17 @@ export default function InstituteSwitcher({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg hover:border-blue-500"
+        className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-card2 px-2.5 py-1.5 text-xs text-fg hover:border-blue-500"
       >
-        <Building2 size={16} className="text-muted2" />
-        <span className="max-w-[14rem] truncate">{currentClientName || 'Select institution'}</span>
-        <ChevronDown size={14} className="text-muted2" />
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Building2 size={14} className="shrink-0 text-muted2" />
+          <span className="truncate">{currentClientName || 'Select institution'}</span>
+        </span>
+        <ChevronDown size={12} className="shrink-0 text-muted2" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-2 max-h-80 w-72 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
+        <div className="absolute left-0 top-full z-20 mt-2 max-h-80 w-72 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
           {!loadedOnce && <p className="px-3 py-4 text-sm text-muted">Loading institutions...</p>}
           {loadedOnce && options.length === 0 && (
             <p className="px-3 py-4 text-sm text-muted">No institutions found.</p>
