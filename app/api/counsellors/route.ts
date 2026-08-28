@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
        RETURNING id, full_name, email, client_id, created_at`,
       [targetClientId, email, passwordHash, fullName]
     )
+    await logSettingsActivity(targetClientId, session, 'Counsellors', `Added counsellor "${fullName}" (${email})`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
     if (err?.code === '23505') {
