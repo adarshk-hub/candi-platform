@@ -1,5 +1,6 @@
 //Re
 import { query } from './db'
+import { fetchMetaObjectName } from './metaAdsSpend'
 
 export function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -144,6 +145,7 @@ async function logDuplicateTouch(leadId: string, input: IntakeInput): Promise<vo
 // leads land pre-tagged even for campaigns nobody registered in the CRM by
 // hand yet. displayName falls back to the platform campaign id if the
 // webhook payload doesn't carry a human-readable name.
+
 export async function findOrCreateCampaign(params: {
   clientId: string
   platform: 'meta' | 'google'
@@ -163,6 +165,17 @@ export async function findOrCreateCampaign(params: {
   )
   if (existing[0]) return existing[0].id
 
+  // First time this campaign/ad set has been seen — resolve their real
+  // names from Meta directly rather than falling back to a placeholder.
+  // Only fires once per new campaign, not per lead, since the SELECT
+  // above already caught every already-known campaign before this point.
+  let resolvedDisplayName = params.displayName || null
+  let resolvedAdSetLabel = params.adSetLabel || null
+  if (params.platform === 'meta') {
+    if (!resolvedDisplayName) resolvedDisplayName = await fetchMetaObjectName(params.platformCampaignId)
+    if (!resolvedAdSetLabel && params.platformAdsetId) resolvedAdSetLabel = await fetchMetaObjectName(params.platformAdsetId)
+  }
+
   // Same check-then-insert race as findOrCreateLead above. campaigns
   // already had a UNIQUE (client_id, platform, platform_campaign_id,
   // platform_adset_id, platform_ad_id) constraint, but nothing caught the
@@ -178,8 +191,12 @@ export async function findOrCreateCampaign(params: {
       [
         params.clientId,
         params.platform,
-        params.displayName || `Auto: ${params.platformCampaignId}`,
-        params.adSetLabel || null,
+        // Meta's real name if we could resolve one, otherwise still fall
+        // back to something identifiable rather than leaving it blank —
+        // this only happens if META_MARKETING_API_ACCESS_TOKEN isn't set
+        // or the campaign is no longer accessible via the API.
+        resolvedDisplayName || `Auto: ${params.platformCampaignId}`,
+        resolvedAdSetLabel || null,
         params.creativeAngle || null,
         params.platformCampaignId,
         params.platformAdsetId || null,
