@@ -5,6 +5,7 @@ import { formatLakh, formatDateTime } from '@/lib/format'
 import { Card, SectionLabel, Row, Pill } from '@/components/ui'
 import GenerateReportButton from './GenerateReportButton'
 import BackfillMetaLeadsButton from './BackfillMetaLeadsButton'
+import RepairCampaignNamesButton from './RepairCampaignNamesButton'
 import PipelineDashboard from './PipelineDashboard'
 
 function isoDate(d: Date): string {
@@ -61,7 +62,10 @@ export default async function ClientDashboard({
       {/* Agency-only in practice — the API route itself enforces this via
           AGENCY_ROLES, so a client_admin clicking it just sees "Forbidden"
           rather than the button being hidden client-side. */}
-      <BackfillMetaLeadsButton clientId={clientId} />
+      <div className="flex flex-wrap gap-3">
+        <BackfillMetaLeadsButton clientId={clientId} />
+        <RepairCampaignNamesButton clientId={clientId} />
+      </div>
 
       <form className="flex items-end gap-3 rounded-card border border-border bg-card p-4 text-sm">
         <span className="font-medium text-fg">Custom range</span>
