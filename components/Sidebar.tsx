@@ -20,10 +20,12 @@ import {
   Radio,
 } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
+import InstituteSwitcher from './settings/InstituteSwitcher'
 
 interface SidebarUser {
   fullName: string | null
   role: string
+  clientId: string | null
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -68,9 +70,11 @@ function NavItem({
 export default function Sidebar({
   user,
   showLeadStatusTabs = true,
+  institutionName = null,
 }: {
   user: SidebarUser | null
   showLeadStatusTabs?: boolean
+  institutionName?: string | null
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -125,6 +129,11 @@ export default function Sidebar({
         <div className="mb-6 w-full rounded-card border border-border bg-sidebar-hover px-3 py-2.5">
           <p className="text-sm font-medium text-fg">{user.fullName}</p>
           <p className="text-xs text-muted2">{ROLE_LABEL[user.role] || user.role}</p>
+          {(user.role === 'agency_admin' || user.role === 'agency_staff') && (
+            <div className="mt-2 border-t border-border pt-2">
+              <InstituteSwitcher currentClientId={user.clientId} currentClientName={institutionName || ''} />
+            </div>
+          )}
         </div>
       )}
 
