@@ -3,10 +3,16 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 // list_key is free text ('lead_source' | 'service' | 'company_type' | any
 // future list an institute wants) — this one generic table/route serves all
 // of them so a new customizable list never needs a schema change.
+function optionListSectionLabel(listKey: string): string {
+  const labels: Record<string, string> = { lead_source: 'Lead Source', service: 'Services', company_type: 'Company Type' }
+  return labels[listKey] || listKey
+}
+
 export async function GET(req: NextRequest) {
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -59,6 +65,7 @@ export async function POST(req: NextRequest) {
       `INSERT INTO client_option_items (client_id, list_key, value, sort_order) VALUES ($1,$2,$3,$4) RETURNING *`,
       [targetClientId, listKey, value, maxSort + 1]
     )
+    await logSettingsActivity(targetClientId, session, optionListSectionLabel(listKey), `Added "${value}"`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
     if (err?.code === '23505') {
