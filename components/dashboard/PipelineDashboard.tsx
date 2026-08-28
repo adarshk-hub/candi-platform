@@ -244,12 +244,17 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
   )
 
   const buckets = useMemo(() => {
-    const byPlatform: Record<string, Bucket> = {
+    // Explicit literal keys here, not Record<string, Bucket> — spreading an
+    // indexed-signature object below would lose "meta"/"google" as known
+    // properties in the inferred type (a real TS quirk, not a runtime bug),
+    // which is exactly what broke the build: totals further down couldn't
+    // see buckets.meta/buckets.google at all after the spread.
+    const byPlatform: { meta: Bucket; google: Bucket } = {
       meta: { leads: 0, visits: 0, enrolled: 0, fees: 0, spend: 0 },
       google: { leads: 0, visits: 0, enrolled: 0, fees: 0, spend: 0 },
     }
     for (const c of includedCampaigns) {
-      const key = c.platform === 'google' ? 'google' : 'meta'
+      const key: 'meta' | 'google' = c.platform === 'google' ? 'google' : 'meta'
       byPlatform[key].leads += c.leads
       byPlatform[key].visits += c.visits
       byPlatform[key].enrolled += c.enrolled
