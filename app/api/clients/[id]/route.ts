@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 // A logo is small enough that a base64 data URL stored directly on the row
 // is a reasonable tradeoff given there's no object-storage integration in
@@ -101,6 +102,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
                  meta_ad_account_id, meta_page_id`,
       values
     )
+
+    // This route covers several different Settings sections in one PATCH —
+    // log one activity entry per section actually touched, rather than one
+    // vague "Updated client" line, so the Activity tab stays meaningful.
+    const SECTION_FIELDS: Record<string, string[]> = {
+      'Institute Logo': ['logoDataUrl'],
+      'Display Preferences': ['leadsPerPage', 'showLeadStatusTabs'],
+      'School Email': ['schoolEmail', 'emailFromName', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPass'],
+      'Ad Account Connection': ['metaAdAccountId', 'metaPageId'],
+    }
+    for (const [section, fields] of Object.entries(SECTION_FIELDS)) {
+      const touched = fields.filter((f) => body[f] !== undefined)
+      if (touched.length === 0) continue
+      const described = touched.includes('smtpPass') ? touched.filter((f) => f !== 'smtpPass').concat(['smtpPass']) : touched
+      await logSettingsActivity(params.id, session, section, `Updated ${described.join(', ')}`)
+    }
+
     return NextResponse.json(rows[0])
   } catch (err: any) {
     return handleWriteError(err)
