@@ -9,8 +9,6 @@ import {
   ArrowLeft,
   ListOrdered,
   Tags,
-  Briefcase,
-  Building2,
   FormInput,
   Users,
   ImageIcon,
@@ -18,6 +16,7 @@ import {
   Mail,
   MessageCircle,
   Radio,
+  History,
 } from 'lucide-react'
 import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
@@ -28,6 +27,7 @@ import DisplayPrefsPanel from './panels/DisplayPrefsPanel'
 import EmailSettingsPanel from './panels/EmailSettingsPanel'
 import WhatsAppSettingsPanel from './panels/WhatsAppSettingsPanel'
 import ConversionsApiPanel from './panels/ConversionsApiPanel'
+import SettingsActivityPanel from './panels/SettingsActivityPanel'
 
 interface Institute {
   id: string
@@ -37,8 +37,6 @@ interface Institute {
 const CATEGORIES = [
   { key: 'stages', label: 'Lead Stages', icon: ListOrdered },
   { key: 'lead_source', label: 'Lead Source', icon: Tags },
-  { key: 'service', label: 'Services', icon: Briefcase },
-  { key: 'company_type', label: 'Company Type', icon: Building2 },
   { key: 'fields', label: 'Lead Form Fields', icon: FormInput },
   { key: 'counsellors', label: 'Counsellors', icon: Users },
   { key: 'logo', label: 'Institute Logo', icon: ImageIcon },
@@ -46,6 +44,7 @@ const CATEGORIES = [
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'capi', label: 'Conversions API', icon: Radio },
   { key: 'display', label: 'Display Preferences', icon: Rows3 },
+  { key: 'activity', label: 'Activity', icon: History },
 ] as const
 
 type CategoryKey = (typeof CATEGORIES)[number]['key']
@@ -112,8 +111,6 @@ export default function CustomizeShell({
         <div className="min-w-0 flex-1">
           {active === 'stages' && <LeadStagesPanel clientId={clientId} />}
           {active === 'lead_source' && <OptionListPanel clientId={clientId} listKey="lead_source" title="Lead Source" />}
-          {active === 'service' && <OptionListPanel clientId={clientId} listKey="service" title="Services (Requirement Options)" />}
-          {active === 'company_type' && <OptionListPanel clientId={clientId} listKey="company_type" title="Company Type" />}
           {active === 'fields' && <LeadFormFieldsPanel clientId={clientId} />}
           {active === 'counsellors' && <CounsellorsPanel clientId={clientId} />}
           {active === 'logo' && <LogoPanel clientId={clientId} />}
@@ -121,6 +118,7 @@ export default function CustomizeShell({
           {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
           {active === 'display' && <DisplayPrefsPanel clientId={clientId} />}
+          {active === 'activity' && <SettingsActivityPanel clientId={clientId} />}
         </div>
       </div>
     </div>
