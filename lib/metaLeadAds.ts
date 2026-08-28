@@ -57,10 +57,19 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     fields[f.name] = f.values?.[0] || ''
   }
 
+  // Meta auto-generates each question's internal `name` from its label
+  // text, so a custom "Grade" question can come back as something like
+  // "which_grade_is_your_child_in" rather than the literal word "grade" —
+  // matching only the exact keys "grade"/"class" (the old behavior) missed
+  // that. This checks every field Meta actually sent back for one whose
+  // key contains "grade" or "class" anywhere, case-insensitively, so it
+  // catches the real question name whatever Meta generated it as.
+  const gradeKey = Object.keys(fields).find((k) => /grade|class/i.test(k))
+
   return {
     fullName: fields.full_name || fields.first_name || 'Unknown',
     whatsappNumber: fields.phone_number || '',
     email: fields.email || null,
-    grade: fields.grade || fields.class || null,
+    grade: (gradeKey ? fields[gradeKey] : null) || null,
   }
 }
