@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -37,6 +38,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING id, full_name, email, client_id, created_at`,
       values
     )
+    // Never log the password value itself — only that it changed.
+    const changedFields = Object.keys(body).filter((k) => k !== 'password')
+    if (body.password) changedFields.push('password')
+    await logSettingsActivity(
+      existing.client_id,
+      session,
+      'Counsellors',
+      `Updated counsellor "${existing.full_name}" — changed ${changedFields.join(', ')}`
+    )
     return NextResponse.json(rows[0])
   } catch (err: any) {
     if (err?.code === '23505') {
@@ -61,5 +71,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 
   await query('DELETE FROM users WHERE id = $1', [params.id])
+  await logSettingsActivity(existing.client_id, session, 'Counsellors', `Deleted counsellor "${existing.full_name}" (${existing.email})`)
   return NextResponse.json({ ok: true })
 }
