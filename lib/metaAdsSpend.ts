@@ -15,13 +15,27 @@ export interface CampaignSpend {
 // platform_campaign_id, so existing campaigns never re-hit this.
 export async function fetchMetaObjectName(objectId: string): Promise<string | null> {
   const token = process.env.META_MARKETING_API_ACCESS_TOKEN
-  if (!token) return null
+  if (!token) {
+    // TEMP DIAGNOSTIC — remove once campaign naming is confirmed working.
+    console.log(`[campaign-name] META_MARKETING_API_ACCESS_TOKEN is not set — falling back to "Auto: ${objectId}"`)
+    return null
+  }
   try {
     const res = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${objectId}?fields=name&access_token=${token}`)
-    if (!res.ok) return null
+    if (!res.ok) {
+      // TEMP DIAGNOSTIC — remove once campaign naming is confirmed working.
+      console.log(`[campaign-name] Meta returned ${res.status} for ${objectId}: ${await res.text()}`)
+      return null
+    }
     const data = await res.json()
+    if (!data?.name) {
+      // TEMP DIAGNOSTIC — remove once campaign naming is confirmed working.
+      console.log(`[campaign-name] Meta returned no name field for ${objectId}: ${JSON.stringify(data)}`)
+    }
     return data?.name || null
-  } catch {
+  } catch (err: any) {
+    // TEMP DIAGNOSTIC — remove once campaign naming is confirmed working.
+    console.log(`[campaign-name] fetch threw for ${objectId}: ${err?.message}`)
     return null
   }
 }
