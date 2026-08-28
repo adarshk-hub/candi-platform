@@ -34,15 +34,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // to showing the tabs for them. A client-scoped user gets their own
   // institute's Settings > Customize > Display Preferences choice.
   let showLeadStatusTabs = true
+  let institutionName: string | null = null
   if (session?.clientId) {
-    const rows = await query<{ show_lead_status_tabs: boolean }>(
-      'SELECT show_lead_status_tabs FROM clients WHERE id = $1',
+    const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
+      'SELECT show_lead_status_tabs, name FROM clients WHERE id = $1',
       [session.clientId]
     )
-    if (rows[0]) showLeadStatusTabs = rows[0].show_lead_status_tabs
+    if (rows[0]) {
+      showLeadStatusTabs = rows[0].show_lead_status_tabs
+      institutionName = rows[0].name
+    }
   } else if (session) {
-    const rows = await query<{ show_lead_status_tabs: boolean }>('SELECT show_lead_status_tabs FROM clients')
-    if (rows.length === 1) showLeadStatusTabs = rows[0].show_lead_status_tabs
+    const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
+      'SELECT show_lead_status_tabs, name FROM clients'
+    )
+    if (rows.length === 1) {
+      showLeadStatusTabs = rows[0].show_lead_status_tabs
+      institutionName = rows[0].name
+    }
   }
   
   return (
@@ -55,7 +64,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {session ? (
             <StagesProvider>
               <div className="flex">
-                <Sidebar user={session} showLeadStatusTabs={showLeadStatusTabs} />
+                <Sidebar user={session} showLeadStatusTabs={showLeadStatusTabs} institutionName={institutionName} />
                 <main className="min-h-screen flex-1 overflow-x-hidden px-8 py-8">{children}</main>
               </div>
             </StagesProvider>
