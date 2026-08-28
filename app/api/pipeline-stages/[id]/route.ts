@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 const EDITABLE: Record<string, string> = {
   label: 'label',
@@ -36,6 +37,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       `UPDATE pipeline_stages SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
       values
     )
+    await logSettingsActivity(
+      existing.client_id,
+      session,
+      'Lead Stages',
+      `Updated stage "${existing.label}" — changed ${Object.keys(body).join(', ')}`
+    )
     return NextResponse.json(rows[0])
   } catch (err: any) {
     return handleWriteError(err)
@@ -60,5 +67,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 
   await query('DELETE FROM pipeline_stages WHERE id = $1', [params.id])
+  await logSettingsActivity(existing.client_id, session, 'Lead Stages', `Deleted stage "${existing.label}" (key: ${existing.key})`)
   return NextResponse.json({ ok: true })
-}
+}s
