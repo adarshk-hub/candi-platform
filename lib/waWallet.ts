@@ -36,11 +36,15 @@ export async function getWalletBalance(clientId: string): Promise<number> {
   return row ? Number(row.balance) : 0
 }
 
-// Atomically debits the wallet for one successfully-sent message. Uses a
-// single conditional UPDATE (balance >= cost) so two concurrent sends
-// can never push the balance negative — if the balance has already run
-// out (including mid-race with another send), this returns ok:false and
-// the caller must not treat the message as sent/billed.
+// Atomically debits the wallet for one successfully-sent message.
+//
+// TEMPORARY: the "WHERE ... AND balance >= $2" guard that blocks sends once
+// a client is out of credit is disabled below (2026-08-28) so WhatsApp
+// config can be tested end-to-end without needing a wallet recharge first.
+// The balance is still debited and still shows up in the ledger/"Out of
+// credits" UI exactly as before — sends just aren't blocked by it anymore.
+// Restore the "AND balance >= $2" clause (and the resulting ok:false path
+// below) to re-enable the hard block.
 export async function debitForMessage(params: {
   clientId: string
   category: WaMessageCategory | string
@@ -54,7 +58,7 @@ export async function debitForMessage(params: {
     await query<{ balance: string }>(
       `UPDATE wa_client_wallet
          SET balance = balance - $2, updated_at = now()
-       WHERE client_id = $1 AND balance >= $2
+       WHERE client_id = $1
        RETURNING balance`,
       [params.clientId, cost]
     )
