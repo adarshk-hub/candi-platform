@@ -52,9 +52,15 @@ type CategoryKey = (typeof CATEGORIES)[number]['key']
 export default function CustomizeShell({
   institutes,
   lockedToClientId,
+  showSettingsLink = true,
 }: {
   institutes: Institute[]
   lockedToClientId: string | null
+  // client_admin has no access to /settings itself (agency-only — see
+  // app/settings/page.tsx), so for them this breadcrumb would just bounce
+  // straight back to this same Customize page. Only show it for roles that
+  // actually have somewhere to go back to.
+  showSettingsLink?: boolean
 }) {
   const [clientId, setClientId] = useState(lockedToClientId || institutes[0]?.id || '')
   const [active, setActive] = useState<CategoryKey>('stages')
@@ -66,9 +72,11 @@ export default function CustomizeShell({
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
-        <Link href="/settings" className="flex items-center gap-1.5 text-sm text-muted2 hover:text-fg">
-          <ArrowLeft size={16} /> Settings
-        </Link>
+        {showSettingsLink && (
+          <Link href="/settings" className="flex items-center gap-1.5 text-sm text-muted2 hover:text-fg">
+            <ArrowLeft size={16} /> Settings
+          </Link>
+        )}
         <h1 className="text-2xl font-bold text-fg">Customize</h1>
       </div>
 
