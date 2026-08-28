@@ -157,28 +157,13 @@ export async function findOrCreateCampaign(params: {
   creativeAngle?: string | null
 }): Promise<string> {
   const existing = await query(
-    `SELECT id, display_name FROM campaigns
+    `SELECT id FROM campaigns
      WHERE client_id = $1 AND platform = $2 AND platform_campaign_id = $3
        AND platform_adset_id IS NOT DISTINCT FROM $4
        AND platform_ad_id IS NOT DISTINCT FROM $5`,
     [params.clientId, params.platform, params.platformCampaignId, params.platformAdsetId || null, params.platformAdId || null]
   )
-  if (existing[0]) {
-    // The very first version of this fix only resolved a real name at the
-    // moment a campaign row was first created — every lead after that on
-    // an already-known campaign (which is most leads; a single campaign
-    // generates many over time) just kept reusing whatever placeholder it
-    // got stuck with. This repairs that: if the row is still sitting on
-    // the auto-generated placeholder, try once more to resolve the real
-    // name and fix it in place, instead of leaving it wrong forever.
-    if (params.platform === 'meta' && existing[0].display_name === `Auto: ${params.platformCampaignId}`) {
-      const realName = await fetchMetaObjectName(params.platformCampaignId)
-      if (realName) {
-        await query('UPDATE campaigns SET display_name = $1 WHERE id = $2', [realName, existing[0].id])
-      }
-    }
-    return existing[0].id
-  }
+  if (existing[0]) return existing[0].id
 
   // First time this campaign/ad set has been seen — resolve their real
   // names from Meta directly rather than falling back to a placeholder.
