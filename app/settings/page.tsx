@@ -9,6 +9,7 @@ import WebhookCard from '@/components/settings/WebhookCard'
 import UsersPanel from '@/components/settings/panels/UsersPanel'
 import AdAccountConnector from '@/components/settings/AdAccountConnector'
 import PageConnector from '@/components/settings/PageConnector'
+import InstituteSwitcher from '@/components/settings/InstituteSwitcher'
 
 function getBaseUrl() {
   const h = headers()
@@ -56,12 +57,17 @@ export default async function SettingsPage() {
           <p className="text-muted2">Account and workspace settings.</p>
         </div>
         {canCustomize && (
-          <Link
-            href="/settings/customize"
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            <SlidersHorizontal size={16} /> Customize
-          </Link>
+          <div className="flex items-center gap-3">
+            {isAgency && (
+              <InstituteSwitcher currentClientId={session.clientId} currentClientName={clients[0]?.name || ''} />
+            )}
+            <Link
+              href="/settings/customize"
+              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              <SlidersHorizontal size={16} /> Customize
+            </Link>
+          </div>
         )}
       </div>
 
