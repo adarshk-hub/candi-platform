@@ -34,6 +34,27 @@ export async function GET(req: NextRequest) {
     where.push(`(l.full_name ILIKE $${i} OR l.child_name ILIKE $${i} OR l.whatsapp_number ILIKE $${i})`)
   }
 
+  // Stage / Source / Grade filters — each is a comma-separated list of
+  // values from the leads list toolbar's Filter panel; a lead matches if
+  // its value is any one of the selected values (OR within a filter,
+  // AND across different filters).
+  const stageFilter = (sp.get('stage') || '').split(',').map((v) => v.trim()).filter(Boolean)
+  const sourceFilter = (sp.get('source') || '').split(',').map((v) => v.trim()).filter(Boolean)
+  const gradeFilter = (sp.get('grade') || '').split(',').map((v) => v.trim()).filter(Boolean)
+
+  if (stageFilter.length > 0) {
+    params.push(stageFilter)
+    where.push(`l.pipeline_stage = ANY($${params.length})`)
+  }
+  if (sourceFilter.length > 0) {
+    params.push(sourceFilter)
+    where.push(`l.source = ANY($${params.length})`)
+  }
+  if (gradeFilter.length > 0) {
+    params.push(gradeFilter)
+    where.push(`l.grade = ANY($${params.length})`)
+  }
+
   if (tab === 'enrolled') {
     where.push(
       `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'won')`
@@ -172,4 +193,77 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return handleWriteError(err)
   }
+}
+
+// Every table that stores a lead_id needs its rows cleared before the lead
+// row itself can go, since none of these foreign keys cascade. Order
+// doesn't matter between them (none reference each other), except
+// wa_sequence_messages, which hangs off wa_sequences.id rather than
+// lead_id directly and so has to go first.
+async function deleteLeadDependents(leadId: string) {
+  await query(
+    `DELETE FROM wa_sequence_messages WHERE sequence_id IN (SELECT id FROM wa_sequences WHERE lead_id = $1)`,
+    [leadId]
+  ).catch(() => {})
+  const tables = [
+    'wa_sequences',
+    'whatsapp_messages',
+    'email_messages',
+    'email_broadcast_recipients',
+    'wa_broadcast_recipients',
+    'capi_event_log',
+    'lead_tags',
+    'lead_actions',
+    'activity_log',
+    'follow_ups',
+    'enrollments',
+    'events',
+  ]
+  for (const table of tables) {
+    // Wrapped per-table: an environment missing one of these optional
+    // tables (e.g. a client DB provisioned before a later migration ran)
+    // shouldn't block deleting the lead itself.
+    await query(`DELETE FROM ${table} WHERE lead_id = $1`, [leadId]).catch(() => {})
+  }
+}
+
+// Bulk delete for the leads list's multi-select toolbar. Takes a list of
+// lead ids in the body rather than a single id in the URL so the whole
+// selection can go in one request instead of N round trips.
+export async function DELETE(req: NextRequest) {
+  const session = getSession(req)
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json().catch(() => ({}))
+  const ids: string[] = Array.isArray(body.ids) ? body.ids.filter((id: any) => typeof id === 'string' && id) : []
+  if (ids.length === 0) return NextResponse.json({ error: 'ids array is required' }, { status: 400 })
+
+  // query() is already scoped to the caller's own client database, so any
+  // id here that doesn't resolve is either a stale row or belongs to
+  // someone else's institute entirely — either way it's simply skipped
+  // rather than erroring the whole batch.
+  const rows = await query<{ id: string; assigned_counsellor_id: string | null }>(
+    `SELECT id, assigned_counsellor_id FROM leads WHERE id = ANY($1)`,
+    [ids]
+  )
+
+  const deletable = rows.filter(
+    (r) => session.role !== 'client_counsellor' || r.assigned_counsellor_id === session.id
+  )
+  const skipped = rows.length - deletable.length
+
+  for (const row of deletable) {
+    await deleteLeadDependents(row.id)
+  }
+  if (deletable.length > 0) {
+    await query(
+      `DELETE FROM leads WHERE id = ANY($1)`,
+      [deletable.map((r) => r.id)]
+    )
+  }
+
+  return NextResponse.json({
+    deleted: deletable.length,
+    skipped: skipped + (ids.length - rows.length),
+  })
 }
