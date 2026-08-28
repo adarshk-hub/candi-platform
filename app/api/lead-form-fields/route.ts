@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [targetClientId, fieldKey, label, fieldType || 'text', options ? JSON.stringify(options) : null, maxSort + 1]
     )
+    await logSettingsActivity(targetClientId, session, 'Lead Form Fields', `Added field "${label}" (key: ${fieldKey})`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
     if (err?.code === '23505') {
