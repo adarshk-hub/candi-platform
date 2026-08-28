@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 // Returns every institute's stages the caller is allowed to see: a single
 // client's list for client-scoped roles, or — for agency roles — either one
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
         maxSort + 1,
       ]
     )
+    await logSettingsActivity(targetClientId, session, 'Lead Stages', `Added stage "${label}" (key: ${key})`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
     if (err?.code === '23505') {
