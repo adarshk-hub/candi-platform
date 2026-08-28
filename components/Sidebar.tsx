@@ -163,7 +163,18 @@ export default function Sidebar({
 
       <div className={clsx('w-full space-y-1 border-t border-border pt-3', collapsed && 'flex flex-col items-center')}>
         {user?.role !== 'client_counsellor' && user?.role !== 'client_staff' && (
-          <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === '/settings'} collapsed={collapsed} />
+          // client_admin has no access to /settings itself (raw API keys/
+          // access tokens and full user-role management — agency only) so
+          // their Settings link goes straight to Customize, which is the
+          // page they actually have access to, instead of bouncing through
+          // a server redirect on every click.
+          <NavItem
+            href={user?.role === 'client_admin' ? '/settings/customize' : '/settings'}
+            icon={Settings}
+            label="Settings"
+            active={pathname === '/settings' || pathname === '/settings/customize'}
+            collapsed={collapsed}
+          />
         )}
         <ThemeToggle collapsed={collapsed} />
         <button
