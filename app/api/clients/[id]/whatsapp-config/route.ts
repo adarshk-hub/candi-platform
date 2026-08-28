@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { encrypt } from '@/lib/waEncryption'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 // Returns the client's saved WABA config with the access token masked —
 // the plaintext token is never sent back to the browser once saved.
@@ -75,6 +76,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       phoneNumberId,
       params.id,
     ])
+
+    await logSettingsActivity(
+      params.id,
+      session,
+      'WhatsApp',
+      existing ? `Updated WhatsApp config (phone number ID: ${phoneNumberId})` : `Connected WhatsApp (phone number ID: ${phoneNumberId})`
+    )
 
     return NextResponse.json({ ok: true, id: row.id })
   } catch (err: any) {
