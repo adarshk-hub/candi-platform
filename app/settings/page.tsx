@@ -20,7 +20,15 @@ function getBaseUrl() {
 export default async function SettingsPage() {
   const session = getServerSession()
   if (!session) redirect('/login')
-  if (session.role === 'client_counsellor' || session.role === 'client_staff') redirect('/leads')
+  // Raw webhook URLs/API keys/access tokens live on this page, and its
+  // Users panel can create or edit any role — including other client_admin
+  // or agency accounts. Agency roles only from here on. A client_admin's
+  // day-to-day institute config (Lead Stages, Counsellors, Logo, etc.)
+  // still lives at /settings/customize, so send them there instead of
+  // dead-ending them; client_staff/client_counsellor have no settings-
+  // adjacent page at all, so they go back to their leads list as before.
+  if (session.role === 'client_admin') redirect('/settings/customize')
+  if (!AGENCY_ROLES.includes(session.role)) redirect('/leads')
 
   const baseUrl = getBaseUrl()
   const isAgency = AGENCY_ROLES.includes(session.role)
@@ -46,7 +54,10 @@ export default async function SettingsPage() {
       ? await query<ClientRow>(`SELECT ${CLIENT_COLUMNS} FROM clients WHERE id = $1`, [session.clientId])
       : []
 
-  const canCustomize = isAgency || session.role === 'client_admin'
+  // Only agency roles ever reach this point (client_admin is redirected to
+  // /settings/customize above), so this is always true — kept as a named
+  // constant rather than inlined so the JSX below still reads clearly.
+  const canCustomize = true
 
   return (
     <div>
