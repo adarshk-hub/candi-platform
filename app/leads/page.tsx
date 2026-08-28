@@ -14,6 +14,7 @@ import AddLeadModal from '@/components/lead/AddLeadModal'
 
 interface LeadRow {
   id: string
+  lead_number: number
   client_id: string
   full_name: string
   child_name: string | null
@@ -249,10 +250,7 @@ export default function LeadsPage() {
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-card2"
                   >
                     <td style={{ width: widths.id }} className={TD}>
-                      <p className="font-mono text-xs text-green-400">{l.id.slice(0, 8)}</p>
-                      <p className="text-xs text-muted">
-                        {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </p>
+                      <p className="font-mono text-xs text-green-400">#{l.lead_number}</p>
                     </td>
                     <td style={{ width: widths.lead }} className={TD}>
                       <p className="truncate font-medium text-blue-400">{l.full_name}</p>
