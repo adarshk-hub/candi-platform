@@ -6,6 +6,26 @@ export interface CampaignSpend {
   spend: number
 }
 
+// Looks up a single campaign or ad set's real name directly from Meta —
+// used when a lead first creates a brand-new campaigns row (see
+// findOrCreateCampaign in leadIntake.ts), so what gets stored is the
+// institute's actual campaign name ("JEE 2025 Batch") instead of the
+// "Auto: {raw campaign id}" placeholder that was showing before. Only
+// called once per new campaign/ad set — findOrCreateCampaign dedupes by
+// platform_campaign_id, so existing campaigns never re-hit this.
+export async function fetchMetaObjectName(objectId: string): Promise<string | null> {
+  const token = process.env.META_MARKETING_API_ACCESS_TOKEN
+  if (!token) return null
+  try {
+    const res = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${objectId}?fields=name&access_token=${token}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.name || null
+  } catch {
+    return null
+  }
+}
+
 // Pulls per-campaign spend for one ad account over a date range from Meta's
 // Marketing API (Insights endpoint, campaign-level breakdown). Requires a
 // System User access token with ads_read permission on the ad account —
