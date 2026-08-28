@@ -400,22 +400,19 @@ export async function submitAndRecordTemplate(params: {
   return { name: params.name, status: submitted.status, rejectionReason: submitted.rejectionReason }
 }
 
+// "hello_world" is a sample template Meta auto-approves on every WhatsApp
+// Business Account the moment it's created — unlike a custom template, it
+// needs no submission/approval step, so it's always available to ping with
+// regardless of what templates this particular client has set up. Its
+// approved body is fully static ("Hello World, Welcome and congratulations
+// on your first message!") — no {{n}} variables — so no components/params
+// are sent with it.
 export async function sendVerificationPing(clientId: string, to: string): Promise<SendResult> {
   return sendTemplateMessage({
     clientId,
     to,
-    templateName: 'testing_address',
+    templateName: 'hello_world',
     languageCode: 'en_US',
-    components: [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: 'there' },
-          { type: 'text', text: '123 Test Street' },
-          { type: 'text', text: 'support@candidschools.com' },
-        ],
-      },
-    ],
   })
 }
 
