@@ -69,4 +69,4 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   await query('DELETE FROM pipeline_stages WHERE id = $1', [params.id])
   await logSettingsActivity(existing.client_id, session, 'Lead Stages', `Deleted stage "${existing.label}" (key: ${existing.key})`)
   return NextResponse.json({ ok: true })
-}s
+}
