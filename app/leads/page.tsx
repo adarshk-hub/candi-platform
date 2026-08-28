@@ -2,9 +2,9 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Filter, Plus, List, LayoutGrid } from 'lucide-react'
+import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useStages } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
@@ -13,6 +13,8 @@ import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import KanbanBoard from '@/components/lead/KanbanBoard'
 import AddLeadModal from '@/components/lead/AddLeadModal'
+import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
+import LeadImportModal from '@/components/lead/LeadImportModal'
 
 interface LeadRow {
   id: string
@@ -82,15 +84,29 @@ export default function LeadsPage() {
   const [activeLead, setActiveLead] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [addingLead, setAddingLead] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [filters, setFilters] = useState<LeadListFilterState>(EMPTY_LEAD_FILTERS)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const exportMenuRef = useRef<HTMLDivElement>(null)
 
   const { widths, setWidth } = useColumnWidths('leads-list', COLUMN_DEFAULTS)
 
-  const load = useCallback(() => {
-    setLoading(true)
+  function buildQueryParams() {
     const params = new URLSearchParams()
     params.set('page', String(page))
     if (tab) params.set('tab', tab)
     if (search) params.set('search', search)
+    if (filters.stage.length) params.set('stage', filters.stage.join(','))
+    if (filters.source.length) params.set('source', filters.source.join(','))
+    if (filters.grade.length) params.set('grade', filters.grade.join(','))
+    return params
+  }
+
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = buildQueryParams()
     fetch(`/api/leads?${params.toString()}`)
       .then(async (r) => {
         if (r.status === 401) {
@@ -104,12 +120,83 @@ export default function LeadsPage() {
         setLeads(data.leads || [])
         setTotal(data.total || 0)
         setPageSize(data.pageSize || 250)
+        setSelected(new Set())
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [tab, page, search, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, page, search, filters, router])
 
   useEffect(load, [load])
+
+  // Reset to page 1 whenever the filter set changes, so a narrower filter
+  // never leaves the user stranded on a page number that no longer exists.
+  useEffect(() => {
+    if (page !== 1) setPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters])
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setExportOpen(false)
+    }
+    if (exportOpen) document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [exportOpen])
+
+  function toggleSelectAll() {
+    if (selected.size === leads.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(leads.map((l) => l.id)))
+    }
+  }
+
+  function toggleSelectOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0) return
+    const confirmed = window.confirm(
+      `Delete ${selected.size} lead${selected.size === 1 ? '' : 's'}? This cannot be undone.`
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected) }),
+      })
+      if (res.ok) {
+        setSelected(new Set())
+        load()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        window.alert(data.error || 'Could not delete the selected leads.')
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function exportLeads(format: 'xlsx' | 'csv') {
+    const params = selected.size > 0 ? new URLSearchParams() : buildQueryParams()
+    if (selected.size > 0) {
+      params.set('ids', Array.from(selected).join(','))
+    } else {
+      params.delete('page')
+    }
+    params.set('format', format)
+    window.location.href = `/api/leads/export?${params.toString()}`
+    setExportOpen(false)
+  }
 
   function setPage(p: number) {
     const params = new URLSearchParams(searchParams.toString())
@@ -155,15 +242,43 @@ export default function LeadsPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search leads..."
+                placeholder="Search name, child name, phone..."
                 className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
               />
             </div>
           )}
+          {view === 'list' && <LeadListFilters value={filters} onChange={setFilters} />}
           {view === 'list' && (
-            <button className={TOOLBAR_BTN}>
-              <Filter size={16} /> Filter
+            <button onClick={() => setImporting(true)} className={TOOLBAR_BTN}>
+              <Upload size={16} /> Import
             </button>
+          )}
+          {view === 'list' && (
+            <div className="relative" ref={exportMenuRef}>
+              <button onClick={() => setExportOpen((o) => !o)} className={TOOLBAR_BTN}>
+                <Download size={16} /> Export
+                <ChevronDown size={14} />
+              </button>
+              {exportOpen && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-md border border-border bg-card p-1 shadow-lg">
+                  <p className="px-3 py-1.5 text-xs text-muted">
+                    {selected.size > 0 ? `${selected.size} selected` : `All ${total} filtered leads`}
+                  </p>
+                  <button
+                    onClick={() => exportLeads('xlsx')}
+                    className="w-full rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card2"
+                  >
+                    Export as Excel (.xlsx)
+                  </button>
+                  <button
+                    onClick={() => exportLeads('csv')}
+                    className="w-full rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card2"
+                  >
+                    Export as CSV (.csv)
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           <button
             onClick={() => setAddingLead(true)}
@@ -179,9 +294,26 @@ export default function LeadsPage() {
       ) : (
         <>
           <div className="mb-3 flex items-center justify-between text-sm text-muted2">
-            <span>
-              Showing {from} to {to} of {total} leads
-            </span>
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {from} to {to} of {total} leads
+              </span>
+              {selected.size > 0 && (
+                <div className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-1.5">
+                  <span className="text-fg">{selected.size} selected</span>
+                  <button
+                    onClick={deleteSelected}
+                    disabled={deleting}
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-red-400 hover:bg-card disabled:opacity-50"
+                  >
+                    <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                  <button onClick={() => setSelected(new Set())} className="px-2 py-1 text-muted2 hover:text-fg">
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage(1)}
@@ -221,6 +353,15 @@ export default function LeadsPage() {
             <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="border-b border-border bg-card2 text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="w-10 border-r border-border px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={leads.length > 0 && selected.size === leads.length}
+                      onChange={toggleSelectAll}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-3.5 w-3.5 rounded border-border accent-blue-600"
+                    />
+                  </th>
                   <ResizableTh width={widths.id} onResize={(w) => setWidth('id', w)}>
                     ID
                   </ResizableTh>
@@ -249,8 +390,19 @@ export default function LeadsPage() {
                   <tr
                     key={l.id}
                     onClick={() => setActiveLead(l.id)}
-                    className="cursor-pointer border-b border-border last:border-0 hover:bg-card2"
+                    className={clsx(
+                      'cursor-pointer border-b border-border last:border-0 hover:bg-card2',
+                      selected.has(l.id) && 'bg-blue-500/5'
+                    )}
                   >
+                    <td className="border-r border-border px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(l.id)}
+                        onChange={() => toggleSelectOne(l.id)}
+                        className="h-3.5 w-3.5 rounded border-border accent-blue-600"
+                      />
+                    </td>
                     <td style={{ width: widths.id }} className={TD}>
                       <p className="font-mono text-xs text-green-400">#{l.lead_number}</p>
                       <p className="text-xs text-muted">
@@ -286,7 +438,7 @@ export default function LeadsPage() {
                 ))}
                 {!loading && leads.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted">
                       No leads found.
                     </td>
                   </tr>
@@ -314,6 +466,13 @@ export default function LeadsPage() {
             setAddingLead(false)
             load()
           }}
+        />
+      )}
+
+      {importing && (
+        <LeadImportModal
+          onClose={() => setImporting(false)}
+          onImported={() => load()}
         />
       )}
     </div>
