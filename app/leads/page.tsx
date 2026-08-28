@@ -1,3 +1,5 @@
+//check
+
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -251,6 +253,9 @@ export default function LeadsPage() {
                   >
                     <td style={{ width: widths.id }} className={TD}>
                       <p className="font-mono text-xs text-green-400">#{l.lead_number}</p>
+                      <p className="text-xs text-muted">
+                        {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </p>
                     </td>
                     <td style={{ width: widths.lead }} className={TD}>
                       <p className="truncate font-medium text-blue-400">{l.full_name}</p>
