@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
+import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -57,6 +58,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        RETURNING capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url`,
       values
     )
+    const changed = Object.keys(body).join(', ')
+    await logSettingsActivity(params.id, session, 'Conversions API', `Updated ${changed}`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
     return handleWriteError(err)
