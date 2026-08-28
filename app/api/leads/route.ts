@@ -8,6 +8,7 @@ import { startSequence } from '@/lib/waSequenceEngine'
 const DEFAULT_PAGE_SIZE = 250
 
 export async function GET(req: NextRequest) {
+  const t0 = Date.now()
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -66,11 +67,12 @@ export async function GET(req: NextRequest) {
     pageSizeQuery,
     query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM leads l ${whereSql}`, params),
   ])
+  const tCount = Date.now()
   const PAGE_SIZE = pageSizeRows[0]?.leads_per_page || DEFAULT_PAGE_SIZE
 
   const offset = (page - 1) * PAGE_SIZE
   const rows = await query(
-    `SELECT l.id, l.client_id, l.full_name, l.child_name, l.whatsapp_number, l.grade, l.pipeline_stage,
+    `SELECT l.id, l.lead_number, l.client_id, l.full_name, l.child_name, l.whatsapp_number, l.grade, l.pipeline_stage,
             l.source, l.lead_score, l.created_at, l.assigned_counsellor_id,
             u.full_name AS counsellor_name
      FROM leads l
@@ -79,6 +81,10 @@ export async function GET(req: NextRequest) {
      ORDER BY l.created_at DESC
      LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
     params
+  )
+  // TEMP DIAGNOSTIC — remove once we've confirmed where the time goes.
+  console.log(
+    `[leads] pageSize+count=${tCount - t0}ms mainSelect=${Date.now() - tCount}ms total=${Date.now() - t0}ms`
   )
 
   return NextResponse.json({ leads: rows, total: Number(count), page, pageSize: PAGE_SIZE })
