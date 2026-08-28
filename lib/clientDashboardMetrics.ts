@@ -14,6 +14,14 @@ export interface CampaignRow {
   status: { label: string; color: 'green' | 'gray' | 'amber' }
 }
 
+export interface PlatformBucket {
+  leads: number
+  visits: number
+  enrolled: number
+  fees: number
+  spend: number
+}
+
 export interface ClientDashboardMetrics {
   clientId: string
   clientName: string
@@ -37,6 +45,11 @@ export interface ClientDashboardMetrics {
   }
   weeklySpend: { weekStarting: string; amount: number }[]
   campaigns: CampaignRow[]
+  // Leads with no campaign_id — direct/organic/WhatsApp inbound/manual
+  // entry, anything that didn't come from a tracked paid campaign. Kept
+  // separate from `campaigns` since it isn't a real campaigns row and has
+  // no spend by definition.
+  organic: PlatformBucket
   fees: {
     totalCollected: number
     depositCount: number
@@ -235,6 +248,41 @@ export async function getClientDashboardMetrics(
   })
   const campaigns = campaignRowsBase.map((c) => ({ ...c, status: classifyCampaign(c, campaignRowsBase) }))
 
+  // Same shape as a campaign row's activity, but for leads with no
+  // campaign_id at all — organic/direct/manual/WhatsApp inbound. No spend
+  // is possible for these by definition, so cost metrics don't apply.
+  const organicParams: any[] = [clientId]
+  let organicWhere = 'WHERE l.client_id = $1 AND l.campaign_id IS NULL'
+  if (from) {
+    organicParams.push(from)
+    organicWhere += ` AND l.created_at >= $${organicParams.length}`
+  }
+  if (to) {
+    organicParams.push(to)
+    organicWhere += ` AND l.created_at <= $${organicParams.length}::date + interval '1 day'`
+  }
+  const [organicRow] = await query<{ leads: string; visits: string }>(
+    `SELECT COUNT(DISTINCT l.id)::int AS leads,
+            COUNT(DISTINCT ev.id) FILTER (WHERE ev.event_type = 'session_booked')::int AS visits
+     FROM leads l
+     LEFT JOIN events ev ON ev.lead_id = l.id
+     ${organicWhere}`,
+    organicParams
+  )
+  const [organicFees] = await query<{ enrolled: string; fees: string }>(
+    `SELECT COUNT(DISTINCT en.lead_id)::int AS enrolled, COALESCE(SUM(en.fee_amount), 0) AS fees
+     FROM leads l JOIN enrollments en ON en.lead_id = l.id
+     ${organicWhere}`,
+    organicParams
+  )
+  const organic: PlatformBucket = {
+    leads: Number(organicRow?.leads || 0),
+    visits: Number(organicRow?.visits || 0),
+    enrolled: Number(organicFees?.enrolled || 0),
+    fees: Number(organicFees?.fees || 0),
+    spend: 0,
+  }
+
   const totalLeads = Number(total_leads)
   const qualifiedNum = Number(qualified)
   const visitsBooked = Number(visits_booked)
@@ -272,6 +320,7 @@ export async function getClientDashboardMetrics(
     },
     weeklySpend,
     campaigns,
+    organic,
     fees: {
       totalCollected: feesCollected,
       depositCount: depositRow ? Number(depositRow.count) : 0,
