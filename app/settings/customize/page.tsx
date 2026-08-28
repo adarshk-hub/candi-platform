@@ -21,5 +21,5 @@ export default async function CustomizePage() {
     ? await query<{ id: string; name: string }>('SELECT id, name FROM clients WHERE id = $1', [session.clientId])
     : []
 
-  return <CustomizeShell institutes={institutes} lockedToClientId={session.clientId} />
+  return <CustomizeShell institutes={institutes} lockedToClientId={session.clientId} showSettingsLink={isAgency} />
 }
