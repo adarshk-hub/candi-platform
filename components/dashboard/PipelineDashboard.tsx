@@ -76,14 +76,72 @@ function Donut({ segments, size = 160 }: { segments: { color: string; pct: numbe
   )
 }
 
+interface GroupedCampaignRow {
+  memberIds: string[]
+  displayName: string
+  leads: number
+  visits: number
+  enrolled: number
+  fees: number
+  spend: number
+  cpl: number | null
+  convPct: number | null
+}
+
+// Meta happily lets you have several distinct campaigns (different
+// campaign_ids) that all share the exact same name — cloned campaigns,
+// campaigns recreated after a pause, seasonal re-runs of the same
+// creative, etc. Each is tracked separately under the hood (correctly —
+// they really are different campaigns with their own spend), but showing
+// "Leads - IF - Horamavu - Saved - Aug 26" as three separate rows with 1
+// lead each just reads as a bug rather than three genuinely different
+// things. Group by name for display; the underlying per-campaign-id
+// tracking (and the exclusion checkboxes) still works on the real ids.
+function groupCampaignsByName(campaigns: CampaignRow[]): GroupedCampaignRow[] {
+  const groups = new Map<string, GroupedCampaignRow>()
+  for (const c of campaigns) {
+    const key = c.displayName.trim().toLowerCase()
+    const existing = groups.get(key)
+    if (existing) {
+      existing.memberIds.push(c.id)
+      existing.leads += c.leads
+      existing.visits += c.visits
+      existing.enrolled += c.enrolled
+      existing.fees += c.fees
+      existing.spend += c.spend
+    } else {
+      groups.set(key, {
+        memberIds: [c.id],
+        displayName: c.displayName,
+        leads: c.leads,
+        visits: c.visits,
+        enrolled: c.enrolled,
+        fees: c.fees,
+        spend: c.spend,
+        cpl: null,
+        convPct: null,
+      })
+    }
+  }
+  // Recomputed from the summed totals (a true weighted rate across all
+  // merged campaigns), not averaged from each member's own cpl/convPct —
+  // averaging separate rates would skew toward whichever campaign happened
+  // to have fewer leads.
+  return Array.from(groups.values()).map((g) => ({
+    ...g,
+    cpl: g.leads > 0 ? g.spend / g.leads : null,
+    convPct: g.leads > 0 ? (g.enrolled / g.leads) * 100 : null,
+  }))
+}
+
 function CampaignTable({
   campaigns,
   checked,
   onToggle,
 }: {
-  campaigns: CampaignRow[]
+  campaigns: GroupedCampaignRow[]
   checked: Set<string>
-  onToggle: (id: string) => void
+  onToggle: (ids: string[]) => void
 }) {
   return (
     <div className="mt-4">
@@ -108,31 +166,37 @@ function CampaignTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {campaigns.map((c) => (
-              <tr key={c.id}>
-                <td className="px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    checked={checked.has(c.id)}
-                    onChange={() => onToggle(c.id)}
-                    className="h-4 w-4 rounded border-border"
-                  />
-                </td>
-                <td className="px-3 py-2.5 text-fg">
-                  <span className="inline-flex items-center gap-1">
-                    <ChevronRight size={14} className="text-muted2" />
-                    {c.displayName}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 text-right text-fg">{c.leads}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{c.visits}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{c.enrolled}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{formatLakh(c.spend)}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{fmtMoney(c.cpl)}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{fmtMoney(ratio(c.spend, c.enrolled))}</td>
-                <td className="px-3 py-2.5 text-right text-fg">{c.convPct !== null ? `${c.convPct.toFixed(0)}%` : '—'}</td>
-              </tr>
-            ))}
+            {campaigns.map((c) => {
+              const isChecked = c.memberIds.every((id) => checked.has(id))
+              return (
+                <tr key={c.memberIds.join(',')}>
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggle(c.memberIds)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </td>
+                  <td className="px-3 py-2.5 text-fg">
+                    <span className="inline-flex items-center gap-1">
+                      <ChevronRight size={14} className="text-muted2" />
+                      {c.displayName}
+                      {c.memberIds.length > 1 && (
+                        <span className="ml-1 text-xs text-muted2">({c.memberIds.length} campaigns)</span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-fg">{c.leads}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{c.visits}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{c.enrolled}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{formatLakh(c.spend)}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{fmtMoney(c.cpl)}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{fmtMoney(ratio(c.spend, c.enrolled))}</td>
+                  <td className="px-3 py-2.5 text-right text-fg">{c.convPct !== null ? `${c.convPct.toFixed(0)}%` : '—'}</td>
+                </tr>
+              )
+            })}
             {campaigns.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-3 py-6 text-center text-muted">
@@ -229,11 +293,19 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
   const [detailed, setDetailed] = useState(true)
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
 
-  function toggleCampaign(id: string) {
+  // Toggling a grouped row (possibly several real campaign_ids sharing one
+  // display name) moves all of them together — if any are currently
+  // included, unchecking excludes the whole group; otherwise it includes
+  // the whole group. Keeps the checkbox state unambiguous rather than
+  // landing in a half-checked state a single checkbox can't represent.
+  function toggleCampaignGroup(ids: string[]) {
     setExcluded((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      const allIncluded = ids.every((id) => !next.has(id))
+      for (const id of ids) {
+        if (allIncluded) next.add(id)
+        else next.delete(id)
+      }
       return next
     })
   }
@@ -296,6 +368,12 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
   const googleCampaigns = metrics.campaigns.filter((c) => c.platform === 'google')
   const includedIds = useMemo(() => new Set(includedCampaigns.map((c) => c.id)), [includedCampaigns])
 
+  // Grouped by name for display (see groupCampaignsByName above) — the
+  // table shows one row per distinct campaign name, summing however many
+  // real campaign_ids share it, rather than one row per campaign_id.
+  const groupedMeta = useMemo(() => groupCampaignsByName(metaCampaigns), [metaCampaigns])
+  const groupedGoogle = useMemo(() => groupCampaignsByName(googleCampaigns), [googleCampaigns])
+
   // The tab switch doesn't have a distinct reference design for each of
   // Leads/Visited/Enrolled beyond Overall Pipeline — it re-sorts the
   // campaign tables by that specific metric instead of showing an unseen
@@ -303,9 +381,10 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
   // every campaign, checked or not — only the totals above exclude an
   // unchecked one, never the table row itself, or there'd be no way to
   // check it back on.
-  const sortKey: keyof CampaignRow | null = tab === 'leads' ? 'leads' : tab === 'visited' ? 'visits' : tab === 'enrolled' ? 'enrolled' : null
-  const sortedMeta = sortKey ? [...metaCampaigns].sort((a, b) => (b[sortKey] as number) - (a[sortKey] as number)) : metaCampaigns
-  const sortedGoogle = sortKey ? [...googleCampaigns].sort((a, b) => (b[sortKey] as number) - (a[sortKey] as number)) : googleCampaigns
+  const sortKey: 'leads' | 'visits' | 'enrolled' | null =
+    tab === 'leads' ? 'leads' : tab === 'visited' ? 'visits' : tab === 'enrolled' ? 'enrolled' : null
+  const sortedMeta = sortKey ? [...groupedMeta].sort((a, b) => b[sortKey] - a[sortKey]) : groupedMeta
+  const sortedGoogle = sortKey ? [...groupedGoogle].sort((a, b) => b[sortKey] - a[sortKey]) : groupedGoogle
 
   return (
     <div className="space-y-6">
@@ -409,7 +488,7 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
               {formatLakh(buckets.meta.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedMeta} checked={includedIds} onToggle={toggleCampaign} />
+          <CampaignTable campaigns={sortedMeta} checked={includedIds} onToggle={toggleCampaignGroup} />
         </div>
       )}
 
@@ -425,7 +504,7 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
               {formatLakh(buckets.google.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedGoogle} checked={includedIds} onToggle={toggleCampaign} />
+          <CampaignTable campaigns={sortedGoogle} checked={includedIds} onToggle={toggleCampaignGroup} />
         </div>
       )}
     </div>
