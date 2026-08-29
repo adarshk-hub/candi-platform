@@ -1,6 +1,6 @@
 const GRAPH_API_URL = 'https://graph.facebook.com/v19.0'
 import { fetchPageAccessToken } from './metaPages'
-import { findGradeValue } from './metaLeadAds'
+import { findGradeValue, mapPlatform } from './metaLeadAds'
 import { centralQuery } from './db'
 import { findOrCreateLead, findOrCreateCampaign } from './leadIntake'
 
@@ -16,6 +16,10 @@ export interface HistoricalMetaLead {
   campaignId: string | null
   adsetId: string | null
   adId: string | null
+  // Same reasoning as the live webhook (lib/metaLeadAds.ts) — a given
+  // submission came from either the Facebook or Instagram placement of the
+  // same form/campaign, and was previously always hardcoded to 'facebook'.
+  source: 'facebook' | 'instagram'
 }
 
 // IMPORTANT — a hard limit on Meta's side, not something any code here can
@@ -69,7 +73,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
 
   for (const form of forms) {
     let leadsUrl: string | null =
-      `${GRAPH_API_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,adset_id,campaign_id&limit=100&access_token=${token}`
+      `${GRAPH_API_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,adset_id,campaign_id,platform&limit=100&access_token=${token}`
     while (leadsUrl) {
       const res: Response = await fetch(leadsUrl)
       if (!res.ok) {
@@ -107,6 +111,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
           campaignId: lead.campaign_id || null,
           adsetId: lead.adset_id || null,
           adId: lead.ad_id || null,
+          source: mapPlatform(lead.platform),
         })
       }
       leadsUrl = json.paging?.next || null
@@ -168,7 +173,7 @@ export async function backfillMetaLeadsForClient(clientId: string, metaPageId: s
       whatsappNumber: hl.whatsappNumber,
       email: hl.email,
       grade: hl.grade,
-      source: 'facebook',
+      source: hl.source,
       entryType: 'meta_form_backfill',
       campaignId: internalCampaignId,
       externalRef: `meta:${hl.leadgenId}`,
