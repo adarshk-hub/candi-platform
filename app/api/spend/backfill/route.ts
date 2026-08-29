@@ -11,12 +11,19 @@ export const maxDuration = 60
 
 // One-off (or occasionally re-run) catch-up for historical spend that the
 // regular weekly sync never covers — see the comment on backfillMetaAdSpend
-// for why that gap exists.
+// for why that gap exists. Callable two ways: a logged-in agency session
+// (the /spend page's "Backfill" button), or a shared secret (same
+// x-cron-secret pattern as /api/cron/ad-spend-sync), for an external
+// scheduler to trigger it without a login.
 export async function POST(req: NextRequest) {
   const session = getSession(req)
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!AGENCY_ROLES.includes(session.role)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const cronSecret = process.env.CRON_SECRET
+  const providedSecret = req.headers.get('x-cron-secret')
+  const isCronAuthed = !!cronSecret && providedSecret === cronSecret
+  const isSessionAuthed = !!session && AGENCY_ROLES.includes(session.role)
+
+  if (!isCronAuthed && !isSessionAuthed) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await req.json().catch(() => ({}))
