@@ -65,6 +65,10 @@ export async function GET(req: NextRequest) {
   const offsetParamIdx = params.length
 
   const rows = await query(
+    // Newest-first: with a capped limit (below), ASC order meant that once
+    // a stage passed the cap, brand-new leads could be excluded from the
+    // board entirely (the oldest ones would always win the LIMIT), on top
+    // of just displaying in the wrong order.
     `SELECT l.id, l.full_name, l.child_name, l.whatsapp_number, l.pipeline_stage,
             l.lead_score, l.stage_updated_at, l.source, l.grade, l.service_interested_in,
             l.assigned_counsellor_id, l.client_id, l.created_at,
@@ -74,7 +78,7 @@ export async function GET(req: NextRequest) {
      LEFT JOIN users u ON u.id = l.assigned_counsellor_id
      LEFT JOIN clients cl ON cl.id = l.client_id
      ${whereSql}
-     ORDER BY l.stage_updated_at ASC
+     ORDER BY l.stage_updated_at DESC
      LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`,
     params
   )
