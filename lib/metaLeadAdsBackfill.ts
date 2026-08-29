@@ -81,6 +81,20 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
       const json: any = await res.json()
       for (const lead of json.data || []) {
         const fieldData = lead.field_data || []
+        const grade = findGradeFromFieldData(fieldData)
+
+        // TEMP DIAGNOSTIC — remove once grade capture is confirmed working
+        // end to end. Same reasoning as the live webhook's version in
+        // lib/metaLeadAds.ts: if this fires, Meta didn't send back any
+        // field whose name contains "grade" or "class" for this specific
+        // lead — either the form (form.name, logged below) has no grade
+        // question, or its wording doesn't match either substring.
+        if (!grade) {
+          console.log(
+            `[meta-backfill] no grade-like field for leadgen_id ${lead.id} (form: ${form.name}). Fields received: ${fieldData.map((f: any) => f.name).join(', ') || '(none)'}`
+          )
+        }
+
         results.push({
           leadgenId: lead.id,
           createdTime: lead.created_time,
@@ -89,7 +103,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
           fullName: fieldValue(fieldData, 'full_name') || fieldValue(fieldData, 'first_name') || 'Unknown',
           whatsappNumber: fieldValue(fieldData, 'phone_number') || '',
           email: fieldValue(fieldData, 'email'),
-          grade: findGradeFromFieldData(fieldData),
+          grade,
           campaignId: lead.campaign_id || null,
           adsetId: lead.adset_id || null,
           adId: lead.ad_id || null,
