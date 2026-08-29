@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import { query } from '@/lib/db'
+import { centralQuery } from '@/lib/db'
 import { verifySignature, fetchLeadFields } from '@/lib/metaLeadAds'
 import { findOrCreateLead, findOrCreateCampaign } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
@@ -34,7 +34,12 @@ export async function POST(req: NextRequest) {
 
   for (const entry of payload.entry || []) {
     const pageId = entry.id
-    const client = (await query('SELECT id FROM clients WHERE meta_page_id = $1', [pageId]))[0]
+    // This is the whole reason this route can't use the ambient query()
+    // helper: there's no logged-in session on an incoming Meta webhook to
+    // infer a client from — this lookup (which institute owns this Meta
+    // Page?) IS the thing figuring that out, so it has to reach the
+    // central registry directly.
+    const client = (await centralQuery('SELECT id FROM clients WHERE meta_page_id = $1', [pageId]))[0]
     if (!client) {
       results.push({ pageId, error: 'No client mapped to this Meta Page ID' })
       continue
