@@ -14,6 +14,16 @@ export const centralPool =
   new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
+    // keepAlive stops the OS/DB from silently dropping an idle TCP
+    // connection between requests — without it, a Postgres provider's own
+    // idle timeout (common on managed/serverless Postgres) can quietly
+    // close the socket, so what looks like a "warm" serverless instance
+    // still ends up paying for a brand new TCP+TLS+auth handshake on its
+    // next request anyway. connectionTimeoutMillis makes a genuinely dead
+    // connection fail fast (5s) instead of hanging.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    connectionTimeoutMillis: 5_000,
   })
 
 if (process.env.NODE_ENV !== 'production') globalForRegistry.centralPool = centralPool
@@ -48,6 +58,9 @@ function buildPool(encrypted: string): Pool {
   return new Pool({
     connectionString: decrypt(encrypted),
     ssl: { rejectUnauthorized: false },
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    connectionTimeoutMillis: 5_000,
   })
 }
 
