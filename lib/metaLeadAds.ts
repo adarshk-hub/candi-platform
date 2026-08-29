@@ -26,6 +26,21 @@ export interface MetaLeadFields {
   grade: string | null
 }
 
+// Meta auto-generates each question's internal field `name` from its label
+// text, so a custom "Grade" question can come back as something like
+// "which_grade_is_your_child_in" rather than the literal word "grade" —
+// matching only the exact keys "grade"/"class" misses that. This checks
+// every field for one whose key contains "grade" or "class" anywhere,
+// case-insensitively, so it catches the real question name whatever Meta
+// generated it as. Shared between the live webhook (fetchLeadFields below)
+// and the historical backfill (lib/metaLeadAdsBackfill.ts) — they were
+// drifting into two different (and differently buggy) implementations of
+// what should be the exact same lookup.
+export function findGradeValue(fields: Record<string, string>): string | null {
+  const gradeKey = Object.keys(fields).find((k) => /grade|class/i.test(k))
+  return gradeKey ? fields[gradeKey] || null : null
+}
+
 // Fetches the actual submitted field values for a leadgen_id from the Graph
 // API. Meta's webhook payload only tells you a lead *exists* (its ID); the
 // field data (name/phone/email) requires this separate authenticated call.
@@ -57,14 +72,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     fields[f.name] = f.values?.[0] || ''
   }
 
-  // Meta auto-generates each question's internal `name` from its label
-  // text, so a custom "Grade" question can come back as something like
-  // "which_grade_is_your_child_in" rather than the literal word "grade" —
-  // matching only the exact keys "grade"/"class" (the old behavior) missed
-  // that. This checks every field Meta actually sent back for one whose
-  // key contains "grade" or "class" anywhere, case-insensitively, so it
-  // catches the real question name whatever Meta generated it as.
-  const gradeKey = Object.keys(fields).find((k) => /grade|class/i.test(k))
+  const grade = findGradeValue(fields)
 
   // TEMP DIAGNOSTIC — remove once grade capture is confirmed working end
   // to end. If this fires, it means Meta didn't send back any field whose
@@ -72,7 +80,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
   // no grade/class question at all, or its question is worded in a way
   // that doesn't match either substring (e.g. "standard", "year group").
   // The full field name list here is what to check against.
-  if (!gradeKey) {
+  if (!grade) {
     console.log(`[meta-leads] no grade-like field for leadgen_id ${leadgenId}. Fields received: ${Object.keys(fields).join(', ') || '(none)'}`)
   }
 
@@ -80,6 +88,6 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     fullName: fields.full_name || fields.first_name || 'Unknown',
     whatsappNumber: fields.phone_number || '',
     email: fields.email || null,
-    grade: (gradeKey ? fields[gradeKey] : null) || null,
+    grade,
   }
 }
