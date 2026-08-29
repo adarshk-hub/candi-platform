@@ -17,6 +17,7 @@ const USER_SELECT =
   'SELECT id, email, password_hash, role, client_id, full_name, is_active FROM users WHERE email = $1'
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now()
   const { client: clientNameOrSlug, email, password } = await req.json()
   if (!clientNameOrSlug || !email || !password) {
     return NextResponse.json({ error: 'Client, email and password required' }, { status: 400 })
@@ -27,17 +28,20 @@ export async function POST(req: NextRequest) {
   // database. There is no central/shared login path any more: each session
   // is scoped to exactly one client's data, with no exceptions.
   const client = await resolveClient(clientNameOrSlug)
+  const tResolve = Date.now()
   if (!client) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
 
   const pool = getClientPoolFromRecord(client)
   const result = await pool.query<UserRow>(USER_SELECT, [email])
+  const tUserQuery = Date.now()
   const user = result.rows[0]
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
+  const tBcrypt = Date.now()
   if (!user.is_active) {
     return NextResponse.json({ error: 'This account has been deactivated.' }, { status: 401 })
   }
@@ -64,6 +68,10 @@ export async function POST(req: NextRequest) {
     path: '/',
     maxAge: 60 * 60 * 24 * 7,
   })
+  // TEMP DIAGNOSTIC — remove once we've confirmed where the time goes.
+  console.log(
+    `[login] resolveClient=${tResolve - t0}ms userQuery=${tUserQuery - tResolve}ms bcrypt=${tBcrypt - tUserQuery}ms total=${Date.now() - t0}ms`
+  )
   return res
 }
 
