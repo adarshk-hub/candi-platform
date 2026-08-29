@@ -53,6 +53,16 @@ function NavItem({
     <Link
       href={href}
       title={collapsed ? label : undefined}
+      // Every one of these routes does real server-side DB work on load
+      // (each is its own query() call needing a pooled connection). Next.js
+      // prefetches every visible Link's target by default the instant it
+      // renders — since the whole sidebar is visible on every page, that
+      // was firing 5-8 simultaneous background page loads (and DB
+      // connections) on every single navigation, none of which the person
+      // asked for yet. That's a direct cause of connection-pool
+      // contention, not just wasted work — turning it off means the
+      // sidebar only ever fetches the one page actually being viewed.
+      prefetch={false}
       className={clsx(
         'flex items-center gap-3 rounded-md border-l-2 py-2 text-sm transition-colors',
         collapsed ? 'justify-center border-l-0 px-0' : 'px-3',
@@ -163,13 +173,13 @@ export default function Sidebar({
 
       <div className={clsx('w-full space-y-1 border-t border-border pt-3', collapsed && 'flex flex-col items-center')}>
         {user?.role !== 'client_counsellor' && user?.role !== 'client_staff' && (
-          // client_admin has no access to /settings itself (raw API keys/
-          // access tokens and full user-role management — agency only) so
-          // their Settings link goes straight to Customize, which is the
-          // page they actually have access to, instead of bouncing through
-          // a server redirect on every click.
+          // Everyone with settings access — agency roles included — lands
+          // on Customize (their day-to-day config: Lead Stages,
+          // Counsellors, WhatsApp, etc.) by default rather than the raw
+          // webhook-keys/Users page. Agency roles can still get to that
+          // page via the "← Settings" link inside Customize.
           <NavItem
-            href={user?.role === 'client_admin' ? '/settings/customize' : '/settings'}
+            href="/settings/customize"
             icon={Settings}
             label="Settings"
             active={pathname === '/settings' || pathname === '/settings/customize'}
