@@ -275,7 +275,7 @@ export default function KanbanBoard() {
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : (
-        <div className="flex select-none gap-4 overflow-x-auto pb-4">
+        <div className="flex select-none gap-4 overflow-x-auto pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {COLUMNS.map((col) => {
             const columnLeads = byStage[col.key] || []
             return (
