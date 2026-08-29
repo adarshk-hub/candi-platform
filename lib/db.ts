@@ -34,3 +34,18 @@ export async function centralQuery<T = any>(text: string, params?: any[]): Promi
   const result = await centralPool.query(text, params)
   return result.rows
 }
+
+// Explicit, session-independent version of query() — for background code
+// that already knows exactly which client it's operating on (a webhook that
+// just resolved the client via meta_page_id/api_key, a cron job looping
+// over every client, a backfill given a clientId) rather than inferring it
+// from whoever happens to be logged in. query() silently trusting
+// session.clientId is correct for request handlers a person is logged into,
+// but wrong here — there IS no session in these contexts, and even where
+// there might incidentally be one, this is more honest about which client
+// is actually being written to.
+export async function queryAsClient<T = any>(clientId: string, text: string, params?: any[]): Promise<T[]> {
+  const pool = await getClientPool(clientId)
+  const result = await pool.query(text, params)
+  return result.rows
+}
