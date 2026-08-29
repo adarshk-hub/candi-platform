@@ -18,15 +18,24 @@ const USER_SELECT =
 
 export async function POST(req: NextRequest) {
   const { client: clientNameOrSlug, email, password } = await req.json()
-  if (!clientNameOrSlug || !email || !password) {
+  if (!email || !password) {
+    return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
+  }
+
+  // Leaving "Client" blank resolves against one designated institute
+  // instead of rejecting the request outright — set via env var so it's a
+  // deliberate, reversible choice (e.g. temporarily during a payment
+  // gateway's app-review process, where the reviewer is only ever going to
+  // be given an email/password, never an institute name) rather than a
+  // permanent bypass. Every real customer login still supplies their own
+  // institute name/slug exactly as before; this only ever affects the
+  // blank-client case, and unsetting the env var switches it back off.
+  const effectiveClientNameOrSlug = clientNameOrSlug || process.env.DEFAULT_LOGIN_CLIENT_SLUG
+  if (!effectiveClientNameOrSlug) {
     return NextResponse.json({ error: 'Client, email and password required' }, { status: 400 })
   }
 
-  // Every login — client staff and agency staff alike — resolves a client
-  // by name first, then checks credentials against that client's own
-  // database. There is no central/shared login path any more: each session
-  // is scoped to exactly one client's data, with no exceptions.
-  const client = await resolveClient(clientNameOrSlug)
+  const client = await resolveClient(effectiveClientNameOrSlug)
   if (!client) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   }
