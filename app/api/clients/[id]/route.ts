@@ -1,6 +1,5 @@
-//Re
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
@@ -117,6 +116,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (touched.length === 0) continue
       const described = touched.includes('smtpPass') ? touched.filter((f) => f !== 'smtpPass').concat(['smtpPass']) : touched
       await logSettingsActivity(params.id, session, section, `Updated ${described.join(', ')}`)
+    }
+
+    // Webhook routing (which institute does this Meta Page ID / ad account
+    // belong to?) reads from the central registry, not any one client's own
+    // database — see lib/db.ts and the meta-leads webhook. Mirror these two
+    // specific fields there whenever they change, so a Settings save here
+    // actually takes effect for incoming webhooks and the spend-sync cron,
+    // not just for what this one client's own database shows back.
+    if (body.metaPageId !== undefined || body.metaAdAccountId !== undefined) {
+      const centralSet: string[] = []
+      const centralValues: any[] = []
+      if (body.metaPageId !== undefined) {
+        centralValues.push(body.metaPageId || null)
+        centralSet.push(`meta_page_id = $${centralValues.length}`)
+      }
+      if (body.metaAdAccountId !== undefined) {
+        centralValues.push(body.metaAdAccountId || null)
+        centralSet.push(`meta_ad_account_id = $${centralValues.length}`)
+      }
+      centralValues.push(params.id)
+      await centralQuery(`UPDATE clients SET ${centralSet.join(', ')} WHERE id = $${centralValues.length}`, centralValues)
     }
 
     return NextResponse.json(rows[0])
