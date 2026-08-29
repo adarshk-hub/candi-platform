@@ -38,6 +38,19 @@ export interface ClientRecord {
   database_url_enc: string | null
 }
 
+// Caches resolveClient() results per warm instance — an institute's
+// name/slug → id/database_url_enc mapping essentially never changes, so
+// there's no reason every single login should pay for a full central-DB
+// round trip just to look it up again. 5 minutes is generous enough to
+// help real traffic patterns (the same institute logging in repeatedly)
+// while still picking up a renamed/reconfigured client reasonably quickly.
+const CLIENT_RESOLVE_TTL_MS = 5 * 60 * 1000
+const globalForResolve = globalThis as unknown as {
+  clientResolveCache?: Map<string, { record: ClientRecord | null; expiresAt: number }>
+}
+const clientResolveCache = globalForResolve.clientResolveCache ?? new Map()
+if (process.env.NODE_ENV !== 'production') globalForResolve.clientResolveCache = clientResolveCache
+
 // Matches by slug first, falling back to the display name, both
 // case-insensitive — so "candid-schools" and "Candid Schools" both work
 // from the login form. Also selects database_url_enc so callers who already
@@ -45,13 +58,19 @@ export interface ClientRecord {
 // getClientPoolFromRecord() below instead of paying for a second centralPool
 // round-trip to look it up again.
 export async function resolveClient(nameOrSlug: string): Promise<ClientRecord | null> {
+  const key = nameOrSlug.trim().toLowerCase()
+  const cached = clientResolveCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.record
+
   const result = await centralPool.query<ClientRecord>(
     `SELECT id, name, slug, database_url_enc FROM clients
      WHERE lower(slug) = lower($1) OR lower(name) = lower($1)
      LIMIT 1`,
     [nameOrSlug.trim()]
   )
-  return result.rows[0] ?? null
+  const record = result.rows[0] ?? null
+  clientResolveCache.set(key, { record, expiresAt: Date.now() + CLIENT_RESOLVE_TTL_MS })
+  return record
 }
 
 function buildPool(encrypted: string): Pool {
