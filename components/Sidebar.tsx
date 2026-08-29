@@ -116,7 +116,12 @@ export default function Sidebar({
   return (
     <aside
       className={clsx(
-        'relative flex h-screen shrink-0 flex-col bg-sidebar px-3 py-6 transition-[width]',
+        // sticky top-0: without this, the sidebar just scrolls away with
+        // the rest of the page once main content (e.g. a long leads list)
+        // grows taller than one screen — h-screen alone only fixes its
+        // height, not its position. This pins it to the viewport so it
+        // stays fully visible regardless of how far the content scrolls.
+        'sticky top-0 relative flex h-screen shrink-0 flex-col bg-sidebar px-3 py-6 transition-[width]',
         collapsed ? 'w-16 items-center px-2' : 'w-64'
       )}
     >
@@ -147,7 +152,7 @@ export default function Sidebar({
         </div>
       )}
 
-      <nav className={clsx('w-full flex-1 space-y-1', collapsed && 'mt-2')}>
+      <nav className={clsx('w-full flex-1 space-y-1 overflow-y-auto', collapsed && 'mt-2')}>
         {user?.role !== 'client_counsellor' && (
           <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard'} collapsed={collapsed} />
         )}
