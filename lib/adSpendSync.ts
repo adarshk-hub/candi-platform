@@ -1,4 +1,4 @@
-import { query } from './db'
+import { queryAsClient, centralQuery } from './db'
 import { fetchMetaCampaignSpend, fetchMetaCampaignSpendRange, CampaignSpend } from './metaAdsSpend'
 import { fetchGoogleCampaignSpend } from './googleAdsSpend'
 import { findOrCreateCampaign } from './leadIntake'
@@ -56,7 +56,8 @@ async function applySpendBulk(
   const source = platform === 'meta' ? 'meta_api' : 'google_api'
 
   const distinctPlatformIds = Array.from(new Set(entries.map((e) => e.row.platformCampaignId)))
-  const existing = await query<{ id: string; platform_campaign_id: string }>(
+  const existing = await queryAsClient<{ id: string; platform_campaign_id: string }>(
+    clientId,
     `SELECT id, platform_campaign_id FROM campaigns
      WHERE client_id = $1 AND platform = $2 AND platform_campaign_id = ANY($3::text[])`,
     [clientId, platform, distinctPlatformIds]
@@ -103,7 +104,8 @@ async function applySpendBulk(
   const CHUNK = 2000
   for (let i = 0; i < campaignIds.length; i += CHUNK) {
     const idsSlice = campaignIds.slice(i, i + CHUNK)
-    await query(
+    await queryAsClient(
+      clientId,
       `INSERT INTO ad_spend_weekly (campaign_id, week_starting, spend_amount, source, synced_at)
        SELECT campaign_id, week_starting, spend_amount, source, now()
        FROM UNNEST($1::uuid[], $2::date[], $3::numeric[], $4::text[])
@@ -130,7 +132,12 @@ export async function syncAdSpend(forDate: Date = new Date()): Promise<SyncResul
   const since = weekStarting
   const until = addDays(weekStarting, 6)
 
-  const clients = await query<{
+  // Which client this belongs to, and its ad account IDs, is central
+  // registry data — see lib/db.ts. There's no session here (this runs from
+  // a cron/manual trigger, not a logged-in request), and even if there
+  // were one, "every client with an ad account connected" spans every
+  // institute, not just whichever one a session happens to be scoped to.
+  const clients = await centralQuery<{
     id: string
     meta_ad_account_id: string | null
     google_ads_customer_id: string | null
@@ -165,7 +172,7 @@ export async function backfillMetaAdSpend(weeksBack: number, forDate: Date = new
   const since = addDays(currentWeekMonday, -7 * (weeksBack - 1))
   const until = addDays(currentWeekMonday, 6)
 
-  const clients = await query<{ id: string; meta_ad_account_id: string | null }>(
+  const clients = await centralQuery<{ id: string; meta_ad_account_id: string | null }>(
     `SELECT id, meta_ad_account_id FROM clients WHERE meta_ad_account_id IS NOT NULL`
   )
 
