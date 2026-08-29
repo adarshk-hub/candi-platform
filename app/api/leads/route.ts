@@ -78,18 +78,29 @@ export async function GET(req: NextRequest) {
   // Institutes can set their own preferred page size via Settings >
   // Customize > Display Preferences; agency roles (viewing across clients)
   // and any client without a saved preference fall back to the default.
-  // Run this alongside the count query below — neither depends on the
-  // other's result — instead of waiting on them one at a time.
-  const pageSizeQuery = session.clientId
-    ? query<{ leads_per_page: number }>('SELECT leads_per_page FROM clients WHERE id = $1', [session.clientId])
-    : Promise.resolve([] as { leads_per_page: number }[])
+  //
+  // This used to run as a separate query alongside the count query via
+  // Promise.all, on the theory that two independent queries running
+  // "in parallel" would be faster than sequential. In practice, on a
+  // connection pool that doesn't yet have two warm connections sitting
+  // idle (i.e. most requests), firing two queries at once forces Postgres
+  // to establish two fresh connections simultaneously instead of one —
+  // connection setup (TLS handshake + auth), not query execution, is the
+  // expensive part, so "parallel" here was actually the slow path. Folding
+  // both into one query removes that entirely: one connection, one round
+  // trip, for both pieces of data.
+  params.push(session.clientId)
+  const clientIdParamIndex = params.length
 
-  const [pageSizeRows, [{ count }]] = await Promise.all([
-    pageSizeQuery,
-    query<{ count: string }>(`SELECT COUNT(*)::int AS count FROM leads l ${whereSql}`, params),
-  ])
+  const [combined] = await query<{ leads_per_page: number | null; count: number }>(
+    `SELECT
+       (SELECT leads_per_page FROM clients WHERE id = $${clientIdParamIndex}) AS leads_per_page,
+       (SELECT COUNT(*)::int FROM leads l ${whereSql}) AS count`,
+    params
+  )
   const tCount = Date.now()
-  const PAGE_SIZE = pageSizeRows[0]?.leads_per_page || DEFAULT_PAGE_SIZE
+  const PAGE_SIZE = combined?.leads_per_page || DEFAULT_PAGE_SIZE
+  const count = combined?.count ?? 0
 
   const offset = (page - 1) * PAGE_SIZE
   const rows = await query(
@@ -105,7 +116,7 @@ export async function GET(req: NextRequest) {
   )
   // TEMP DIAGNOSTIC — remove once we've confirmed where the time goes.
   console.log(
-    `[leads] pageSize+count=${tCount - t0}ms mainSelect=${Date.now() - tCount}ms total=${Date.now() - t0}ms`
+    `[leads] pageSize+count=${tCount - t0}ms mainSelect=${Date.now() - tCount}ms total=${Date.now() - t0}ms (merged query)`
   )
 
   return NextResponse.json({ leads: rows, total: Number(count), page, pageSize: PAGE_SIZE })
