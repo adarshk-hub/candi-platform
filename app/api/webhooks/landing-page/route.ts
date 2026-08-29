@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import { query } from '@/lib/db'
+import { centralQuery } from '@/lib/db'
 import { findOrCreateLead } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
 import { startSequence } from '@/lib/waSequenceEngine'
@@ -17,7 +17,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing Authorization: Bearer <api_key>' }, { status: 401 })
   }
 
-  const client = (await query('SELECT id FROM clients WHERE api_key = $1', [apiKey]))[0]
+  // Same reasoning as the meta-leads webhook: there's no session here to
+  // infer a client from — figuring out which institute this belongs to is
+  // exactly what this lookup does, so it has to go to the central registry
+  // directly rather than the ambient per-session query().
+  const client = (await centralQuery('SELECT id FROM clients WHERE api_key = $1', [apiKey]))[0]
   if (!client) {
     return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
   }
@@ -74,4 +78,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, leadId: lead.id, created, duplicate })
-}
+}s
