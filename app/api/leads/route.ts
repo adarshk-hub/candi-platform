@@ -4,128 +4,32 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
 import { startSequence } from '@/lib/waSequenceEngine'
+import { fetchLeadsPage } from '@/lib/leadsQuery'
 
-const DEFAULT_PAGE_SIZE = 250
+function splitParam(v: string | null): string[] {
+  return (v || '').split(',').map((s) => s.trim()).filter(Boolean)
+}
 
+// Client-side re-fetches only (filtering, searching, paging, refresh after
+// an action). The very first paint of /leads doesn't come through here at
+// all — the server-rendered page calls fetchLeadsPage() directly during
+// render instead, so there's no empty flash waiting on a browser round
+// trip. See app/leads/page.tsx.
 export async function GET(req: NextRequest) {
-  const t0 = Date.now()
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const sp = req.nextUrl.searchParams
-  const page = Math.max(1, Number(sp.get('page') || '1'))
-  const search = sp.get('search')?.trim() || ''
-  const tab = sp.get('tab') || ''
+  const result = await fetchLeadsPage(session, {
+    page: Math.max(1, Number(sp.get('page') || '1')),
+    search: sp.get('search')?.trim() || '',
+    tab: sp.get('tab') || '',
+    stage: splitParam(sp.get('stage')),
+    source: splitParam(sp.get('source')),
+    grade: splitParam(sp.get('grade')),
+  })
 
-  const where: string[] = []
-  const params: any[] = []
-
-  if (session.role === 'client_admin') {
-    params.push(session.clientId)
-    where.push(`l.client_id = $${params.length}`)
-  } else if (session.role === 'client_counsellor') {
-    params.push(session.id)
-    where.push(`l.assigned_counsellor_id = $${params.length}`)
-  }
-
-  if (search) {
-    params.push(`%${search}%`)
-    const i = params.length
-    where.push(`(l.full_name ILIKE $${i} OR l.child_name ILIKE $${i} OR l.whatsapp_number ILIKE $${i})`)
-  }
-
-  // Stage / Source / Grade filters — each is a comma-separated list of
-  // values from the leads list toolbar's Filter panel; a lead matches if
-  // its value is any one of the selected values (OR within a filter,
-  // AND across different filters).
-  const stageFilter = (sp.get('stage') || '').split(',').map((v) => v.trim()).filter(Boolean)
-  const sourceFilter = (sp.get('source') || '').split(',').map((v) => v.trim()).filter(Boolean)
-  const gradeFilter = (sp.get('grade') || '').split(',').map((v) => v.trim()).filter(Boolean)
-
-  if (stageFilter.length > 0) {
-    params.push(stageFilter)
-    where.push(`l.pipeline_stage = ANY($${params.length})`)
-  }
-  if (sourceFilter.length > 0) {
-    params.push(sourceFilter)
-    where.push(`l.source = ANY($${params.length})`)
-  }
-  if (gradeFilter.length > 0) {
-    params.push(gradeFilter)
-    where.push(`l.grade = ANY($${params.length})`)
-  }
-
-  if (tab === 'enrolled') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'won')`
-    )
-  } else if (tab === 'hot') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'hot')`
-    )
-  } else if (tab === 'warm') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'warm')`
-    )
-  } else if (tab === 'cold') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'cold')`
-    )
-  }
-
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-
-  // Institutes can set their own preferred page size via Settings >
-  // Customize > Display Preferences; agency roles (viewing across clients)
-  // and any client without a saved preference fall back to the default.
-  //
-  // This used to run as a separate query alongside the count query via
-  // Promise.all, on the theory that two independent queries running
-  // "in parallel" would be faster than sequential. In practice, on a
-  // connection pool that doesn't yet have two warm connections sitting
-  // idle (i.e. most requests), firing two queries at once forces Postgres
-  // to establish two fresh connections simultaneously instead of one —
-  // connection setup (TLS handshake + auth), not query execution, is the
-  // expensive part, so "parallel" here was actually the slow path. Folding
-  // both into one query removes that entirely: one connection, one round
-  // trip, for both pieces of data.
-  //
-  // Uses its own params array (params + clientId) rather than pushing onto
-  // the shared `params` — mainSelect below reuses `params` as-is for its
-  // own query, which only ever expects exactly the placeholders `whereSql`
-  // references; handing it a longer array with an extra untracked value
-  // is asking for trouble rather than something to lean on.
-  const combinedParams = [...params, session.clientId]
-  const clientIdParamIndex = combinedParams.length
-
-  const [combined] = await query<{ leads_per_page: number | null; count: number }>(
-    `SELECT
-       (SELECT leads_per_page FROM clients WHERE id = $${clientIdParamIndex}) AS leads_per_page,
-       (SELECT COUNT(*)::int FROM leads l ${whereSql}) AS count`,
-    combinedParams
-  )
-  const tCount = Date.now()
-  const PAGE_SIZE = combined?.leads_per_page || DEFAULT_PAGE_SIZE
-  const count = combined?.count ?? 0
-
-  const offset = (page - 1) * PAGE_SIZE
-  const rows = await query(
-    `SELECT l.id, l.lead_number, l.client_id, l.full_name, l.child_name, l.whatsapp_number, l.grade, l.pipeline_stage,
-            l.source, l.lead_score, l.created_at, l.assigned_counsellor_id,
-            u.full_name AS counsellor_name
-     FROM leads l
-     LEFT JOIN users u ON u.id = l.assigned_counsellor_id
-     ${whereSql}
-     ORDER BY l.created_at DESC
-     LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
-    params
-  )
-  // TEMP DIAGNOSTIC — remove once we've confirmed where the time goes.
-  console.log(
-    `[leads] pageSize+count=${tCount - t0}ms mainSelect=${Date.now() - tCount}ms total=${Date.now() - t0}ms (merged query)`
-  )
-
-  return NextResponse.json({ leads: rows, total: Number(count), page, pageSize: PAGE_SIZE })
+  return NextResponse.json(result)
 }
 
 // Manual lead entry from the "Add Lead" button — the counterpart to the
