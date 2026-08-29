@@ -66,6 +66,16 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
   // catches the real question name whatever Meta generated it as.
   const gradeKey = Object.keys(fields).find((k) => /grade|class/i.test(k))
 
+  // TEMP DIAGNOSTIC — remove once grade capture is confirmed working end
+  // to end. If this fires, it means Meta didn't send back any field whose
+  // name contains "grade" or "class" for this lead — either the form has
+  // no grade/class question at all, or its question is worded in a way
+  // that doesn't match either substring (e.g. "standard", "year group").
+  // The full field name list here is what to check against.
+  if (!gradeKey) {
+    console.log(`[meta-leads] no grade-like field for leadgen_id ${leadgenId}. Fields received: ${Object.keys(fields).join(', ') || '(none)'}`)
+  }
+
   return {
     fullName: fields.full_name || fields.first_name || 'Unknown',
     whatsappNumber: fields.phone_number || '',
