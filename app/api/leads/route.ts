@@ -89,14 +89,20 @@ export async function GET(req: NextRequest) {
   // expensive part, so "parallel" here was actually the slow path. Folding
   // both into one query removes that entirely: one connection, one round
   // trip, for both pieces of data.
-  params.push(session.clientId)
-  const clientIdParamIndex = params.length
+  //
+  // Uses its own params array (params + clientId) rather than pushing onto
+  // the shared `params` — mainSelect below reuses `params` as-is for its
+  // own query, which only ever expects exactly the placeholders `whereSql`
+  // references; handing it a longer array with an extra untracked value
+  // is asking for trouble rather than something to lean on.
+  const combinedParams = [...params, session.clientId]
+  const clientIdParamIndex = combinedParams.length
 
   const [combined] = await query<{ leads_per_page: number | null; count: number }>(
     `SELECT
        (SELECT leads_per_page FROM clients WHERE id = $${clientIdParamIndex}) AS leads_per_page,
        (SELECT COUNT(*)::int FROM leads l ${whereSql}) AS count`,
-    params
+    combinedParams
   )
   const tCount = Date.now()
   const PAGE_SIZE = combined?.leads_per_page || DEFAULT_PAGE_SIZE
