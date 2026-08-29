@@ -1,270 +1,187 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { queryAsClient, centralQuery } from '@/lib/db'
-import { findOrCreateLead } from '@/lib/leadIntake'
-import { verifySignature } from '@/lib/metaLeadAds'
+const GRAPH_API_URL = 'https://graph.facebook.com/v19.0'
+import { fetchPageAccessToken } from './metaPages'
+import { findGradeValue } from './metaLeadAds'
+import { centralQuery } from './db'
+import { findOrCreateLead, findOrCreateCampaign } from './leadIntake'
 
-// Meta's one-time subscription handshake for the WhatsApp Business
-// Account's webhook — same pattern as /api/webhooks/meta-leads, but this
-// is a separate endpoint because WhatsApp and Lead Ads are subscribed as
-// independent webhook fields in the Meta App dashboard.
-export async function GET(req: NextRequest) {
-  const sp = req.nextUrl.searchParams
-  const mode = sp.get('hub.mode')
-  const token = sp.get('hub.verify_token')
-  const challenge = sp.get('hub.challenge')
-
-  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN
-  if (mode === 'subscribe' && expectedToken && token === expectedToken) {
-    return new NextResponse(challenge, { status: 200 })
-  }
-  return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
+export interface HistoricalMetaLead {
+  leadgenId: string
+  createdTime: string // ISO
+  formId: string
+  formName: string
+  fullName: string
+  whatsappNumber: string
+  email: string | null
+  grade: string | null
+  campaignId: string | null
+  adsetId: string | null
+  adId: string | null
 }
 
-// One shared webhook URL handles every client's WABA — Meta posts to a
-// single App-level endpoint regardless of how many phone numbers are
-// subscribed under it, so routing to the right client happens per-message
-// via metadata.phone_number_id (see clients.meta_whatsapp_phone_number_id).
-export async function POST(req: NextRequest) {
-  const rawBody = await req.text()
-  const signature = req.headers.get('x-hub-signature-256')
+// IMPORTANT — a hard limit on Meta's side, not something any code here can
+// work around: Meta only retains Lead Ads submission data for 90 days.
+// Anything older than that has already been permanently purged from Meta's
+// systems by the time this runs, regardless of permissions or token
+// validity — the API will simply not return it. If Candid Schools' leads
+// predate that window, this can only ever recover the last ~90 days, not
+// their full history.
+const META_LEAD_RETENTION_DAYS = 90
 
-  if (!verifySignature(rawBody, signature)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+function fieldValue(fieldData: any[], name: string): string | null {
+  const f = fieldData.find((x) => x.name === name)
+  return f?.values?.[0] || null
+}
+
+// Same fuzzy grade-field detection the live webhook uses (see
+// lib/metaLeadAds.ts's findGradeValue) — this used to be a separate,
+// exact-match-only "grade"/"class" lookup here, which is very likely why
+// grade wasn't populating for leads pulled in through backfill even after
+// the live webhook path got the fuzzy match fix.
+function findGradeFromFieldData(fieldData: any[]): string | null {
+  const fields: Record<string, string> = {}
+  for (const f of fieldData) fields[f.name] = f.values?.[0] || ''
+  return findGradeValue(fields)
+}
+
+// Lists every lead form ever created on the Page, then pages through every
+// historical submission for each one. Requires a token with leads_retrieval
+// permission that's been added as a partner on the Page itself (Business
+// Settings > Accounts > Pages > that Page > Partners) — the same kind of
+// asset-assignment step already done for the ad account, just on the Page
+// instead.
+export async function fetchHistoricalMetaLeads(pageId: string): Promise<HistoricalMetaLead[]> {
+  // (#190) "This method must be called with a Page Access Token" — the raw
+  // System User token isn't accepted here even with full permissions; see
+  // fetchPageAccessToken's comment in metaPages.ts for why.
+  const token = await fetchPageAccessToken(pageId)
+
+  const forms: { id: string; name: string }[] = []
+  let formsUrl: string | null = `${GRAPH_API_URL}/${pageId}/leadgen_forms?fields=id,name&limit=100&access_token=${token}`
+  while (formsUrl) {
+    const res: Response = await fetch(formsUrl)
+    if (!res.ok) throw new Error(`Graph API (leadgen_forms) returned ${res.status}: ${await res.text()}`)
+    const json: any = await res.json()
+    for (const f of json.data || []) forms.push({ id: f.id, name: f.name })
+    formsUrl = json.paging?.next || null
   }
 
-  const payload = JSON.parse(rawBody)
-  const results: any[] = []
+  const results: HistoricalMetaLead[] = []
 
-  for (const entry of payload.entry || []) {
-    for (const change of entry.changes || []) {
-      // Template approval/rejection is a WABA-level event (keyed by
-      // entry.id = the WABA ID), not tied to a phone_number_id like
-      // message events are — handled separately below.
-      if (change.field === 'message_template_status_update') {
-        results.push(await handleTemplateStatusUpdate(entry.id, change.value || {}))
-        continue
+  for (const form of forms) {
+    let leadsUrl: string | null =
+      `${GRAPH_API_URL}/${form.id}/leads?fields=id,created_time,field_data,ad_id,adset_id,campaign_id&limit=100&access_token=${token}`
+    while (leadsUrl) {
+      const res: Response = await fetch(leadsUrl)
+      if (!res.ok) {
+        // A single bad/expired form shouldn't kill the whole backfill —
+        // log and move on to the next form.
+        console.error(`[meta-backfill] leads fetch failed for form ${form.id}: ${res.status} ${await res.text()}`)
+        break
       }
-
-      if (change.field !== 'messages') continue
-      const value = change.value || {}
-      const phoneNumberId = value.metadata?.phone_number_id
-
-      // Central registry lookup — there's no session on an incoming
-      // webhook to infer a client from; this IS what figures out which
-      // client the message belongs to.
-      const client = phoneNumberId
-        ? (await centralQuery('SELECT id FROM clients WHERE meta_whatsapp_phone_number_id = $1', [phoneNumberId]))[0]
-        : null
-
-      if (!client) {
-        results.push({ phoneNumberId, error: 'No client mapped to this WhatsApp phone_number_id' })
-        continue
+      const json: any = await res.json()
+      for (const lead of json.data || []) {
+        const fieldData = lead.field_data || []
+        results.push({
+          leadgenId: lead.id,
+          createdTime: lead.created_time,
+          formId: form.id,
+          formName: form.name,
+          fullName: fieldValue(fieldData, 'full_name') || fieldValue(fieldData, 'first_name') || 'Unknown',
+          whatsappNumber: fieldValue(fieldData, 'phone_number') || '',
+          email: fieldValue(fieldData, 'email'),
+          grade: findGradeFromFieldData(fieldData),
+          campaignId: lead.campaign_id || null,
+          adsetId: lead.adset_id || null,
+          adId: lead.ad_id || null,
+        })
       }
-
-      for (const msg of value.messages || []) {
-        results.push(await handleInboundMessage(client.id, msg))
-      }
-
-      for (const status of value.statuses || []) {
-        results.push(await handleStatusUpdate(client.id, status))
-      }
+      leadsUrl = json.paging?.next || null
     }
   }
 
-  return NextResponse.json({ ok: true, results })
+  return results
 }
 
-async function handleInboundMessage(clientId: string, msg: any) {
-  const from: string = msg.from
-  const wamid: string = msg.id
-  const text: string = msg.text?.body || msg[msg.type]?.caption || ''
-  const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date()
+export { META_LEAD_RETENTION_DAYS }
 
-  const { lead, created, duplicate } = await findOrCreateLead({
-    clientId,
-    fullName: `WhatsApp Lead ${from.slice(-4)}`,
-    whatsappNumber: from,
-    source: 'facebook',
-    entryType: 'whatsapp_ctc',
-    externalRef: `meta_wa:${wamid}`,
-    rawPayload: msg,
-  })
-
-  const msgRows = await queryAsClient(
-    clientId,
-    `INSERT INTO whatsapp_messages
-       (lead_id, direction, message_type, body, status, wamid, external_message_id, raw_payload, created_at)
-     VALUES ($1, 'inbound', 'session', $2, 'delivered', $3, $3, $4, $5)
-     ON CONFLICT (external_message_id) DO NOTHING
-     RETURNING id`,
-    [lead.id, text, wamid, JSON.stringify(msg), timestamp]
-  )
-
-  if (msgRows.length > 0) {
-    await applyReplyScoreBonus(clientId, lead.id)
-  }
-
-  return { leadId: lead.id, created, duplicate, wamid }
+export interface BackfillOneClientResult {
+  clientId: string
+  ok: boolean
+  error?: string
+  totalFound?: number
+  created?: number
+  duplicate?: number
 }
 
-// Reply-tier scoring: if this lead has an active/recent sequence, base the
-// bonus on elapsed time since that sequence's Day 0 send (per spec); if
-// there's no sequence (e.g. reply to a manual message), fall back to
-// "reply within 1hr of last outbound" the way the Aisensy path worked.
-async function applyReplyScoreBonus(clientId: string, leadId: string): Promise<void> {
-  const lead = (await queryAsClient(clientId, 'SELECT wa_sequence_id, engagement_score FROM leads WHERE id = $1', [leadId]))[0]
-  if (!lead) return
-
-  let day0SentAt: string | null = null
-  if (lead.wa_sequence_id) {
-    const day0 = (
-      await queryAsClient(
-        clientId,
-        `SELECT sent_at FROM wa_sequence_messages WHERE sequence_id = $1 AND day_number = 0 AND status = 'sent'`,
-        [lead.wa_sequence_id]
-      )
-    )[0]
-    day0SentAt = day0?.sent_at || null
+// The actual "pull historical Meta leads and create/merge them" flow for
+// one client — shared by the session-gated per-client route (the Dashboard
+// "Backfill Meta Lead Ads leads" button) and the secret-gated cron route
+// that loops over every client. Session-independent throughout: takes an
+// explicit clientId and meta_page_id rather than inferring either from a
+// logged-in session, since the cron path has no session at all.
+export async function backfillMetaLeadsForClient(clientId: string, metaPageId: string): Promise<BackfillOneClientResult> {
+  let historicalLeads: HistoricalMetaLead[]
+  try {
+    historicalLeads = await fetchHistoricalMetaLeads(metaPageId)
+  } catch (err: any) {
+    return { clientId, ok: false, error: err?.message || 'Failed to fetch historical leads from Meta' }
   }
 
-  if (!day0SentAt) {
-    const lastOutbound = (
-      await queryAsClient(
-        clientId,
-        `SELECT created_at FROM whatsapp_messages
-         WHERE lead_id = $1 AND direction = 'outbound'
-         ORDER BY created_at DESC LIMIT 1`,
-        [leadId]
-      )
-    )[0]
-    day0SentAt = lastOutbound?.created_at || null
-  }
+  let created = 0
+  let duplicate = 0
+  const campaignIdCache = new Map<string, string>()
 
-  if (!day0SentAt) return
+  for (const hl of historicalLeads) {
+    let internalCampaignId: string | null = null
+    if (hl.campaignId) {
+      const cacheKey = `${hl.campaignId}:${hl.adsetId}:${hl.adId}`
+      internalCampaignId =
+        campaignIdCache.get(cacheKey) ||
+        (await findOrCreateCampaign({
+          clientId,
+          platform: 'meta',
+          platformCampaignId: hl.campaignId,
+          platformAdsetId: hl.adsetId,
+          platformAdId: hl.adId,
+          adSetLabel: hl.adsetId ? `Ad set ${hl.adsetId}` : null,
+        }))
+      campaignIdCache.set(cacheKey, internalCampaignId)
+    }
 
-  const elapsedMs = Date.now() - new Date(day0SentAt).getTime()
-  const oneHour = 60 * 60 * 1000
-  const twentyFourHours = 24 * oneHour
-
-  let bonus = 0
-  let label = ''
-  if (elapsedMs <= oneHour) {
-    bonus = 2
-    label = 'Replied within 1 hour of Day 0 — engagement +2.'
-  } else if (elapsedMs <= twentyFourHours) {
-    bonus = 1
-    label = 'Replied within 24 hours of Day 0 — engagement +1.'
-  } else {
-    return
-  }
-
-  await queryAsClient(clientId, 'UPDATE leads SET engagement_score = LEAST(3, engagement_score + $1) WHERE id = $2', [
-    bonus,
-    leadId,
-  ])
-  await queryAsClient(
-    clientId,
-    `INSERT INTO activity_log (lead_id, activity_type, title, description)
-     VALUES ($1, 'system', 'Engagement Score Updated', $2)`,
-    [leadId, label]
-  )
-
-  // Recalculate tier — if urgency + program_fit + engagement now clears
-  // the hot threshold, flip lead_tier so Kanban/list views reflect it
-  // immediately rather than waiting for the next full recompute.
-  const scored = (
-    await queryAsClient(
+    const result = await findOrCreateLead({
       clientId,
-      `SELECT urgency_score, program_fit_score, engagement_score FROM leads WHERE id = $1`,
-      [leadId]
-    )
-  )[0]
-  if (scored) {
-    const total = (scored.urgency_score || 0) + (scored.program_fit_score || 0) + (scored.engagement_score || 0)
-    if (total >= 6) {
-      await queryAsClient(clientId, `UPDATE leads SET lead_tier = 'hot' WHERE id = $1`, [leadId])
-    }
+      fullName: hl.fullName,
+      whatsappNumber: hl.whatsappNumber,
+      email: hl.email,
+      grade: hl.grade,
+      source: 'facebook',
+      entryType: 'meta_form_backfill',
+      campaignId: internalCampaignId,
+      externalRef: `meta:${hl.leadgenId}`,
+      rawPayload: { formId: hl.formId, formName: hl.formName, backfilled: true, originalCreatedTime: hl.createdTime },
+      createdAt: hl.createdTime,
+    })
+
+    if (result.created) created++
+    else duplicate++
   }
+
+  return { clientId, ok: true, totalFound: historicalLeads.length, created, duplicate }
 }
 
-async function handleStatusUpdate(clientId: string, status: any) {
-  const wamid: string = status.id
-  const newStatus: string = status.status // sent | delivered | read | failed
-
-  const validStatuses = ['sent', 'delivered', 'read', 'failed']
-  if (!validStatuses.includes(newStatus)) {
-    return { wamid, skipped: true, reason: `unrecognized status ${newStatus}` }
-  }
-
-  const rows = await queryAsClient(
-    clientId,
-    `UPDATE whatsapp_messages SET status = $1 WHERE wamid = $2 OR external_message_id = $2 RETURNING id, lead_id`,
-    [newStatus, wamid]
+// Runs backfillMetaLeadsForClient for every client that has a Meta Page ID
+// configured — the cron entry point. Client list comes from the central
+// registry (see lib/db.ts), same reasoning as adSpendSync: this needs every
+// institute, not whichever one a session happens to be scoped to, and a
+// cron trigger has no session at all.
+export async function backfillMetaLeadsForAllClients(): Promise<BackfillOneClientResult[]> {
+  const clients = await centralQuery<{ id: string; meta_page_id: string | null }>(
+    `SELECT id, meta_page_id FROM clients WHERE meta_page_id IS NOT NULL`
   )
-
-  await queryAsClient(
-    clientId,
-    `UPDATE wa_sequence_messages SET status = CASE WHEN $1 = 'failed' THEN 'failed' ELSE status END WHERE wamid = $2`,
-    [newStatus, wamid]
-  )
-
-  if (rows.length === 0) {
-    return { wamid, updated: false }
+  const results: BackfillOneClientResult[] = []
+  for (const client of clients) {
+    if (!client.meta_page_id) continue
+    results.push(await backfillMetaLeadsForClient(client.id, client.meta_page_id))
   }
-  return { wamid, updated: true, leadId: rows[0].lead_id }
-}
-
-// Pushes template approval/rejection into wa_templates the moment Meta
-// decides it — this is what makes the Templates table in Settings show
-// "approved" in real time instead of only after someone clicks "Check
-// availability" (app/api/templates/sync/[clientId], still kept as a
-// manual backup/backfill path in case this webhook is ever missed).
-//
-// Meta's event values are a wider set than our own status column
-// supports (APPROVED, REJECTED, PENDING, PENDING_DELETION, IN_APPEAL,
-// PAUSED, DISABLED, FLAGGED...) — wa_templates.status only has
-// pending/approved/rejected (see scripts/meta-whatsapp-migration.sql),
-// so anything other than an explicit APPROVED/REJECTED collapses to
-// 'pending' rather than widening the schema for states this app doesn't
-// otherwise act on.
-async function handleTemplateStatusUpdate(wabaId: string, value: any) {
-  const event = String(value.event || '').toUpperCase()
-  const templateName = value.message_template_name
-  const metaTemplateId = value.message_template_id ? String(value.message_template_id) : null
-
-  if (!templateName) {
-    return { wabaId, skipped: true, reason: 'missing message_template_name' }
-  }
-
-  // Central registry lookup, same reasoning as the messages path above —
-  // waba_id is mirrored onto the central clients row specifically so this
-  // routing lookup works without needing a session (see
-  // app/api/clients/[id]/whatsapp-config/route.ts).
-  const client = (await centralQuery('SELECT id FROM clients WHERE waba_id = $1', [wabaId]))[0]
-  if (!client) {
-    return { wabaId, templateName, error: 'No client mapped to this WABA_id' }
-  }
-
-  let newStatus: 'pending' | 'approved' | 'rejected' = 'pending'
-  if (event === 'APPROVED') newStatus = 'approved'
-  else if (event === 'REJECTED') newStatus = 'rejected'
-
-  const rejectionReason = event === 'REJECTED' ? value.reason || null : null
-
-  const rows = await queryAsClient(
-    client.id,
-    `UPDATE wa_templates
-     SET status = $1::varchar,
-         rejection_reason = $2,
-         meta_template_id = COALESCE($3, meta_template_id),
-         approved_at = CASE WHEN $1::varchar = 'approved' THEN now() ELSE approved_at END
-     WHERE client_id = $4 AND name = $5
-     RETURNING id`,
-    [newStatus, rejectionReason, metaTemplateId, client.id, templateName]
-  )
-
-  if (rows.length === 0) {
-    return { wabaId, templateName, updated: false, reason: 'No matching wa_templates row for this client/name' }
-  }
-  return { wabaId, templateName, updated: true, status: newStatus }
+  return results
 }
