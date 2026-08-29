@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { encrypt } from '@/lib/waEncryption'
@@ -70,10 +70,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       )
     )[0]
 
-    // Keep the webhook's client-lookup column in sync so inbound messages
-    // for this phone_number_id route to the right client immediately.
+    // Keep the webhook's client-lookup columns in sync so inbound
+    // WhatsApp messages and template status updates route to the right
+    // client immediately. Webhook routing reads from the central registry
+    // (no session exists on an incoming webhook to infer a client from —
+    // see lib/db.ts and app/api/webhooks/meta-whatsapp/route.ts), so this
+    // has to mirror there explicitly rather than only updating this
+    // client's own local copy.
     await query('UPDATE clients SET meta_whatsapp_phone_number_id = $1 WHERE id = $2', [
       phoneNumberId,
+      params.id,
+    ])
+    await centralQuery('UPDATE clients SET meta_whatsapp_phone_number_id = $1, waba_id = $2 WHERE id = $3', [
+      phoneNumberId,
+      wabaId,
       params.id,
     ])
 
