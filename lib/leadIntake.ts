@@ -1,5 +1,5 @@
 //Re
-import { query } from './db'
+import { queryAsClient } from './db'
 import { fetchMetaObjectName } from './metaAdsSpend'
 
 export function normalizePhone(raw: string): string {
@@ -50,7 +50,7 @@ export interface IntakeResult {
 // or resetting it.
 export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult> {
   if (input.externalRef) {
-    const existingByRef = await query('SELECT * FROM leads WHERE external_ref = $1', [input.externalRef])
+    const existingByRef = await queryAsClient(input.clientId, 'SELECT * FROM leads WHERE external_ref = $1', [input.externalRef])
     if (existingByRef[0]) {
       return { lead: existingByRef[0], created: false, duplicate: false }
     }
@@ -60,7 +60,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
   // Backed by the unique index idx_leads_client_normalized_phone on the
   // generated/stored normalized_phone column — an index lookup, not a
   // per-row regex scan.
-  const candidates = await query(
+  const candidates = await queryAsClient(
+    input.clientId,
     `SELECT * FROM leads WHERE client_id = $1 AND normalized_phone = $2
      ORDER BY created_at ASC LIMIT 1`,
     [input.clientId, normalized]
@@ -80,7 +81,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
   // with 23505, which we catch below and fold into a merge instead of
   // letting it surface as a 500.
   try {
-    const rows = await query(
+    const rows = await queryAsClient(
+      input.clientId,
       `INSERT INTO leads (
         client_id, campaign_id, full_name, whatsapp_number, email, grade,
         source, entry_type, external_ref, raw_payload, service_interested_in,
@@ -107,7 +109,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
     )
     const lead = rows[0]
 
-    await query(
+    await queryAsClient(
+      input.clientId,
       `INSERT INTO activity_log (lead_id, activity_type, title, description)
        VALUES ($1, 'system', 'Lead Created', $2)`,
       [lead.id, `New lead created: ${input.fullName} - ${input.whatsappNumber} from ${input.source} (${input.entryType})`]
@@ -116,7 +119,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
     return { lead, created: true, duplicate: false }
   } catch (err: any) {
     if (err?.code === '23505' && String(err?.constraint || '').includes('idx_leads_client_normalized_phone')) {
-      const [existing] = await query(
+      const [existing] = await queryAsClient(
+        input.clientId,
         `SELECT * FROM leads WHERE client_id = $1 AND normalized_phone = $2
          ORDER BY created_at ASC LIMIT 1`,
         [input.clientId, normalized]
@@ -131,7 +135,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
 }
 
 async function logDuplicateTouch(leadId: string, input: IntakeInput): Promise<void> {
-  await query(
+  await queryAsClient(
+    input.clientId,
     `INSERT INTO activity_log (lead_id, activity_type, title, description)
      VALUES ($1, 'system', 'Duplicate touch received', $2)`,
     [
@@ -156,7 +161,8 @@ export async function findOrCreateCampaign(params: {
   adSetLabel?: string | null
   creativeAngle?: string | null
 }): Promise<string> {
-  const existing = await query(
+  const existing = await queryAsClient(
+    params.clientId,
     `SELECT id FROM campaigns
      WHERE client_id = $1 AND platform = $2 AND platform_campaign_id = $3
        AND platform_adset_id IS NOT DISTINCT FROM $4
@@ -180,7 +186,8 @@ export async function findOrCreateCampaign(params: {
   // violation — a second concurrent webhook for a brand-new campaign would
   // 500 instead of just resolving to the row the first request created.
   try {
-    const rows = await query(
+    const rows = await queryAsClient(
+      params.clientId,
       `INSERT INTO campaigns (
         client_id, platform, display_name, ad_set_label, creative_angle,
         platform_campaign_id, platform_adset_id, platform_ad_id
@@ -204,7 +211,8 @@ export async function findOrCreateCampaign(params: {
     return rows[0].id
   } catch (err: any) {
     if (err?.code === '23505') {
-      const retry = await query(
+      const retry = await queryAsClient(
+        params.clientId,
         `SELECT id FROM campaigns
          WHERE client_id = $1 AND platform = $2 AND platform_campaign_id = $3
            AND platform_adset_id IS NOT DISTINCT FROM $4
