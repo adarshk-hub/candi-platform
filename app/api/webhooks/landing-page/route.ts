@@ -78,4 +78,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, leadId: lead.id, created, duplicate })
-}s
+}
