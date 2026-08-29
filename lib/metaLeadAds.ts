@@ -24,6 +24,19 @@ export interface MetaLeadFields {
   whatsappNumber: string
   email: string | null
   grade: string | null
+  // Meta Lead Ads forms can run on either placement — same form, same
+  // campaign, but each individual submission came from whichever app the
+  // person was actually using. Previously hardcoded to 'facebook' for
+  // every lead regardless of where it really came from.
+  source: 'facebook' | 'instagram'
+}
+
+// Meta's Graph API returns 'fb' or 'ig' for a lead's platform field.
+// Falls back to 'facebook' for anything unrecognized (a future placement
+// value Meta adds, or the field being absent) rather than leaving it
+// undefined — better to default to the more common case than crash.
+export function mapPlatform(raw: string | undefined | null): 'facebook' | 'instagram' {
+  return raw === 'ig' ? 'instagram' : 'facebook'
 }
 
 // Meta auto-generates each question's internal field `name` from its label
@@ -58,11 +71,16 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
       whatsappNumber: '9000000000',
       email: null,
       grade: null,
+      source: 'facebook',
     }
   }
 
   const token = await fetchPageAccessToken(pageId)
-  const res = await fetch(`${GRAPH_API_URL}/${leadgenId}?access_token=${token}`)
+  // Explicitly requesting `platform` — without listing fields, the default
+  // set Graph API returns for a leadgen object doesn't reliably include it,
+  // which is why every lead was silently defaulting to 'facebook' before
+  // regardless of whether it actually came from Instagram.
+  const res = await fetch(`${GRAPH_API_URL}/${leadgenId}?fields=field_data,platform&access_token=${token}`)
   if (!res.ok) {
     throw new Error(`Graph API returned ${res.status}: ${await res.text()}`)
   }
@@ -89,5 +107,6 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     whatsappNumber: fields.phone_number || '',
     email: fields.email || null,
     grade,
+    source: mapPlatform(data.platform),
   }
 }
