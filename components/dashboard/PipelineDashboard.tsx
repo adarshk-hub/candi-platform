@@ -183,7 +183,9 @@ function CampaignTable({
                       <ChevronRight size={14} className="text-muted2" />
                       {c.displayName}
                       {c.memberIds.length > 1 && (
-                        <span className="ml-1 text-xs text-muted2">({c.memberIds.length} campaigns)</span>
+                        <span className="ml-1 text-xs text-muted2" title="Meta tracks separate ad sets/ads within the same campaign as distinct entries internally — these are all the same campaign, just different ad variations within it.">
+                          ({c.memberIds.length} ad variations)
+                        </span>
                       )}
                     </span>
                   </td>
