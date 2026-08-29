@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { queryAsClient, centralQuery } from '@/lib/db'
 import { findOrCreateLead } from '@/lib/leadIntake'
 import { verifySignature } from '@/lib/metaLeadAds'
 
@@ -49,8 +49,11 @@ export async function POST(req: NextRequest) {
       const value = change.value || {}
       const phoneNumberId = value.metadata?.phone_number_id
 
+      // Central registry lookup — there's no session on an incoming
+      // webhook to infer a client from; this IS what figures out which
+      // client the message belongs to.
       const client = phoneNumberId
-        ? (await query('SELECT id FROM clients WHERE meta_whatsapp_phone_number_id = $1', [phoneNumberId]))[0]
+        ? (await centralQuery('SELECT id FROM clients WHERE meta_whatsapp_phone_number_id = $1', [phoneNumberId]))[0]
         : null
 
       if (!client) {
@@ -63,7 +66,7 @@ export async function POST(req: NextRequest) {
       }
 
       for (const status of value.statuses || []) {
-        results.push(await handleStatusUpdate(status))
+        results.push(await handleStatusUpdate(client.id, status))
       }
     }
   }
@@ -87,7 +90,8 @@ async function handleInboundMessage(clientId: string, msg: any) {
     rawPayload: msg,
   })
 
-  const msgRows = await query(
+  const msgRows = await queryAsClient(
+    clientId,
     `INSERT INTO whatsapp_messages
        (lead_id, direction, message_type, body, status, wamid, external_message_id, raw_payload, created_at)
      VALUES ($1, 'inbound', 'session', $2, 'delivered', $3, $3, $4, $5)
@@ -97,7 +101,7 @@ async function handleInboundMessage(clientId: string, msg: any) {
   )
 
   if (msgRows.length > 0) {
-    await applyReplyScoreBonus(lead.id)
+    await applyReplyScoreBonus(clientId, lead.id)
   }
 
   return { leadId: lead.id, created, duplicate, wamid }
@@ -107,14 +111,15 @@ async function handleInboundMessage(clientId: string, msg: any) {
 // bonus on elapsed time since that sequence's Day 0 send (per spec); if
 // there's no sequence (e.g. reply to a manual message), fall back to
 // "reply within 1hr of last outbound" the way the Aisensy path worked.
-async function applyReplyScoreBonus(leadId: string): Promise<void> {
-  const lead = (await query('SELECT wa_sequence_id, engagement_score FROM leads WHERE id = $1', [leadId]))[0]
+async function applyReplyScoreBonus(clientId: string, leadId: string): Promise<void> {
+  const lead = (await queryAsClient(clientId, 'SELECT wa_sequence_id, engagement_score FROM leads WHERE id = $1', [leadId]))[0]
   if (!lead) return
 
   let day0SentAt: string | null = null
   if (lead.wa_sequence_id) {
     const day0 = (
-      await query(
+      await queryAsClient(
+        clientId,
         `SELECT sent_at FROM wa_sequence_messages WHERE sequence_id = $1 AND day_number = 0 AND status = 'sent'`,
         [lead.wa_sequence_id]
       )
@@ -124,7 +129,8 @@ async function applyReplyScoreBonus(leadId: string): Promise<void> {
 
   if (!day0SentAt) {
     const lastOutbound = (
-      await query(
+      await queryAsClient(
+        clientId,
         `SELECT created_at FROM whatsapp_messages
          WHERE lead_id = $1 AND direction = 'outbound'
          ORDER BY created_at DESC LIMIT 1`,
@@ -152,11 +158,12 @@ async function applyReplyScoreBonus(leadId: string): Promise<void> {
     return
   }
 
-  await query('UPDATE leads SET engagement_score = LEAST(3, engagement_score + $1) WHERE id = $2', [
+  await queryAsClient(clientId, 'UPDATE leads SET engagement_score = LEAST(3, engagement_score + $1) WHERE id = $2', [
     bonus,
     leadId,
   ])
-  await query(
+  await queryAsClient(
+    clientId,
     `INSERT INTO activity_log (lead_id, activity_type, title, description)
      VALUES ($1, 'system', 'Engagement Score Updated', $2)`,
     [leadId, label]
@@ -166,7 +173,8 @@ async function applyReplyScoreBonus(leadId: string): Promise<void> {
   // the hot threshold, flip lead_tier so Kanban/list views reflect it
   // immediately rather than waiting for the next full recompute.
   const scored = (
-    await query(
+    await queryAsClient(
+      clientId,
       `SELECT urgency_score, program_fit_score, engagement_score FROM leads WHERE id = $1`,
       [leadId]
     )
@@ -174,12 +182,12 @@ async function applyReplyScoreBonus(leadId: string): Promise<void> {
   if (scored) {
     const total = (scored.urgency_score || 0) + (scored.program_fit_score || 0) + (scored.engagement_score || 0)
     if (total >= 6) {
-      await query(`UPDATE leads SET lead_tier = 'hot' WHERE id = $1`, [leadId])
+      await queryAsClient(clientId, `UPDATE leads SET lead_tier = 'hot' WHERE id = $1`, [leadId])
     }
   }
 }
 
-async function handleStatusUpdate(status: any) {
+async function handleStatusUpdate(clientId: string, status: any) {
   const wamid: string = status.id
   const newStatus: string = status.status // sent | delivered | read | failed
 
@@ -188,12 +196,14 @@ async function handleStatusUpdate(status: any) {
     return { wamid, skipped: true, reason: `unrecognized status ${newStatus}` }
   }
 
-  const rows = await query(
+  const rows = await queryAsClient(
+    clientId,
     `UPDATE whatsapp_messages SET status = $1 WHERE wamid = $2 OR external_message_id = $2 RETURNING id, lead_id`,
     [newStatus, wamid]
   )
 
-  await query(
+  await queryAsClient(
+    clientId,
     `UPDATE wa_sequence_messages SET status = CASE WHEN $1 = 'failed' THEN 'failed' ELSE status END WHERE wamid = $2`,
     [newStatus, wamid]
   )
@@ -226,11 +236,11 @@ async function handleTemplateStatusUpdate(wabaId: string, value: any) {
     return { wabaId, skipped: true, reason: 'missing message_template_name' }
   }
 
-  const client = (
-    await query('SELECT id FROM clients c JOIN wa_client_config cfg ON cfg.client_id = c.id WHERE cfg.waba_id = $1', [
-      wabaId,
-    ])
-  )[0]
+  // Central registry lookup, same reasoning as the messages path above —
+  // waba_id is mirrored onto the central clients row specifically so this
+  // routing lookup works without needing a session (see
+  // app/api/clients/[id]/whatsapp-config/route.ts).
+  const client = (await centralQuery('SELECT id FROM clients WHERE waba_id = $1', [wabaId]))[0]
   if (!client) {
     return { wabaId, templateName, error: 'No client mapped to this WABA_id' }
   }
@@ -241,7 +251,8 @@ async function handleTemplateStatusUpdate(wabaId: string, value: any) {
 
   const rejectionReason = event === 'REJECTED' ? value.reason || null : null
 
-  const rows = await query(
+  const rows = await queryAsClient(
+    client.id,
     `UPDATE wa_templates
      SET status = $1::varchar,
          rejection_reason = $2,
