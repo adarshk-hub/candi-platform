@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         whatsappNumber: fields.whatsappNumber,
         email: fields.email,
         grade: fields.grade,
-        source: 'facebook',
+        source: fields.source,
         entryType: 'meta_form',
         campaignId: internalCampaignId,
         externalRef: `meta:${leadgenId}`,
