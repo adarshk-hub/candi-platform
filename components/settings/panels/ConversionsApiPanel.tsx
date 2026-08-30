@@ -43,7 +43,6 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
   const [capiEnabled, setCapiEnabled] = useState(false)
   const [pixelId, setPixelId] = useState('')
   const [testEventCode, setTestEventCode] = useState('')
-  const [zapierWebhookUrl, setZapierWebhookUrl] = useState('')
   const [stageEvents, setStageEvents] = useState<Record<string, string>>({})
   const [stages, setStages] = useState<StageRow[]>([])
 
@@ -76,7 +75,6 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
           setCapiEnabled(!!config.capi_enabled)
           setPixelId(config.meta_pixel_id || '')
           setTestEventCode(config.meta_capi_test_event_code || '')
-          setZapierWebhookUrl(config.zapier_capi_webhook_url || '')
           setStageEvents(config.capi_stage_events || {})
         }
         setStages((stageRows || []).map((s: any) => ({ key: s.key, label: s.label })))
@@ -98,7 +96,6 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
           capiEnabled,
           metaPixelId: pixelId,
           metaCapiTestEventCode: testEventCode,
-          zapierCapiWebhookUrl: zapierWebhookUrl,
           capiStageEvents: stageEvents,
         }),
       })
@@ -177,23 +174,6 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
             </p>
           </div>
         </div>
-
-        <div className="mt-4">
-          <label className="mb-1 block text-xs text-muted">Zapier Webhook URL (optional)</label>
-          <input
-            value={zapierWebhookUrl}
-            onChange={(e) => setZapierWebhookUrl(e.target.value)}
-            placeholder="https://hooks.zapier.com/hooks/catch/..."
-            className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-          />
-          <p className="mt-1 text-xs text-muted">
-            When set, events for this institute are sent to this Zapier webhook instead of directly to Meta —
-            everything else above (Status, Pixel ID, Test Event Code, stage mapping) still applies to what gets
-            sent. Leave blank to keep sending straight to Meta. A "sent" row in the log below only confirms
-            Zapier received the event, not that Meta processed it — check the Zap's run history for that.
-          </p>
-        </div>
-
 
         {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
         {status && <p className="mt-4 text-sm text-green-400">{status}</p>}
@@ -292,8 +272,11 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
                   <td className="px-3 py-2 text-fg">{e.lead_name || '—'}</td>
                   <td className="px-3 py-2 text-fg">{e.event_name}</td>
                   <td className="px-3 py-2">{statusPill(e.status)}</td>
-                  <td className="max-w-xs truncate px-3 py-2 text-xs text-muted2" title={e.error || e.fbtrace_id || ''}>
-                    {e.error || e.fbtrace_id || '—'}
+                  <td
+                    className="max-w-xs truncate px-3 py-2 text-xs text-muted2"
+                    title={[e.error, e.fbtrace_id ? `fbtrace_id: ${e.fbtrace_id}` : null].filter(Boolean).join(' — ')}
+                  >
+                    {e.error || (e.fbtrace_id ? `fbtrace_id: ${e.fbtrace_id}` : '—')}
                   </td>
                 </tr>
               ))}
