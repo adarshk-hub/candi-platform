@@ -1,6 +1,5 @@
 //Re
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { getStageLabel } from '@/lib/stagesServer'
@@ -129,13 +128,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       // institute has mapped the new stage to in Settings > Customize >
       // Conversions API. No-ops instantly if CAPI isn't configured for
       // this client; never blocks or fails the stage update itself.
-      waitUntil(
-        fireCapiEventForLead({
-          lead: updated,
-          trigger: body.pipeline_stage,
-          eventIdSeed: `lead:${params.id}:stage:${body.pipeline_stage}`,
-        })
-      )
+      void fireCapiEventForLead({
+        lead: updated,
+        trigger: body.pipeline_stage,
+        eventIdSeed: `lead:${params.id}:stage:${body.pipeline_stage}`,
+      })
 
       // Auto-send a post-visit summary the moment a visit is marked done —
       // no counsellor action required.
