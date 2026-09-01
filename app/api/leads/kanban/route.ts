@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const where: string[] = []
   const params: any[] = []
 
-  if (session.role === 'client_admin') {
+  if (session.role === 'client_admin' || session.role === 'client_staff') {
     params.push(session.clientId)
     where.push(`l.client_id = $${params.length}`)
   } else if (session.role === 'client_counsellor') {
