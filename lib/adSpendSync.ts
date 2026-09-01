@@ -89,12 +89,22 @@ async function applySpendBulk(
   const weekStartings: string[] = []
   const spendAmounts: number[] = []
   for (const { weekStarting, row } of entries) {
-    for (const internalId of idsByPlatformId.get(row.platformCampaignId) || []) {
-      campaignIds.push(internalId)
-      weekStartings.push(weekStarting)
-      spendAmounts.push(row.spend)
-      result.campaignsMatched++
-    }
+    // Real ad-platform spend is reported once per real campaign, not once
+    // per ad variation — write it to exactly one canonical internal row
+    // (the lowest id, so it's stable across repeated syncs) rather than
+    // every internal row sharing this platform_campaign_id. Writing it to
+    // all of them meant anything that summed spend across multiple
+    // internal rows for the same real campaign — dashboard KPI totals,
+    // platform buckets, the grouped campaign table — counted the same
+    // real spend once per ad variation instead of once, inflating every
+    // number derived from it (Total ad spend, ROAS, Cost/Lead...).
+    const internalIds = idsByPlatformId.get(row.platformCampaignId) || []
+    const canonicalId = [...internalIds].sort()[0]
+    if (!canonicalId) continue
+    campaignIds.push(canonicalId)
+    weekStartings.push(weekStarting)
+    spendAmounts.push(row.spend)
+    result.campaignsMatched++
   }
 
   // Chunked multi-row upsert via UNNEST — one round trip per chunk instead
