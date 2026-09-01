@@ -1,5 +1,5 @@
 import { queryAsClient, centralQuery } from './db'
-import { fetchMetaCampaignSpend, fetchMetaCampaignSpendRange, CampaignSpend } from './metaAdsSpend'
+import { fetchMetaCampaignSpendRange, CampaignSpend } from './metaAdsSpend'
 import { fetchGoogleCampaignSpend } from './googleAdsSpend'
 import { findOrCreateCampaign } from './leadIntake'
 
@@ -157,8 +157,14 @@ export async function syncAdSpend(forDate: Date = new Date()): Promise<SyncResul
 
   for (const client of clients) {
     if (client.meta_ad_account_id) {
-      const spend = await fetchMetaCampaignSpend({ adAccountId: client.meta_ad_account_id, since, until })
-      results.push(await applySpendBulk(client.id, 'meta', spend.map((row) => ({ weekStarting, row }))))
+      // Daily buckets (not a single weekly aggregate) — matches what
+      // backfillMetaAdSpend below writes, so the regular sync and a
+      // backfill never disagree about whether a given date's spend is
+      // stored as "part of a week" or "its own day." Mixing the two would
+      // double-count: a weekly row and a daily row can both claim the same
+      // real spend under different date keys.
+      const spend = await fetchMetaCampaignSpendRange({ adAccountId: client.meta_ad_account_id, since, until })
+      results.push(await applySpendBulk(client.id, 'meta', spend.map((row) => ({ weekStarting: row.weekStarting, row }))))
     }
     if (client.google_ads_customer_id) {
       const spend = await fetchGoogleCampaignSpend({ customerId: client.google_ads_customer_id, since, until })
