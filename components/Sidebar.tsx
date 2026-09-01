@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { clsx } from 'clsx'
@@ -133,11 +134,15 @@ export default function Sidebar({
         {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
 
-      <div className={clsx('mb-6 flex items-center gap-2', collapsed ? 'justify-center' : 'px-2')}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-amber-400 text-sm font-bold text-white">
-          C
-        </div>
-        {!collapsed && <span className="whitespace-nowrap text-lg font-bold text-fg">Candi Connect</span>}
+      <div className={clsx('mb-6 flex items-center', collapsed ? 'justify-center' : 'px-2')}>
+        <Image
+          src="/logo.png"
+          alt="Candi Connect"
+          width={2172}
+          height={724}
+          className={collapsed ? 'h-auto w-10' : 'h-auto w-40'}
+          priority
+        />
       </div>
 
       {user && !collapsed && (
