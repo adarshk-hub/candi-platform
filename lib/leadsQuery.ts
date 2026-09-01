@@ -47,7 +47,7 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
   const where: string[] = []
   const sqlParams: any[] = []
 
-  if (session.role === 'client_admin') {
+  if (session.role === 'client_admin' || session.role === 'client_staff') {
     sqlParams.push(session.clientId)
     where.push(`l.client_id = $${sqlParams.length}`)
   } else if (session.role === 'client_counsellor') {
