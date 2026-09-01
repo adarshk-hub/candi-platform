@@ -45,5 +45,5 @@ export default async function DashboardPage({
   if (!client) {
     return <p className="text-muted2">Institution not found.</p>
   }
-  return <ClientDashboard clientId={client.id} clientName={client.name} from={searchParams.from} to={searchParams.to} />
+  return <ClientDashboard clientId={client.id} clientName={client.name} from={searchParams.from} to={searchParams.to} basePath="/dashboard" />
 }
