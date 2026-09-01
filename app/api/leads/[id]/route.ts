@@ -74,7 +74,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const lead = rows[0]
   if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  if (session.role === 'client_admin' && lead.client_id !== session.clientId) {
+  if ((session.role === 'client_admin' || session.role === 'client_staff') && lead.client_id !== session.clientId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (session.role === 'client_counsellor' && lead.assigned_counsellor_id !== session.id) {
@@ -94,7 +94,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const isAgency = AGENCY_ROLES.includes(session.role)
   const isOwningCounsellor =
     session.role === 'client_counsellor' && existing.assigned_counsellor_id === session.id
-  const isOwningClientAdmin = session.role === 'client_admin' && existing.client_id === session.clientId
+  const isOwningClientAdmin =
+    (session.role === 'client_admin' || session.role === 'client_staff') && existing.client_id === session.clientId
   if (!isAgency && !isOwningCounsellor && !isOwningClientAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
