@@ -24,11 +24,23 @@ export default async function ClientDashboard({
   clientName,
   from,
   to,
+  // Where "7d/30d/90d" and the Custom range form should navigate back to.
+  // This component is shared between two different URLs: /dashboard
+  // (client_admin, always their own one institute) and
+  // /dashboard/[clientId] (agency roles, viewing a specific institute).
+  // Hardcoding "/dashboard" here used to mean an agency user clicking a
+  // preset while viewing e.g. Chiguru would get sent to plain /dashboard,
+  // which redirects to whichever institute happens to be alphabetically
+  // first — silently switching institutes instead of just changing the
+  // date range. Defaults to "/dashboard" so nothing breaks for any other
+  // caller that doesn't pass this explicitly.
+  basePath = '/dashboard',
 }: {
   clientId: string
   clientName: string
   from?: string
   to?: string
+  basePath?: string
 }) {
   const metrics = await getClientDashboardMetrics(clientId, from, to)
   const capi = await getCapiSummary(clientId, from, to)
@@ -50,7 +62,7 @@ export default async function ClientDashboard({
           {presets.map((p) => (
             <Link
               key={p.label}
-              href={`/dashboard?from=${p.from}&to=${p.to}`}
+              href={`${basePath}?from=${p.from}&to=${p.to}`}
               className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg hover:border-blue-500"
             >
               {p.label}
@@ -67,7 +79,7 @@ export default async function ClientDashboard({
         <RepairCampaignNamesButton clientId={clientId} />
       </div>
 
-      <form className="flex items-end gap-3 rounded-card border border-border bg-card p-4 text-sm">
+      <form action={basePath} className="flex items-end gap-3 rounded-card border border-border bg-card p-4 text-sm">
         <span className="font-medium text-fg">Custom range</span>
         <div>
           <label className="mb-1 block text-xs text-muted">From</label>
