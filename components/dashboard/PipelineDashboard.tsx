@@ -108,7 +108,17 @@ function groupCampaignsByName(campaigns: CampaignRow[]): GroupedCampaignRow[] {
       existing.visits += c.visits
       existing.enrolled += c.enrolled
       existing.fees += c.fees
-      existing.spend += c.spend
+      // NOT summed, unlike leads/visits/enrolled/fees above — those are
+      // genuinely separate per ad variation (a given lead only belongs to
+      // one of them), but spend is different: the sync writes the SAME
+      // full campaign-level total onto every ad-variation row sharing a
+      // campaign, specifically so any one of them shows the correct total
+      // in isolation (see lib/adSpendSync.ts's applySpendBulk). Summing
+      // that across N merged rows was counting the real spend N times
+      // over — e.g. a campaign with 4 ad variations was showing spend
+      // inflated 4x. Since every member already carries the true total
+      // independently, take the largest one rather than add them.
+      existing.spend = Math.max(existing.spend, c.spend)
     } else {
       groups.set(key, {
         memberIds: [c.id],
