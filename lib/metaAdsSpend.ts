@@ -80,18 +80,28 @@ export async function fetchMetaCampaignSpend(params: {
 }
 
 export interface WeeklyCampaignSpend extends CampaignSpend {
-  weekStarting: string // YYYY-MM-DD, Monday
+  // Despite the field name (kept as-is to avoid a wider rename), this is a
+  // single DAY, not a week — see the time_increment note below.
+  weekStarting: string // YYYY-MM-DD
 }
 
 // Same Insights endpoint as fetchMetaCampaignSpend, but spans a wider date
-// range and asks Meta to bucket results into 7-day increments itself
-// (time_increment=7) rather than us looping one API call per week — one
-// request returns however many weeks of history exist in the range. Used
-// for backfilling historical spend, since fetchMetaCampaignSpend alone only
-// ever covers a single week.
+// range and asks Meta to bucket results by day (time_increment=1) rather
+// than us looping one API call per day — one request returns however many
+// days of history exist in the range. Used for backfilling historical
+// spend, and now also by the regular sync (see adSpendSync.ts) so every
+// stored row is always day-granular — never a mix of daily and weekly
+// buckets, which would double-count whenever both cover the same date.
+//
+// This used to request time_increment=7 (weekly buckets), which is why
+// date-range filtering on the dashboard could only ever be as precise as
+// "which week," not "which day" — a Custom range of Aug 2-31 could include
+// or exclude a few extra days at either edge depending on where the stored
+// week happened to start. Daily buckets make the stored data exactly as
+// precise as what a person can select in the date picker.
 export async function fetchMetaCampaignSpendRange(params: {
   adAccountId: string
-  since: string // YYYY-MM-DD, should be a Monday
+  since: string // YYYY-MM-DD
   until: string // YYYY-MM-DD
 }): Promise<WeeklyCampaignSpend[]> {
   const token = process.env.META_MARKETING_API_ACCESS_TOKEN
@@ -106,7 +116,7 @@ export async function fetchMetaCampaignSpendRange(params: {
     u.searchParams.set('level', 'campaign')
     u.searchParams.set('fields', 'campaign_id,campaign_name,spend')
     u.searchParams.set('time_range', JSON.stringify({ since: params.since, until: params.until }))
-    u.searchParams.set('time_increment', '7')
+    u.searchParams.set('time_increment', '1')
     u.searchParams.set('limit', '200')
     u.searchParams.set('access_token', token)
     return u.toString()
@@ -123,8 +133,8 @@ export async function fetchMetaCampaignSpendRange(params: {
         platformCampaignId: row.campaign_id,
         campaignName: row.campaign_name,
         spend: parseFloat(row.spend) || 0,
-        // Meta's time_increment buckets are anchored to `since`, so
-        // date_start already lands on the Monday we asked for.
+        // With time_increment=1, date_start is the single day this row
+        // covers.
         weekStarting: row.date_start,
       })
     }
