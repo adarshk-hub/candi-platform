@@ -25,7 +25,7 @@ export async function assertLeadAccess(
   const lead = (await query('SELECT * FROM leads WHERE id = $1', [leadId]))[0]
   if (!lead) return { ok: false, status: 404, error: 'Not found' }
 
-  if (session.role === 'client_admin' && lead.client_id !== session.clientId) {
+  if ((session.role === 'client_admin' || session.role === 'client_staff') && lead.client_id !== session.clientId) {
     return { ok: false, status: 403, error: 'Forbidden' }
   }
   if (session.role === 'client_counsellor' && lead.assigned_counsellor_id !== session.id) {
