@@ -8,7 +8,7 @@ async function canAccessLead(session: ReturnType<typeof getSession>, leadId: str
   const lead = (await query<{ client_id: string }>('SELECT client_id FROM leads WHERE id = $1', [leadId]))[0]
   if (!lead) return null
   if (AGENCY_ROLES.includes(session.role)) return lead.client_id
-  if (session.role === 'client_admin' && session.clientId === lead.client_id) return lead.client_id
+  if ((session.role === 'client_admin' || session.role === 'client_staff') && session.clientId === lead.client_id) return lead.client_id
   if (session.role === 'client_counsellor') {
     const owns = (await query('SELECT 1 FROM leads WHERE id = $1 AND assigned_counsellor_id = $2', [leadId, session.id]))[0]
     if (owns) return lead.client_id
