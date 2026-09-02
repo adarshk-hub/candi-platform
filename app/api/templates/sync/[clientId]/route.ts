@@ -70,14 +70,17 @@ export async function POST(req: NextRequest, { params }: { params: { clientId: s
 
       const newStatus = String(match.status || 'pending').toLowerCase()
       const rejectionReason = match.rejected_reason || null
+      const newCategory = match.category ? String(match.category).toUpperCase() : null
 
       await query(
         `UPDATE wa_templates
-         SET status = $1::varchar, rejection_reason = $2, approved_at = CASE WHEN $1::varchar = 'approved' THEN now() ELSE approved_at END
-         WHERE id = $3`,
-        [newStatus, rejectionReason, tmpl.id]
+         SET status = $1::varchar, rejection_reason = $2,
+             category = COALESCE($3, category),
+             approved_at = CASE WHEN $1::varchar = 'approved' THEN now() ELSE approved_at END
+         WHERE id = $4`,
+        [newStatus, rejectionReason, newCategory, tmpl.id]
       )
-      updated.push({ id: tmpl.id, name: tmpl.name, status: newStatus, metaStatusRaw: match.status })
+      updated.push({ id: tmpl.id, name: tmpl.name, status: newStatus, category: newCategory, metaStatusRaw: match.status })
     }
 
     return NextResponse.json({ ok: true, updated, errors })
