@@ -45,6 +45,19 @@ export async function POST(req: NextRequest) {
         continue
       }
 
+      // Meta can reclassify a template's category (e.g. Utility →
+      // Marketing) during or after review, independent of approval status
+      // — this is a genuinely separate event type from the one above, and
+      // was previously not handled at all, meaning a reclassified
+      // template's stored category silently went stale. That matters
+      // beyond just display: wallet debits are priced per category (see
+      // lib/waCreditRates.ts), so a stale category could mean billing at
+      // the wrong rate for a template Meta has since recategorized.
+      if (change.field === 'message_template_category_update') {
+        results.push(await handleTemplateCategoryUpdate(entry.id, change.value || {}))
+        continue
+      }
+
       if (change.field !== 'messages') continue
       const value = change.value || {}
       const phoneNumberId = value.metadata?.phone_number_id
@@ -267,4 +280,35 @@ async function handleTemplateStatusUpdate(wabaId: string, value: any) {
     return { wabaId, templateName, updated: false, reason: 'No matching wa_templates row for this client/name' }
   }
   return { wabaId, templateName, updated: true, status: newStatus }
+}
+
+// Meta can reclassify a template's category during or after review —
+// separate from approval status, and previously not handled at all here
+// (see the routing comment above). Fields per Meta's docs for this event:
+// message_template_id, message_template_name, message_template_language,
+// previous_category, new_category.
+async function handleTemplateCategoryUpdate(wabaId: string, value: any) {
+  const templateName = value.message_template_name
+  const newCategory = value.new_category ? String(value.new_category).toUpperCase() : null
+  const previousCategory = value.previous_category ? String(value.previous_category).toUpperCase() : null
+
+  if (!templateName || !newCategory) {
+    return { wabaId, skipped: true, reason: 'missing message_template_name or new_category' }
+  }
+
+  const client = (await centralQuery('SELECT id FROM clients WHERE waba_id = $1', [wabaId]))[0]
+  if (!client) {
+    return { wabaId, templateName, error: 'No client mapped to this WABA_id' }
+  }
+
+  const rows = await queryAsClient(
+    client.id,
+    `UPDATE wa_templates SET category = $1 WHERE client_id = $2 AND name = $3 RETURNING id`,
+    [newCategory, client.id, templateName]
+  )
+
+  if (rows.length === 0) {
+    return { wabaId, templateName, updated: false, reason: 'No matching wa_templates row for this client/name' }
+  }
+  return { wabaId, templateName, updated: true, previousCategory, newCategory }
 }
