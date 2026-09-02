@@ -554,6 +554,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                 <th className="pb-2 font-medium">Template</th>
+                <th className="pb-2 font-medium">Category</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Submitted</th>
                 <th className="pb-2 font-medium">Notes</th>
@@ -563,6 +564,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
               {templates.map((t) => (
                 <tr key={t.id} className="border-b border-border/50 last:border-0">
                   <td className="py-2 pr-2 font-mono text-xs text-fg">{t.name}</td>
+                  <td className="py-2 pr-2 text-xs text-muted2">{t.category}</td>
                   <td className="py-2 pr-2">
                     <StatusBadge status={t.status} />
                   </td>
