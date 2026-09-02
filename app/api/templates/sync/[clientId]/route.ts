@@ -32,8 +32,15 @@ export async function POST(req: NextRequest, { params }: { params: { clientId: s
     )[0]
     if (!config) return NextResponse.json({ error: 'No WhatsApp config saved for this client yet' }, { status: 400 })
 
-    const pending = await query(
-      `SELECT id, name FROM wa_templates WHERE client_id = $1 AND status = 'pending'`,
+    // Re-checks every template against Meta, not just ones still marked
+    // 'pending' — an already-approved template's category can still
+    // change later (Meta reclassifies independently of approval status),
+    // and the only way to catch that after the fact — rather than relying
+    // on a webhook event that may have fired before this app was even
+    // listening for it — is to just ask Meta what it currently says,
+    // every time this button is clicked.
+    const allTemplates = await query(
+      `SELECT id, name FROM wa_templates WHERE client_id = $1`,
       [params.clientId]
     )
 
@@ -41,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: { clientId: s
     const updated: any[] = []
     const errors: any[] = []
 
-    for (const tmpl of pending) {
+    for (const tmpl of allTemplates) {
       const proof = appSecretProof(accessToken)
       const res = await fetch(
         `${GRAPH_API_URL}/${config.waba_id}/message_templates?name=${encodeURIComponent(tmpl.name)}${proof ? `&appsecret_proof=${proof}` : ''}`,
@@ -76,7 +83,14 @@ export async function POST(req: NextRequest, { params }: { params: { clientId: s
         `UPDATE wa_templates
          SET status = $1::varchar, rejection_reason = $2,
              category = COALESCE($3, category),
-             approved_at = CASE WHEN $1::varchar = 'approved' THEN now() ELSE approved_at END
+             -- Only stamp approved_at when status is *becoming* approved
+             -- (it wasn't already), not every time an already-approved
+             -- template gets re-confirmed as still approved — now that
+             -- this route re-checks every template, not just pending
+             -- ones, re-running it would otherwise reset approved_at to
+             -- "just now" on every click, wiping out the real approval
+             -- date.
+             approved_at = CASE WHEN $1::varchar = 'approved' AND status != 'approved' THEN now() ELSE approved_at END
          WHERE id = $4`,
         [newStatus, rejectionReason, newCategory, tmpl.id]
       )
