@@ -9,11 +9,19 @@ interface ClientCapiConfig {
   meta_capi_test_event_code: string | null
   capi_stage_events: Record<string, string>
   zapier_capi_webhook_url: string | null
+  // When true, this client follows Meta's Conversion Leads payload spec:
+  // event_name is the raw CRM stage name (free-form), and EVERY stage
+  // transition is sent — the spec requires "all stages as they are updated,
+  // including the raw lead", because Meta needs the whole funnel shape to
+  // model which early leads become late-stage ones. Off by default so
+  // existing clients keep the standard-event behaviour.
+  capi_crm_mode: boolean
 }
 
 async function getClientCapiConfig(clientId: string): Promise<ClientCapiConfig | null> {
   const rows = await query<ClientCapiConfig>(
-    `SELECT id, capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url
+    `SELECT id, capi_enabled, meta_pixel_id, meta_capi_test_event_code, capi_stage_events, zapier_capi_webhook_url,
+            COALESCE(capi_crm_mode, false) AS capi_crm_mode
      FROM clients WHERE id = $1`,
     [clientId]
   )
@@ -79,14 +87,16 @@ export async function fireCapiEventForLead(params: {
     const config = await getClientCapiConfig(lead.client_id)
     if (!config) return
 
-    const eventName = config.capi_stage_events?.[trigger]
     if (!config.capi_enabled) return
-    if (!eventName) {
-      // Not every stage needs an event — only log a skip if CAPI is on but
-      // this particular trigger has no mapping, so the log doesn't fill up
-      // with noise for institutes that only map two or three stages.
-      return
-    }
+
+    // In CRM mode an unmapped stage still fires, using the stage key itself
+    // as the free-form event_name that Meta's Conversion Leads spec expects.
+    // An explicit mapping still wins, so an institute can present a stage to
+    // Meta under a different label than the one used internally. Outside CRM
+    // mode the old behaviour holds: unmapped stages are skipped silently
+    // rather than filling the log with noise.
+    const eventName = config.capi_stage_events?.[trigger] || (config.capi_crm_mode ? trigger : null)
+    if (!eventName) return
     if (!config.meta_pixel_id) {
       await logCapiSkipped({
         clientId: lead.client_id,
@@ -128,7 +138,14 @@ export async function fireCapiEventForLead(params: {
       accessToken: accessToken || '',
       testEventCode: config.meta_capi_test_event_code || undefined,
       eventName,
-      eventId: `${eventIdSeed}:${eventName}`,
+      // event_id is normally deterministic so Meta dedups genuine retries of
+      // the same lead+stage. While a test_event_code is set we salt it with a
+      // timestamp: without this, re-running the same dummy lead through the
+      // same stage is silently deduped and reads as a broken integration
+      // rather than a working one. Production dedup is unchanged.
+      eventId: config.meta_capi_test_event_code
+        ? `${eventIdSeed}:${eventName}:${Date.now()}`
+        : `${eventIdSeed}:${eventName}`,
       pipelineStage: trigger,
       zapierWebhookUrl,
       match: {
