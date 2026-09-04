@@ -116,6 +116,14 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<SendCa
   if (match.clientIpAddress) userData.client_ip_address = match.clientIpAddress
   if (match.clientUserAgent) userData.client_user_agent = match.clientUserAgent
   if (match.leadId) userData.lead_id = match.leadId
+
+  // Meta rejects the entire event if lead_id is present but is not a valid
+  // 15-17 digit Meta leadgen ID, so drop anything malformed rather than let
+  // it kill an otherwise good event. Dummy/test leads have no leadgen ID at
+  // all and simply go without it, matching on phone/email/external_id.
+  if (userData.lead_id && !/^[0-9]{15,17}$/.test(String(userData.lead_id))) {
+    delete userData.lead_id
+  }
   // Meta expects fn/ln/ct lowercased with whitespace and punctuation
   // stripped BEFORE hashing — an unnormalised hash simply fails to match
   // rather than erroring, so it would look like it worked while adding
