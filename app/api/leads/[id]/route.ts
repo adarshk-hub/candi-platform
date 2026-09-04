@@ -1,5 +1,6 @@
 //Re
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { getStageLabel } from '@/lib/stagesServer'
@@ -125,15 +126,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ]
       )
 
-      // Meta Conversions API — fires whatever standard event (if any) this
-      // institute has mapped the new stage to in Settings > Customize >
-      // Conversions API. No-ops instantly if CAPI isn't configured for
-      // this client; never blocks or fails the stage update itself.
-      void fireCapiEventForLead({
-        lead: updated,
-        trigger: body.pipeline_stage,
-        eventIdSeed: `lead:${params.id}:stage:${body.pipeline_stage}`,
-      })
+      // Meta Conversions API — fires whatever event this institute has
+      // mapped the new stage to in Settings > Customize > Conversions API,
+      // or (in CRM mode) the raw stage key. No-ops instantly if CAPI isn't
+      // configured for this client; never blocks or fails the stage update.
+      //
+      // Wrapped in waitUntil() rather than void: Vercel can freeze this
+      // function the instant the response is returned, killing any promise
+      // still in flight. That made CAPI silently work for stages with
+      // awaited follow-up work below (visit_done sends WhatsApp and email,
+      // which kept the instance alive long enough) and silently fail for
+      // stages with none — offer_made produced no capi_event_log row at
+      // all, not even a failure. waitUntil is what the other three call
+      // sites already use; this one was missed.
+      waitUntil(
+        fireCapiEventForLead({
+          lead: updated,
+          trigger: body.pipeline_stage,
+          eventIdSeed: `lead:${params.id}:stage:${body.pipeline_stage}`,
+        })
+      )
 
       // Auto-send a post-visit summary the moment a visit is marked done —
       // no counsellor action required.
