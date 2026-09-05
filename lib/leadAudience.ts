@@ -1,4 +1,6 @@
+// path: lib/leadAudience.ts
 import { query } from './db'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 export interface BroadcastFilters {
   tags: string[]
@@ -37,7 +39,10 @@ function buildAudienceQuery(
   filters: BroadcastFilters,
   requireContactMethod?: 'whatsapp_number' | 'email'
 ): AudienceQuery {
-  const where: string[] = ['l.client_id = $1']
+  // A broadcast must never reach a lead the CRM is hiding — an audience
+  // built here becomes real WhatsApp/email sends charged to the wallet,
+  // so this is the one place where leaking past the window costs money.
+  const where: string[] = ['l.client_id = $1', leadDateRangeSql('l')]
   const params: any[] = [clientId]
 
   if (requireContactMethod === 'whatsapp_number') {
