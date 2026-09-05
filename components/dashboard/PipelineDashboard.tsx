@@ -1,7 +1,8 @@
 // path: components/dashboard/PipelineDashboard.tsx
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatLakh } from '@/lib/format'
@@ -317,6 +318,33 @@ export default function PipelineDashboard({
   const [detailed, setDetailed] = useState(true)
   const [excluded, setExcluded] = useState<Set<string>>(new Set(initialExcluded))
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle')
+  const router = useRouter()
+  // Once the user has touched a checkbox in this session, their local
+  // state is newer than anything the server told us at render time — the
+  // mount reconcile below must not stomp on it.
+  const touched = useRef(false)
+
+  // Next's App Router keeps a client-side cache of already-visited routes.
+  // Navigating away from the dashboard and back replays that cached RSC
+  // payload rather than re-running the server component, so initialExcluded
+  // arrives stale and the checkboxes look unsaved — even though a hard
+  // reload shows them correctly. Re-reading the saved set on mount makes
+  // the UI right regardless of whether this render came from the cache.
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/clients/${clientId}/excluded-campaigns`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data || touched.current) return
+        setExcluded(new Set(data.excluded || []))
+      })
+      .catch(() => {
+        // Keep whatever the server render gave us.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [clientId])
 
   // Sends the complete excluded set after each toggle. Fire-and-forget on
   // purpose — the checkbox has already moved locally, so waiting on the
@@ -332,6 +360,10 @@ export default function PipelineDashboard({
         body: JSON.stringify({ excluded: Array.from(next) }),
       })
       setSaveState(res.ok ? 'idle' : 'error')
+      // Drops the stale cached copy of this route so the next visit
+      // re-renders against the saved selection instead of replaying the
+      // payload from before this change.
+      if (res.ok) router.refresh()
     } catch {
       setSaveState('error')
     }
@@ -353,6 +385,7 @@ export default function PipelineDashboard({
       if (allIncluded) next.add(id)
       else next.delete(id)
     }
+    touched.current = true
     setExcluded(next)
     persist(next)
   }
