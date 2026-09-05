@@ -1,4 +1,6 @@
+// path: components/dashboard/ClientDashboard.tsx
 import Link from 'next/link'
+import NotificationBell from '@/components/NotificationBell'
 import { getClientDashboardMetrics } from '@/lib/clientDashboardMetrics'
 import { getCapiSummary } from '@/lib/capiSummary'
 import { formatLakh, formatDateTime } from '@/lib/format'
@@ -68,6 +70,7 @@ export default async function ClientDashboard({
               {p.label}
             </Link>
           ))}
+          <NotificationBell />
         </div>
       </div>
 
