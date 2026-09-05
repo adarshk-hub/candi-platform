@@ -1,13 +1,17 @@
+// path: components/settings/panels/DisplayPrefsPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
+import { clsx } from 'clsx'
 import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
+import { LEAD_COLUMNS, LeadColumnKey, resolveLeadColumns } from '@/lib/leadTableColumns'
 
 export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
   const router = useRouter()
   const [leadsPerPage, setLeadsPerPage] = useState(250)
   const [showLeadStatusTabs, setShowLeadStatusTabs] = useState(true)
+  const [columns, setColumns] = useState<LeadColumnKey[]>(() => resolveLeadColumns(null))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -20,6 +24,7 @@ export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
       .then((data) => {
         if (data?.leads_per_page) setLeadsPerPage(data.leads_per_page)
         if (data?.show_lead_status_tabs !== undefined) setShowLeadStatusTabs(!!data.show_lead_status_tabs)
+        setColumns(resolveLeadColumns(data?.lead_table_columns))
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -33,7 +38,7 @@ export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
       const res = await fetch(`/api/clients/${clientId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadsPerPage, showLeadStatusTabs }),
+        body: JSON.stringify({ leadsPerPage, showLeadStatusTabs, leadTableColumns: columns }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -88,6 +93,56 @@ export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
           When off, these sub-links under "All Leads" are hidden for everyone at this institute — the leads
           themselves aren't affected, just the shortcut links.
         </p>
+      </div>
+
+      <div className="mb-4 border-t border-border pt-4">
+        <h3 className="mb-1 text-sm font-semibold text-fg">Lead table columns</h3>
+        <p className="mb-3 text-xs text-muted2">
+          Which columns appear in the leads table, on All Leads and the Warm / Hot / Cold / Enrolled pages
+          alike. Hiding a column only changes what's on screen — the data is still there, still searchable,
+          and still shown when you open a lead.
+        </p>
+
+        <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          {LEAD_COLUMNS.map((col) => {
+            const checked = columns.includes(col.key)
+            return (
+              <label
+                key={col.key}
+                className={clsx(
+                  'flex items-start gap-2.5',
+                  col.required ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={col.required}
+                  onChange={(e) =>
+                    setColumns((prev) =>
+                      e.target.checked ? [...prev, col.key] : prev.filter((k) => k !== col.key)
+                    )
+                  }
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                />
+                <span>
+                  <span className="block text-sm text-fg">
+                    {col.label}
+                    {col.required && <span className="ml-1.5 text-xs text-muted">always shown</span>}
+                  </span>
+                  {col.hint && <span className="block text-xs text-muted2">{col.hint}</span>}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+
+        {columns.length <= 2 && (
+          <p className="mt-3 text-xs text-amber-400">
+            With this few columns the table won't tell you much at a glance — you'll have to open each lead
+            to see anything.
+          </p>
+        )}
       </div>
 
       {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
