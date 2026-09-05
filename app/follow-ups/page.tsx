@@ -1,3 +1,4 @@
+// path: app/follow-ups/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -8,6 +9,7 @@ import { useStages } from '@/lib/StagesContext'
 import { useColumnWidths } from '@/lib/useColumnWidths'
 import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
+import NotificationBell from '@/components/NotificationBell'
 
 interface FollowUpRow {
   id: string
@@ -75,14 +77,17 @@ export default function FollowUpsPage() {
         <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
           <CalendarDays size={22} /> Follow-ups
         </h1>
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search follow-ups..."
-            className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search follow-ups..."
+              className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
+            />
+          </div>
+          <NotificationBell />
         </div>
       </div>
 
