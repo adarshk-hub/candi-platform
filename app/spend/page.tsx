@@ -1,8 +1,10 @@
+// path: app/spend/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { RefreshCw } from 'lucide-react'
+import NotificationBell from '@/components/NotificationBell'
 
 interface Campaign {
   id: string
@@ -157,14 +159,17 @@ export default function SpendEntryPage() {
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-fg">Weekly Spend Entry</h1>
-        <button
-          onClick={syncNow}
-          disabled={syncing}
-          className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-2 text-sm font-medium text-fg hover:border-blue-500 disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-          {syncing ? 'Syncing…' : 'Sync Now'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={syncNow}
+            disabled={syncing}
+            className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-2 text-sm font-medium text-fg hover:border-blue-500 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Syncing…' : 'Sync Now'}
+          </button>
+          <NotificationBell />
+        </div>
       </div>
       {syncMsg && <p className="mb-4 text-sm text-muted2">{syncMsg}</p>}
 
