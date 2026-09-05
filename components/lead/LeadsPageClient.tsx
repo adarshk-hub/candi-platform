@@ -14,6 +14,7 @@ import KanbanBoard from '@/components/lead/KanbanBoard'
 import AddLeadModal from '@/components/lead/AddLeadModal'
 import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
 import LeadImportModal from '@/components/lead/LeadImportModal'
+import NotificationBell from '@/components/NotificationBell'
 import type { LeadRow, LeadsPageResult } from '@/lib/leadsQuery'
 
 const TAB_TITLE: Record<string, string> = {
@@ -301,6 +302,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
           >
             <Plus size={16} /> Add Lead
           </button>
+          <NotificationBell />
         </div>
       </div>
 
