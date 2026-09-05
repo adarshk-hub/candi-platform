@@ -1,9 +1,11 @@
+// path: app/calendar/page.tsx
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, LayoutGrid, List } from 'lucide-react'
 import { clsx } from 'clsx'
 import LeadSlideOver from '../../components/lead/LeadSlideOver'
+import NotificationBell from '@/components/NotificationBell'
 
 interface EventRow {
   id: string
@@ -173,6 +175,7 @@ export default function CalendarViewPage() {
               ))}
             </select>
           </div>
+          <NotificationBell />
         </div>
       </div>
 
