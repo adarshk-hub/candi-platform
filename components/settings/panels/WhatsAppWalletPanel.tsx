@@ -86,9 +86,9 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
   const [status, setStatus] = useState('')
   const [customAmount, setCustomAmount] = useState('')
   const [recharging, setRecharging] = useState<number | null>(null)
-  // Pricing is secondary information — most visits here are to check the
-  // balance or top up, so the rate card stays collapsed until asked for.
-  const [showPricing, setShowPricing] = useState(false)
+  // The transaction ledger is the long, secondary detail here — keep it
+  // collapsed until asked for. The pricing card stays permanently visible.
+  const [showTransactions, setShowTransactions] = useState(false)
 
   function loadWallet() {
     setLoading(true)
@@ -227,56 +227,39 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
         </p>
       )}
 
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={() => setShowPricing((v) => !v)}
-          aria-expanded={showPricing}
-          aria-controls="wcc-pricing-card"
-          className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg"
-        >
-          <ChevronDown
-            size={14}
-            className={`transition-transform ${showPricing ? 'rotate-180' : ''}`}
-          />
-          {showPricing ? 'Hide pricing' : 'View pricing'}
-        </button>
-
-        {showPricing && (
-          <div
-            id="wcc-pricing-card"
-            className="mt-2 w-full max-w-xs rounded-md border border-green-500/30 bg-green-500/5 p-4"
+      {/* Always visible — a client deciding whether to recharge needs to see
+          what a message costs without having to go looking for it. */}
+      <div className="mt-4 w-full max-w-xs rounded-md border border-green-600/30 bg-green-600/10 p-4">
+        <div className="mb-3 flex items-center gap-1.5">
+          <p className="text-xs font-bold uppercase tracking-wide text-green-700 dark:text-green-400">
+            Per template message
+          </p>
+          <span
+            title="Charged per message sent. Replies you send inside the 24-hour window that opens when a lead messages you are Service messages and cost nothing — charges only apply once that window closes and a template is needed to reach them again."
+            className="flex cursor-help items-center text-green-700/60 dark:text-green-400/60"
           >
-            <div className="mb-3 flex items-center gap-1.5">
-              <p className="text-xs font-bold uppercase tracking-wide text-green-500">
-                Per template message
-              </p>
-              <span
-                title="Charged per message sent. Replies you send inside the 24-hour window that opens when a lead messages you are Service messages and cost nothing — charges only apply once that window closes and a template is needed to reach them again."
-                className="flex cursor-help items-center text-green-500/70"
-              >
-                <Info size={13} />
-              </span>
-            </div>
+            <Info size={13} />
+          </span>
+        </div>
 
-            <dl className="space-y-2">
-              {WA_PRICING_ORDER.map((category) => {
-                const rate = WA_CREDIT_RATES[category]
-                const free = rate <= 0
-                return (
-                  <div key={category} className="flex items-baseline justify-between gap-4">
-                    <dt className="text-sm text-muted2">{WA_CATEGORY_LABELS[category]}</dt>
-                    <dd
-                      className={`text-sm font-semibold ${free ? 'text-green-500' : 'text-fg'}`}
-                    >
-                      {formatRate(rate)}
-                    </dd>
-                  </div>
-                )
-              })}
-            </dl>
-          </div>
-        )}
+        <dl className="space-y-2">
+          {WA_PRICING_ORDER.map((category) => {
+            const rate = WA_CREDIT_RATES[category]
+            const free = rate <= 0
+            return (
+              <div key={category} className="flex items-baseline justify-between gap-4">
+                <dt className="text-sm text-muted2">{WA_CATEGORY_LABELS[category]}</dt>
+                <dd
+                  className={`text-sm font-semibold ${
+                    free ? 'text-green-700 dark:text-green-400' : 'text-fg'
+                  }`}
+                >
+                  {formatRate(rate)}
+                </dd>
+              </div>
+            )
+          })}
+        </dl>
       </div>
 
       <div className="mt-4">
@@ -351,8 +334,28 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
 
           {data.transactions.length > 0 && (
             <div className="mt-5">
-              <h3 className="mb-2 text-sm font-semibold text-fg">Recent Transactions</h3>
-              <table className="w-full text-sm">
+              {/* Collapsed by default — the ledger is long and detailed, and
+                  most visits here only need the balance and the 30-day
+                  rollup above. */}
+              <button
+                type="button"
+                onClick={() => setShowTransactions((v) => !v)}
+                aria-expanded={showTransactions}
+                aria-controls="wcc-transactions"
+                className="flex items-center gap-1.5 text-sm font-semibold text-fg hover:text-muted2"
+              >
+                <ChevronDown
+                  size={15}
+                  className={`transition-transform ${showTransactions ? 'rotate-180' : ''}`}
+                />
+                Recent Transactions
+                <span className="text-xs font-normal text-muted">
+                  ({data.transactions.length})
+                </span>
+              </button>
+
+              {showTransactions && (
+              <table id="wcc-transactions" className="mt-2 w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                     <th className="pb-2 font-medium">Date</th>
@@ -384,6 +387,7 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           )}
         </div>
