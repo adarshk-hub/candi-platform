@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
-import NotificationBell from '@/components/NotificationBell'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { StagesProvider } from '@/lib/StagesContext'
 import { getServerSession } from '@/lib/serverAuth'
@@ -66,15 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <StagesProvider>
               <div className="flex">
                 <Sidebar user={session} showLeadStatusTabs={showLeadStatusTabs} institutionName={institutionName} />
-                <main className="min-h-screen flex-1 overflow-x-hidden">
-                  {/* Thin top bar carrying app-wide controls. Sticky so the
-                      bell stays reachable while a long leads list scrolls,
-                      matching the sidebar's own sticky behaviour. */}
-                  <div className="sticky top-0 z-30 flex justify-end border-b border-border bg-bg/80 px-8 py-2.5 backdrop-blur">
-                    <NotificationBell />
-                  </div>
-                  <div className="px-8 py-8">{children}</div>
-                </main>
+                <main className="min-h-screen flex-1 overflow-x-hidden px-8 py-8">{children}</main>
               </div>
             </StagesProvider>
           ) : (
