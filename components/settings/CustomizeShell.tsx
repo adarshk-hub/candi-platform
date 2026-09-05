@@ -13,7 +13,6 @@ import {
   Tags,
   FormInput,
   Users,
-  ImageIcon,
   Rows3,
   Mail,
   MessageCircle,
@@ -24,7 +23,6 @@ import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
 import LeadFormFieldsPanel from './panels/LeadFormFieldsPanel'
 import CounsellorsPanel from './panels/CounsellorsPanel'
-import LogoPanel from './panels/LogoPanel'
 import DisplayPrefsPanel from './panels/DisplayPrefsPanel'
 import EmailSettingsPanel from './panels/EmailSettingsPanel'
 import WhatsAppSettingsPanel from './panels/WhatsAppSettingsPanel'
@@ -41,7 +39,6 @@ const CATEGORIES = [
   { key: 'lead_source', label: 'Lead Source', icon: Tags },
   { key: 'fields', label: 'Lead Form Fields', icon: FormInput },
   { key: 'counsellors', label: 'Counsellors', icon: Users },
-  { key: 'logo', label: 'Institute Logo', icon: ImageIcon },
   { key: 'email', label: 'School Email', icon: Mail },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'capi', label: 'Conversions API', icon: Radio },
@@ -126,7 +123,6 @@ export default function CustomizeShell({
           {active === 'lead_source' && <OptionListPanel clientId={clientId} listKey="lead_source" title="Lead Source" />}
           {active === 'fields' && <LeadFormFieldsPanel clientId={clientId} />}
           {active === 'counsellors' && <CounsellorsPanel clientId={clientId} />}
-          {active === 'logo' && <LogoPanel clientId={clientId} />}
           {active === 'email' && <EmailSettingsPanel clientId={clientId} />}
           {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
