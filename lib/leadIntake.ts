@@ -1,6 +1,7 @@
 //Re
 import { queryAsClient } from './db'
 import { fetchMetaObjectName } from './metaAdsSpend'
+import { createNotification } from './notifications'
 
 export function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -115,6 +116,20 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
        VALUES ($1, 'system', 'Lead Created', $2)`,
       [lead.id, `New lead created: ${input.fullName} - ${input.whatsappNumber} from ${input.source} (${input.entryType})`]
     )
+
+    // Only genuinely new records notify. A duplicate touch merged into an
+    // existing lead (the two return paths above) is not a new lead and
+    // must not ring the bell as one.
+    // Historical backfills pass createdAt to date rows in the past — those
+    // aren't news either, so they're skipped.
+    if (!input.createdAt) {
+      await createNotification({
+        clientId: input.clientId,
+        leadId: lead.id,
+        type: 'new_lead',
+        body: `${input.source} · ${input.entryType}`,
+      })
+    }
 
     return { lead, created: true, duplicate: false }
   } catch (err: any) {
