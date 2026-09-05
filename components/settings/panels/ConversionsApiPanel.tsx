@@ -1,8 +1,9 @@
+// path: components/settings/panels/ConversionsApiPanel.tsx
 //Re
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Check, RefreshCw } from 'lucide-react'
+import { Check, RefreshCw, ChevronDown } from 'lucide-react'
 import { META_STANDARD_EVENTS } from '@/lib/types'
 
 interface StageRow {
@@ -41,6 +42,7 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
 
+  const [showEvents, setShowEvents] = useState(false)
   const [capiEnabled, setCapiEnabled] = useState(false)
   const [pixelId, setPixelId] = useState('')
   const [testEventCode, setTestEventCode] = useState('')
@@ -255,27 +257,45 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
       </div>
 
       <div className="rounded-card border border-border bg-card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-fg">Recent events</h3>
-            <p className="text-sm text-muted2">
-              {summary
-                ? `${summary.sent} sent, ${summary.failed} failed, ${summary.skipped} skipped${
-                    summary.last_event_at ? ` — last event ${new Date(summary.last_event_at).toLocaleString('en-IN')}` : ''
-                  }`
-                : 'No events yet.'}
-            </p>
-          </div>
+        <div className="flex items-center justify-between">
+          {/* Collapsed by default — this is a long audit log most visits to
+              this panel don't need, and it pushed the actual configuration
+              above it out of view. */}
           <button
-            onClick={loadEvents}
-            disabled={eventsLoading}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted2 hover:text-fg"
+            type="button"
+            onClick={() => setShowEvents((v) => !v)}
+            aria-expanded={showEvents}
+            aria-controls="capi-recent-events"
+            className="flex items-start gap-2 text-left"
           >
-            <RefreshCw size={13} className={eventsLoading ? 'animate-spin' : ''} /> Refresh
+            <ChevronDown
+              size={16}
+              className={`mt-0.5 shrink-0 text-muted2 transition-transform ${showEvents ? 'rotate-180' : ''}`}
+            />
+            <span>
+              <span className="block font-semibold text-fg">Recent events</span>
+              <span className="block text-sm text-muted2">
+                {summary
+                  ? `${summary.sent} sent, ${summary.failed} failed, ${summary.skipped} skipped${
+                      summary.last_event_at ? ` — last event ${new Date(summary.last_event_at).toLocaleString('en-IN')}` : ''
+                    }`
+                  : 'No events yet.'}
+              </span>
+            </span>
           </button>
+          {showEvents && (
+            <button
+              onClick={loadEvents}
+              disabled={eventsLoading}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted2 hover:text-fg"
+            >
+              <RefreshCw size={13} className={eventsLoading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          )}
         </div>
 
-        <div className="overflow-x-auto">
+        {showEvents && (
+        <div id="capi-recent-events" className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-widest text-muted">
@@ -308,6 +328,7 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   )
