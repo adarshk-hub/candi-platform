@@ -1,3 +1,4 @@
+// path: components/dashboard/PipelineDashboard.tsx
 'use client'
 
 import { useMemo, useState } from 'react'
@@ -148,17 +149,25 @@ function CampaignTable({
   campaigns,
   checked,
   onToggle,
+  saveState = 'idle',
 }: {
   campaigns: GroupedCampaignRow[]
   checked: Set<string>
   onToggle: (ids: string[]) => void
+  saveState?: 'idle' | 'saving' | 'error'
 }) {
   return (
     <div className="mt-4">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted">Campaigns &amp; Targeting</p>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted">Campaigns &amp; Targeting</p>
+        {saveState === 'saving' && <p className="text-xs text-muted">Saving…</p>}
+        {saveState === 'error' && (
+          <p className="text-xs text-red-400">Couldn't save — this selection won't be here next time.</p>
+        )}
+      </div>
       <p className="mb-3 mt-1 text-xs text-muted2">
         Uncheck a campaign to leave it out of every number on this page — useful for boosted posts or one-off
-        campaigns you don't want counted.
+        campaigns you don't want counted. Your selection is saved and reapplied next time.
       </p>
       <div className="overflow-x-auto rounded-card border border-border">
         <table className="w-full text-sm">
@@ -295,10 +304,38 @@ function PlatformCard({
   )
 }
 
-export default function PipelineDashboard({ metrics }: { metrics: ClientDashboardMetrics }) {
+export default function PipelineDashboard({
+  metrics,
+  clientId,
+  initialExcluded = [],
+}: {
+  metrics: ClientDashboardMetrics
+  clientId: string
+  initialExcluded?: string[]
+}) {
   const [tab, setTab] = useState<Tab>('overall')
   const [detailed, setDetailed] = useState(true)
-  const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  const [excluded, setExcluded] = useState<Set<string>>(new Set(initialExcluded))
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle')
+
+  // Sends the complete excluded set after each toggle. Fire-and-forget on
+  // purpose — the checkbox has already moved locally, so waiting on the
+  // network would make the UI feel laggy for something that reconciles on
+  // the next page load anyway. A failure surfaces as a visible warning
+  // rather than silently pretending the choice was kept.
+  async function persist(next: Set<string>) {
+    setSaveState('saving')
+    try {
+      const res = await fetch(`/api/clients/${clientId}/excluded-campaigns`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ excluded: Array.from(next) }),
+      })
+      setSaveState(res.ok ? 'idle' : 'error')
+    } catch {
+      setSaveState('error')
+    }
+  }
 
   // Toggling a grouped row (possibly several real campaign_ids sharing one
   // display name) moves all of them together — if any are currently
@@ -306,15 +343,18 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
   // the whole group. Keeps the checkbox state unambiguous rather than
   // landing in a half-checked state a single checkbox can't represent.
   function toggleCampaignGroup(ids: string[]) {
-    setExcluded((prev) => {
-      const next = new Set(prev)
-      const allIncluded = ids.every((id) => !next.has(id))
-      for (const id of ids) {
-        if (allIncluded) next.add(id)
-        else next.delete(id)
-      }
-      return next
-    })
+    // Computed outside setExcluded rather than inside the updater: React
+    // re-invokes updater functions (twice in StrictMode, and again on any
+    // re-render it decides to replay), which would fire a duplicate PUT
+    // per click. State updaters must stay pure.
+    const next = new Set(excluded)
+    const allIncluded = ids.every((id) => !next.has(id))
+    for (const id of ids) {
+      if (allIncluded) next.add(id)
+      else next.delete(id)
+    }
+    setExcluded(next)
+    persist(next)
   }
 
   const includedCampaigns = useMemo(
@@ -495,7 +535,7 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
               {formatLakh(buckets.meta.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedMeta} checked={includedIds} onToggle={toggleCampaignGroup} />
+          <CampaignTable campaigns={sortedMeta} checked={includedIds} onToggle={toggleCampaignGroup} saveState={saveState} />
         </div>
       )}
 
@@ -511,7 +551,7 @@ export default function PipelineDashboard({ metrics }: { metrics: ClientDashboar
               {formatLakh(buckets.google.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedGoogle} checked={includedIds} onToggle={toggleCampaignGroup} />
+          <CampaignTable campaigns={sortedGoogle} checked={includedIds} onToggle={toggleCampaignGroup} saveState={saveState} />
         </div>
       )}
     </div>
