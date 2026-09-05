@@ -1,3 +1,4 @@
+// path: app/api/leads/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
@@ -116,16 +117,40 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// Swallows only "this table/column doesn't exist here" — a client database
+// provisioned before a later migration ran genuinely has nothing to clean
+// up, and that shouldn't block the delete. Anything else (a foreign key
+// still holding the row, a permissions problem) is re-thrown so it surfaces
+// as a real message. The previous blanket .catch(() => {}) is what hid the
+// circular-key failure below and turned it into an unexplained
+// "Could not delete the selected leads."
+function ignoreMissingRelation(err: any): void {
+  // 42P01 undefined_table, 42703 undefined_column
+  if (err?.code === '42P01' || err?.code === '42703') return
+  throw err
+}
+
 // Every table that stores a lead_id needs its rows cleared before the lead
 // row itself can go, since none of these foreign keys cascade. Order
 // doesn't matter between them (none reference each other), except
 // wa_sequence_messages, which hangs off wa_sequences.id rather than
 // lead_id directly and so has to go first.
 async function deleteLeadDependents(leadId: string) {
+  // leads and wa_sequences point at each other: wa_sequences.lead_id
+  // references the lead, and leads.wa_sequence_id references the sequence.
+  // That cycle makes the order below unsatisfiable on its own — removing
+  // the sequence first violates leads.wa_sequence_id, and removing the
+  // lead first violates wa_sequences.lead_id. Clearing the lead's pointer
+  // breaks the cycle so both can then go in order.
+  //
+  // This is exactly why a lead with a started nurture sequence refused to
+  // delete while a lead without one deleted fine.
+  await query(`UPDATE leads SET wa_sequence_id = NULL WHERE id = $1`, [leadId]).catch(ignoreMissingRelation)
+
   await query(
     `DELETE FROM wa_sequence_messages WHERE sequence_id IN (SELECT id FROM wa_sequences WHERE lead_id = $1)`,
     [leadId]
-  ).catch(() => {})
+  ).catch(ignoreMissingRelation)
   const tables = [
     'wa_sequences',
     'whatsapp_messages',
@@ -142,10 +167,7 @@ async function deleteLeadDependents(leadId: string) {
     'notifications',
   ]
   for (const table of tables) {
-    // Wrapped per-table: an environment missing one of these optional
-    // tables (e.g. a client DB provisioned before a later migration ran)
-    // shouldn't block deleting the lead itself.
-    await query(`DELETE FROM ${table} WHERE lead_id = $1`, [leadId]).catch(() => {})
+    await query(`DELETE FROM ${table} WHERE lead_id = $1`, [leadId]).catch(ignoreMissingRelation)
   }
 }
 
@@ -174,14 +196,30 @@ export async function DELETE(req: NextRequest) {
   )
   const skipped = rows.length - deletable.length
 
-  for (const row of deletable) {
-    await deleteLeadDependents(row.id)
-  }
-  if (deletable.length > 0) {
-    await query(
-      `DELETE FROM leads WHERE id = ANY($1)`,
-      [deletable.map((r) => r.id)]
-    )
+  try {
+    for (const row of deletable) {
+      await deleteLeadDependents(row.id)
+    }
+    if (deletable.length > 0) {
+      await query(
+        `DELETE FROM leads WHERE id = ANY($1)`,
+        [deletable.map((r) => r.id)]
+      )
+    }
+  } catch (err: any) {
+    // Naming the blocking table turns "Could not delete the selected leads."
+    // into something actionable — a 23503 here means some table still holds
+    // a row pointing at this lead and needs adding to the list above.
+    console.error('[leads:delete] failed:', err)
+    if (err?.code === '23503') {
+      return NextResponse.json(
+        {
+          error: `This lead still has linked records (${err?.table || 'unknown table'}) that couldn't be removed. Nothing was deleted.`,
+        },
+        { status: 409 }
+      )
+    }
+    return handleWriteError(err)
   }
 
   return NextResponse.json({
