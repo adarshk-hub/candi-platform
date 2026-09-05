@@ -1,6 +1,8 @@
+// path: app/api/leads/filter-options/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 // Powers the leads list's Filter panel (Stage / Source / Grade). Stage
 // comes from this institute's own pipeline_stages config; Source and Grade
@@ -15,9 +17,14 @@ export async function GET(req: NextRequest) {
   const params: any[] = []
   if (session.role === 'client_counsellor') {
     params.push(session.id)
-    where.push(`assigned_counsellor_id = $${params.length}`)
+    where.push(`l.assigned_counsellor_id = $${params.length}`)
   }
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  // The Source and Grade dropdowns must only offer values that exist on
+  // visible leads — otherwise the filter panel advertises a source whose
+  // every lead is outside the global window, and picking it returns
+  // nothing. Both queries below are aliased to `l` for this clause.
+  where.push(leadDateRangeSql('l'))
+  const whereSql = `WHERE ${where.join(' AND ')}`
 
   const [stages, sources, grades] = await Promise.all([
     query<{ key: string; label: string }>(
@@ -25,11 +32,11 @@ export async function GET(req: NextRequest) {
       [session.clientId]
     ).catch(() => []),
     query<{ source: string }>(
-      `SELECT DISTINCT source FROM leads ${whereSql} ORDER BY source ASC`,
+      `SELECT DISTINCT l.source FROM leads l ${whereSql} ORDER BY l.source ASC`,
       params
     ),
     query<{ grade: string }>(
-      `SELECT DISTINCT grade FROM leads ${whereSql ? whereSql + ' AND' : 'WHERE'} grade IS NOT NULL AND grade <> '' ORDER BY grade ASC`,
+      `SELECT DISTINCT l.grade FROM leads l ${whereSql} AND l.grade IS NOT NULL AND l.grade <> '' ORDER BY l.grade ASC`,
       params
     ),
   ])
