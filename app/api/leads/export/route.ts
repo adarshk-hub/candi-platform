@@ -1,7 +1,9 @@
+// path: app/api/leads/export/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { buildLeadsExportFile, ExportableLead, ExportFormat } from '@/lib/leadImportExport'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 // Shares the exact same filter semantics as GET /api/leads (search, tab,
 // stage/source/grade) so "export what I'm looking at" always matches what's
@@ -71,6 +73,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Global lead visibility window (Settings > Customize > Lead Date
+  // Range). Applied last so it can never be widened by anything above.
+  where.push(leadDateRangeSql('l'))
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   // Capped so an "export everything, no filters" click on a very large
