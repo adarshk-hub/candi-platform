@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown } from 'lucide-react'
+import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, MessageCircle } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useNotifications } from '@/lib/useNotifications'
 import { useStages } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { useColumnWidths } from '@/lib/useColumnWidths'
@@ -53,6 +54,12 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
   const tab = searchParams.get('tab') || ''
   const page = Number(searchParams.get('page') || '1')
   const view = searchParams.get('view') === 'kanban' ? 'kanban' : 'list'
+  // Set by the notification bell when jumping to a specific lead.
+  const highlight = searchParams.get('highlight') || ''
+
+  // Per-row unread WhatsApp badges, kept in step with the bell — opening a
+  // lead clears it in both places at once.
+  const { unreadByLead } = useNotifications()
 
   function setView(v: 'list' | 'kanban') {
     const params = new URLSearchParams(searchParams.toString())
@@ -128,6 +135,14 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
   }, [tab, page, search, filters, router])
 
   useEffect(load, [load])
+
+  // Arriving from a notification: open that lead straight away. The row
+  // itself is also ringed below, which matters when the lead is further
+  // down a long list — closing the panel leaves it visibly marked rather
+  // than dropping the user into an undifferentiated table.
+  useEffect(() => {
+    if (highlight) setActiveLead(highlight)
+  }, [highlight])
 
   // Reset to page 1 whenever the filter set changes, so a narrower filter
   // never leaves the user stranded on a page number that no longer exists.
@@ -392,7 +407,8 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                     onClick={() => setActiveLead(l.id)}
                     className={clsx(
                       'cursor-pointer border-b border-border last:border-0 hover:bg-card2',
-                      selected.has(l.id) && 'bg-blue-500/5'
+                      selected.has(l.id) && 'bg-blue-500/5',
+                      l.id === highlight && 'bg-amber-400/10 ring-2 ring-inset ring-amber-400/60'
                     )}
                   >
                     <td className="border-r border-border px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -410,7 +426,20 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                       </p>
                     </td>
                     <td style={{ width: widths.lead }} className={TD}>
-                      <p className="truncate font-medium text-blue-400">{l.full_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate font-medium text-blue-400">{l.full_name}</p>
+                        {unreadByLead[l.id] > 0 && (
+                          <span
+                            title={`${unreadByLead[l.id]} unread WhatsApp message${
+                              unreadByLead[l.id] === 1 ? '' : 's'
+                            }`}
+                            className="flex shrink-0 items-center gap-0.5 rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-bold text-green-500"
+                          >
+                            <MessageCircle size={10} />
+                            {unreadByLead[l.id]}
+                          </span>
+                        )}
+                      </div>
                       {l.child_name && <p className="truncate text-xs text-muted2">{l.child_name}</p>}
                     </td>
                     <td style={{ width: widths.phone }} className={clsx(TD, 'text-fg')}>
@@ -452,6 +481,13 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
               leadId={activeLead}
               onClose={() => {
                 setActiveLead(null)
+                if (highlight) {
+                  // Otherwise a refresh (or a Back) would re-open the panel
+                  // the user just dismissed.
+                  const params = new URLSearchParams(searchParams.toString())
+                  params.delete('highlight')
+                  router.replace(`/leads?${params.toString()}`)
+                }
                 load()
               }}
             />
