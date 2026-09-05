@@ -1,3 +1,4 @@
+// path: components/lead/LeadsPageClient.tsx
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -5,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, MessageCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useNotifications } from '@/lib/useNotifications'
+import { LEAD_COLUMNS, LeadColumnKey, resolveLeadColumns } from '@/lib/leadTableColumns'
 import { useStages } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { useColumnWidths } from '@/lib/useColumnWidths'
@@ -24,14 +26,94 @@ const TAB_TITLE: Record<string, string> = {
   enrolled: 'Enrolled',
 }
 
-const COLUMN_DEFAULTS = {
-  id: 110,
-  lead: 220,
-  phone: 160,
-  grade: 90,
-  stage: 140,
-  source: 150,
-  counsellor: 130,
+// Widths for every column that can be shown, taken from the shared
+// registry so a newly added column arrives with a sensible width instead
+// of collapsing to nothing.
+const COLUMN_DEFAULTS: Record<string, number> = Object.fromEntries(
+  LEAD_COLUMNS.map((c) => [c.key, c.width])
+)
+
+const COLUMN_LABELS: Record<string, string> = Object.fromEntries(
+  LEAD_COLUMNS.map((c) => [c.key, c.label])
+)
+
+// One cell renderer keyed by column, so the header list and the body can
+// never disagree about what's on screen — both walk the same array.
+function renderCell(key: LeadColumnKey, l: LeadRow, unread: number, childHasOwnColumn: boolean) {
+  switch (key) {
+    case 'id':
+      return (
+        <>
+          <p className="font-mono text-xs text-green-400">#{l.lead_number}</p>
+          <p className="text-xs text-muted">
+            {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+          </p>
+        </>
+      )
+    case 'lead':
+      return (
+        <>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium text-blue-400">{l.full_name}</p>
+            {unread > 0 && (
+              <span
+                title={`${unread} unread WhatsApp message${unread === 1 ? '' : 's'}`}
+                className="flex shrink-0 items-center gap-0.5 rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-bold text-green-500"
+              >
+                <MessageCircle size={10} />
+                {unread}
+              </span>
+            )}
+          </div>
+          {/* Suppressed when Child has a column of its own, otherwise the
+              same name would appear twice on every row. */}
+          {l.child_name && !childHasOwnColumn && (
+            <p className="truncate text-xs text-muted2">{l.child_name}</p>
+          )}
+        </>
+      )
+    case 'child_name':
+      return <span className="text-muted2">{l.child_name || '—'}</span>
+    case 'phone':
+      return <span className="text-fg">{l.whatsapp_number}</span>
+    case 'email':
+      return <span className="text-muted2">{l.email || '—'}</span>
+    case 'grade':
+      return <span className="text-muted2">{l.grade || '—'}</span>
+    case 'stage':
+      return <StagePillView stage={l.pipeline_stage} clientId={l.client_id} />
+    case 'source':
+      return <span className="text-muted2">{SOURCE_LABEL[l.source] || l.source}</span>
+    case 'campaign':
+      return <span className="text-muted2">{l.campaign_display_name || '—'}</span>
+    case 'score':
+      return <span className="text-muted2">{l.lead_score ?? 0}/10</span>
+    case 'created':
+      return (
+        <span className="text-muted2">
+          {new Date(l.created_at).toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      )
+    case 'counsellor':
+      return l.counsellor_name ? (
+        <span
+          title={l.counsellor_name}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-600 text-xs text-white"
+        >
+          {initials(l.counsellor_name)}
+        </span>
+      ) : (
+        <span className="text-muted">—</span>
+      )
+    default:
+      return null
+  }
 }
 
 const TOOLBAR_BTN = 'flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted2 hover:bg-card2 hover:text-fg'
@@ -93,6 +175,29 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
   const isInitialParams = useRef(true)
 
   const { widths, setWidth } = useColumnWidths('leads-list', COLUMN_DEFAULTS)
+  // Starts on the default set so the table renders immediately, then
+  // swaps to the institute's saved selection once it loads. resolve*
+  // guarantees a usable list either way.
+  const [visibleColumns, setVisibleColumns] = useState<LeadColumnKey[]>(() => resolveLeadColumns(null))
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/lead-table-columns')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setVisibleColumns(resolveLeadColumns(data.columns))
+      })
+      .catch(() => {
+        // Keep the defaults.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Drives the duplicate-suppression in the Lead cell below.
+  const showsChildColumn = visibleColumns.includes('child_name')
 
   function buildQueryParams() {
     const params = new URLSearchParams()
@@ -379,27 +484,11 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                       className="h-3.5 w-3.5 rounded border-border accent-blue-600"
                     />
                   </th>
-                  <ResizableTh width={widths.id} onResize={(w) => setWidth('id', w)}>
-                    ID
-                  </ResizableTh>
-                  <ResizableTh width={widths.lead} onResize={(w) => setWidth('lead', w)}>
-                    Lead
-                  </ResizableTh>
-                  <ResizableTh width={widths.phone} onResize={(w) => setWidth('phone', w)}>
-                    Phone
-                  </ResizableTh>
-                  <ResizableTh width={widths.grade} onResize={(w) => setWidth('grade', w)}>
-                    Grade
-                  </ResizableTh>
-                  <ResizableTh width={widths.stage} onResize={(w) => setWidth('stage', w)}>
-                    Stage
-                  </ResizableTh>
-                  <ResizableTh width={widths.source} onResize={(w) => setWidth('source', w)}>
-                    Source
-                  </ResizableTh>
-                  <ResizableTh width={widths.counsellor} onResize={(w) => setWidth('counsellor', w)}>
-                    Counsellor
-                  </ResizableTh>
+                  {visibleColumns.map((key) => (
+                    <ResizableTh key={key} width={widths[key]} onResize={(w) => setWidth(key, w)}>
+                      {COLUMN_LABELS[key]}
+                    </ResizableTh>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -421,50 +510,15 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                         className="h-3.5 w-3.5 rounded border-border accent-blue-600"
                       />
                     </td>
-                    <td style={{ width: widths.id }} className={TD}>
-                      <p className="font-mono text-xs text-green-400">#{l.lead_number}</p>
-                      <p className="text-xs text-muted">
-                        {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </p>
-                    </td>
-                    <td style={{ width: widths.lead }} className={TD}>
-                      <div className="flex items-center gap-1.5">
-                        <p className="truncate font-medium text-blue-400">{l.full_name}</p>
-                        {unreadByLead[l.id] > 0 && (
-                          <span
-                            title={`${unreadByLead[l.id]} unread WhatsApp message${
-                              unreadByLead[l.id] === 1 ? '' : 's'
-                            }`}
-                            className="flex shrink-0 items-center gap-0.5 rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-bold text-green-500"
-                          >
-                            <MessageCircle size={10} />
-                            {unreadByLead[l.id]}
-                          </span>
-                        )}
-                      </div>
-                      {l.child_name && <p className="truncate text-xs text-muted2">{l.child_name}</p>}
-                    </td>
-                    <td style={{ width: widths.phone }} className={clsx(TD, 'text-fg')}>
-                      {l.whatsapp_number}
-                    </td>
-                    <td style={{ width: widths.grade }} className={clsx(TD, 'text-muted2')}>
-                      {l.grade || '—'}
-                    </td>
-                    <td style={{ width: widths.stage }} className={TD}>
-                      <StagePillView stage={l.pipeline_stage} clientId={l.client_id} />
-                    </td>
-                    <td style={{ width: widths.source }} className={clsx(TD, 'text-muted2')}>
-                      {SOURCE_LABEL[l.source] || l.source}
-                    </td>
-                    <td style={{ width: widths.counsellor }} className={clsx(TD, 'overflow-visible')}>
-                      {l.counsellor_name ? (
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-600 text-xs text-white">
-                          {initials(l.counsellor_name)}
-                        </span>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
+                    {visibleColumns.map((key) => (
+                      <td
+                        key={key}
+                        style={{ width: widths[key] }}
+                        className={clsx(TD, key === 'counsellor' && 'overflow-visible')}
+                      >
+                        {renderCell(key, l, unreadByLead[l.id] || 0, showsChildColumn)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
                 {!loading && leads.length === 0 && (
