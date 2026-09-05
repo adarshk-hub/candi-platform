@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
+import LeadDateRangePanel from './panels/LeadDateRangePanel'
 import NotificationBell from '@/components/NotificationBell'
 import {
   ArrowLeft,
@@ -14,6 +15,7 @@ import {
   FormInput,
   Users,
   Rows3,
+  CalendarRange,
   Mail,
   MessageCircle,
   Radio,
@@ -42,6 +44,7 @@ const CATEGORIES = [
   { key: 'email', label: 'School Email', icon: Mail },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'capi', label: 'Conversions API', icon: Radio },
+  { key: 'lead_range', label: 'Lead Date Range', icon: CalendarRange },
   { key: 'display', label: 'Display Preferences', icon: Rows3 },
   { key: 'activity', label: 'Activity', icon: History },
 ] as const
@@ -126,6 +129,7 @@ export default function CustomizeShell({
           {active === 'email' && <EmailSettingsPanel clientId={clientId} />}
           {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
+          {active === 'lead_range' && <LeadDateRangePanel clientId={clientId} />}
           {active === 'display' && <DisplayPrefsPanel clientId={clientId} />}
           {active === 'activity' && <SettingsActivityPanel clientId={clientId} />}
         </div>
