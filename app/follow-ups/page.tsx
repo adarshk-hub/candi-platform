@@ -10,6 +10,7 @@ import { useColumnWidths } from '@/lib/useColumnWidths'
 import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
+import { useLeadDateRange } from '@/lib/useLeadDateRange'
 
 interface FollowUpRow {
   id: string
@@ -69,6 +70,8 @@ export default function FollowUpsPage() {
       .then((data) => setRows(Array.isArray(data) ? data : []))
   }
 
+  const leadRange = useLeadDateRange()
+
   useEffect(load, [from, to, search])
 
   return (
@@ -97,6 +100,8 @@ export default function FollowUpsPage() {
           <input
             type="date"
             value={from}
+            min={leadRange.from || undefined}
+            max={leadRange.to || undefined}
             onChange={(e) => setFrom(e.target.value)}
             className="rounded-md border border-border bg-card2 px-2 py-1 text-fg"
           />
@@ -106,6 +111,8 @@ export default function FollowUpsPage() {
           <input
             type="date"
             value={to}
+            min={leadRange.from || undefined}
+            max={leadRange.to || undefined}
             onChange={(e) => setTo(e.target.value)}
             className="rounded-md border border-border bg-card2 px-2 py-1 text-fg"
           />
