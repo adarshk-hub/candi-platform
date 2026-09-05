@@ -122,9 +122,16 @@ html:not(.dark) .text-muted2 svg {
 }
 
 /* Icon-only controls have no adjacent label to lean on, so they carry the
-   full burden of being noticed. */
-html:not(.dark) button > svg:only-child,
-html:not(.dark) a > svg:only-child {
+   full burden of being noticed.
+
+   :only-child counts element siblings only, not text nodes, so a button
+   like "+ Add Lead" still matches it — which would repaint that white +
+   dark against the blue fill. The :not([class*="text-"]) guard keeps this
+   off any control that already states its own text colour, so an explicit
+   text-white (or text-red-400, etc.) always wins. Genuinely bare icon
+   buttons still get the darker treatment. */
+html:not(.dark) button:not([class*="text-"]) > svg:only-child,
+html:not(.dark) a:not([class*="text-"]) > svg:only-child {
   color: rgb(45 55 72); /* 12.0:1 */
 }
 
