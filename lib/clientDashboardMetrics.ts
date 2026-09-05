@@ -1,4 +1,6 @@
+// path: lib/clientDashboardMetrics.ts
 import { query } from './db'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 export interface CampaignRow {
   id: string
@@ -96,7 +98,10 @@ export async function getClientDashboardMetrics(
   // ClientDashboard has always used between "leads this month" and "spend
   // this month".
   const leadParams: any[] = [clientId]
-  let leadWhere = 'WHERE l.client_id = $1'
+  // The global window is baked into the base predicate every lead metric
+  // on this dashboard builds from, so no count, funnel stage, campaign
+  // rollup or cost figure can include a lead the CRM is hiding.
+  let leadWhere = `WHERE l.client_id = $1 AND ${leadDateRangeSql('l')}`
   if (from) {
     leadParams.push(from)
     leadWhere += ` AND l.created_at >= $${leadParams.length}`
@@ -252,7 +257,7 @@ export async function getClientDashboardMetrics(
   // campaign_id at all — organic/direct/manual/WhatsApp inbound. No spend
   // is possible for these by definition, so cost metrics don't apply.
   const organicParams: any[] = [clientId]
-  let organicWhere = 'WHERE l.client_id = $1 AND l.campaign_id IS NULL'
+  let organicWhere = `WHERE l.client_id = $1 AND l.campaign_id IS NULL AND ${leadDateRangeSql('l')}`
   if (from) {
     organicParams.push(from)
     organicWhere += ` AND l.created_at >= $${organicParams.length}`
