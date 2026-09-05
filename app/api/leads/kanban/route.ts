@@ -1,6 +1,8 @@
+// path: app/api/leads/kanban/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -46,6 +48,9 @@ export async function GET(req: NextRequest) {
     where.push(`l.created_at <= $${params.length}::date + interval '1 day'`)
   }
 
+  // Global lead visibility window (Settings > Customize > Lead Date
+  // Range). Applied last so it can never be widened by anything above.
+  where.push(leadDateRangeSql('l'))
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   // Pagination: the kanban board previously returned every matching lead in
