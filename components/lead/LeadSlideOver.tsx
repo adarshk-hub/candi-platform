@@ -5,6 +5,7 @@ import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Mail } 
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
+import { markLeadRead } from '@/lib/useNotifications'
 import StagePill from './StagePill'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
@@ -38,6 +39,13 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
   }
 
   useEffect(load, [leadId])
+
+  // Opening the lead is what "checked" means — clear its notifications
+  // here rather than in each caller, so every entry point (list row,
+  // kanban card, notification bell) behaves the same way.
+  useEffect(() => {
+    markLeadRead(leadId)
+  }, [leadId])
 
   async function changeStage(next: string) {
     if (!lead) return
