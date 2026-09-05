@@ -1,6 +1,8 @@
+// path: app/api/events/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -35,6 +37,9 @@ export async function GET(req: NextRequest) {
     where.push(`l.assigned_counsellor_id = $${params.length}`)
   }
 
+  // Global lead visibility window (Settings > Customize > Lead Date
+  // Range). Applied last so it can never be widened by anything above.
+  where.push(leadDateRangeSql('l'))
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   const rows = await query(
