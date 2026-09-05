@@ -19,6 +19,10 @@ export interface LeadRow {
   created_at: string
   assigned_counsellor_id: string | null
   counsellor_name: string | null
+  // Optional columns — selected in Settings > Customize > Display
+  // Preferences. Always fetched; the table decides whether to show them.
+  email: string | null
+  campaign_display_name: string | null
 }
 
 export interface LeadsPageParams {
@@ -117,10 +121,12 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
   const offset = (page - 1) * PAGE_SIZE
   const leads = await query<LeadRow>(
     `SELECT l.id, l.lead_number, l.client_id, l.full_name, l.child_name, l.whatsapp_number, l.grade, l.pipeline_stage,
-            l.source, l.lead_score, l.created_at, l.assigned_counsellor_id,
-            u.full_name AS counsellor_name
+            l.source, l.lead_score, l.created_at, l.assigned_counsellor_id, l.email,
+            u.full_name AS counsellor_name,
+            c.display_name AS campaign_display_name
      FROM leads l
      LEFT JOIN users u ON u.id = l.assigned_counsellor_id
+     LEFT JOIN campaigns c ON c.id = l.campaign_id
      ${whereSql}
      ORDER BY l.created_at DESC
      LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
