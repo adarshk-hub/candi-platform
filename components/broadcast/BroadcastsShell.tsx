@@ -1,6 +1,8 @@
+// path: components/broadcast/BroadcastsShell.tsx
 'use client'
 
 import { useState } from 'react'
+import NotificationBell from '@/components/NotificationBell'
 import { Radio, MessageCircle, Mail } from 'lucide-react'
 import BroadcastComposer from './BroadcastComposer'
 import BroadcastHistory from './BroadcastHistory'
@@ -38,6 +40,9 @@ export default function BroadcastsShell({
       <div className="mb-6 flex items-center gap-3">
         <Radio size={22} className="text-fg" />
         <h1 className="text-2xl font-bold text-fg">Broadcasts</h1>
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
       </div>
 
       {!lockedToClientId && (
