@@ -139,6 +139,7 @@ async function deleteLeadDependents(leadId: string) {
     'follow_ups',
     'enrollments',
     'events',
+    'notifications',
   ]
   for (const table of tables) {
     // Wrapped per-table: an environment missing one of these optional
