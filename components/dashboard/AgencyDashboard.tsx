@@ -1,8 +1,10 @@
+// path: components/dashboard/AgencyDashboard.tsx
 import Link from 'next/link'
 import { query } from '@/lib/db'
 import { getPrimaryClientStages } from '@/lib/stagesServer'
 import { SOURCE_LABEL } from '@/lib/types'
 import { pieSlicePaths, PALETTE } from '@/lib/pie'
+import NotificationBell from '@/components/NotificationBell'
 
 export default async function AgencyDashboard({
   from,
@@ -76,7 +78,10 @@ export default async function AgencyDashboard({
 
   return (
     <div>
-      <h1 className="mb-1 border-b-2 border-blue-500 pb-3 text-2xl font-bold text-fg">Dashboard Overview</h1>
+      <div className="mb-1 flex items-center justify-between border-b-2 border-blue-500 pb-3">
+        <h1 className="text-2xl font-bold text-fg">Dashboard Overview</h1>
+        <NotificationBell />
+      </div>
 
       <form className="my-6 flex items-end gap-3 rounded-card border border-border bg-card p-4 text-sm">
         <span className="font-medium text-fg">Select Date</span>
