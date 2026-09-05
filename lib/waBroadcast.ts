@@ -1,5 +1,7 @@
+// path: lib/waBroadcast.ts
 import { query } from './db'
 import { sendTemplateMessage } from './metaWhatsapp'
+import { leadDateRangeSql } from './leadDateRange'
 import {
   buildAudienceQuery,
   previewAudience as previewAudienceShared,
@@ -93,6 +95,7 @@ export async function createBroadcast(params: CreateBroadcastParams): Promise<{ 
          SELECT l.id AS lead_id, l.whatsapp_number AS phone_number
          FROM leads l
          WHERE l.client_id = $1 AND l.id = ANY($2) AND l.whatsapp_number IS NOT NULL AND l.whatsapp_number <> ''
+           AND ${leadDateRangeSql('l')}
        )
        INSERT INTO wa_broadcast_recipients (broadcast_id, lead_id, phone_number)
        SELECT $3, lead_id, phone_number FROM matched
