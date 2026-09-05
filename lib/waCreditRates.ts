@@ -12,10 +12,15 @@
 // since it's still one template send, just with a richer header.
 export type WaMessageCategory = 'marketing' | 'utility' | 'authentication' | 'session'
 
+// NOTE: utility/authentication are priced to three decimal places. The
+// wallet balance and ledger columns must therefore hold at least 4 decimal
+// digits — see scripts/wa-wallet-rate-precision.sql. If those columns are
+// still numeric(_,2), every ₹0.145 send silently rounds to ₹0.15 or ₹0.14
+// and the balance drifts away from what this table says.
 export const WA_CREDIT_RATES: Record<WaMessageCategory, number> = {
-  marketing: 0.88,
-  utility: 0.35,
-  authentication: 0.35,
+  marketing: 1.09,
+  utility: 0.145,
+  authentication: 0.145,
   // Free — Meta itself doesn't charge for a free-form reply sent inside a
   // window the *user* opened (a "service" conversation on Meta's side),
   // so there's no real cost here to pass through. Only template sends
@@ -24,12 +29,48 @@ export const WA_CREDIT_RATES: Record<WaMessageCategory, number> = {
   session: 0,
 }
 
-
 export const DEFAULT_MESSAGE_CATEGORY: WaMessageCategory = 'utility'
 
 export function getRateForCategory(category: string | null | undefined): number {
   const key = (category || '').toLowerCase() as WaMessageCategory
   return WA_CREDIT_RATES[key] ?? WA_CREDIT_RATES[DEFAULT_MESSAGE_CATEGORY]
+}
+
+// True for any category that costs nothing to send, so callers can skip
+// the balance arithmetic entirely instead of writing a ₹0.00 no-op.
+export function isFreeCategory(category: string | null | undefined): boolean {
+  return getRateForCategory(category) <= 0
+}
+
+// What each category is called in the UI. "session" is an internal name —
+// clients see Meta's term for the same thing, "Service", which is what
+// a free-form reply inside the 24hr window actually is on Meta's side.
+export const WA_CATEGORY_LABELS: Record<WaMessageCategory, string> = {
+  marketing: 'Marketing',
+  utility: 'Utility',
+  authentication: 'Authentication',
+  session: 'Service',
+}
+
+// Display order for the per-template-message pricing card in the wallet UI.
+export const WA_PRICING_ORDER: WaMessageCategory[] = [
+  'marketing',
+  'utility',
+  'authentication',
+  'session',
+]
+
+// Renders a rate the way the pricing card shows it: "Free" for ₹0, two
+// decimals normally (₹1.09), and three when the third one carries value
+// (₹0.145) so a sub-paisa rate isn't misrepresented as ₹0.15 or ₹0.14.
+export function formatRate(rate: number): string {
+  if (rate <= 0) return 'Free'
+  const trimmed = rate
+    .toFixed(3)
+    .replace(/(\.\d*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '')
+  const decimals = trimmed.includes('.') ? trimmed.split('.')[1].length : 0
+  return `₹${decimals < 2 ? rate.toFixed(2) : trimmed}`
 }
 
 // The cut withheld on every Razorpay recharge before crediting WCC, e.g.
