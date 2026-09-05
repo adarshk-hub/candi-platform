@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { IndianRupee, RefreshCw, Wallet, AlertTriangle } from 'lucide-react'
+import { IndianRupee, RefreshCw, Wallet, AlertTriangle, ChevronDown, Info } from 'lucide-react'
+import {
+  WA_CREDIT_RATES,
+  WA_CATEGORY_LABELS,
+  WA_PRICING_ORDER,
+  RECHARGE_PRESETS,
+  MIN_RECHARGE_AMOUNT,
+  formatRate,
+} from '@/lib/waCreditRates'
 
 interface CategoryUsage {
   category: string
@@ -36,7 +44,18 @@ interface WalletData {
   transactions: WalletTransaction[]
 }
 
-const RECHARGE_PRESETS = [100, 500, 1000, 5000]
+// Rates and presets are imported from lib/waCreditRates so this panel can
+// never drift from what the wallet actually charges. Editing that one file
+// updates both the billing and this UI.
+
+// Ledger rows store the raw category ('session', 'marketing', …). Show the
+// client-facing label instead so a free 24hr-window reply reads as
+// "Service", matching the pricing card, rather than an internal name.
+function categoryLabel(category: string | null): string {
+  if (!category) return ''
+  const key = category.toLowerCase() as keyof typeof WA_CATEGORY_LABELS
+  return WA_CATEGORY_LABELS[key] || category
+}
 
 declare global {
   interface Window {
@@ -67,6 +86,9 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
   const [status, setStatus] = useState('')
   const [customAmount, setCustomAmount] = useState('')
   const [recharging, setRecharging] = useState<number | null>(null)
+  // Pricing is secondary information — most visits here are to check the
+  // balance or top up, so the rate card stays collapsed until asked for.
+  const [showPricing, setShowPricing] = useState(false)
 
   function loadWallet() {
     setLoading(true)
@@ -89,8 +111,8 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
   }, [clientId])
 
   async function recharge(amount: number) {
-    if (!amount || amount < 100) {
-      setError('Minimum recharge amount is ₹100.')
+    if (!amount || amount < MIN_RECHARGE_AMOUNT) {
+      setError(`Minimum recharge amount is ₹${MIN_RECHARGE_AMOUNT}.`)
       return
     }
     setRecharging(amount)
@@ -205,6 +227,58 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
         </p>
       )}
 
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setShowPricing((v) => !v)}
+          aria-expanded={showPricing}
+          aria-controls="wcc-pricing-card"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg"
+        >
+          <ChevronDown
+            size={14}
+            className={`transition-transform ${showPricing ? 'rotate-180' : ''}`}
+          />
+          {showPricing ? 'Hide pricing' : 'View pricing'}
+        </button>
+
+        {showPricing && (
+          <div
+            id="wcc-pricing-card"
+            className="mt-2 w-full max-w-xs rounded-md border border-green-500/30 bg-green-500/5 p-4"
+          >
+            <div className="mb-3 flex items-center gap-1.5">
+              <p className="text-xs font-bold uppercase tracking-wide text-green-500">
+                Per template message
+              </p>
+              <span
+                title="Charged per message sent. Replies you send inside the 24-hour window that opens when a lead messages you are Service messages and cost nothing — charges only apply once that window closes and a template is needed to reach them again."
+                className="flex cursor-help items-center text-green-500/70"
+              >
+                <Info size={13} />
+              </span>
+            </div>
+
+            <dl className="space-y-2">
+              {WA_PRICING_ORDER.map((category) => {
+                const rate = WA_CREDIT_RATES[category]
+                const free = rate <= 0
+                return (
+                  <div key={category} className="flex items-baseline justify-between gap-4">
+                    <dt className="text-sm text-muted2">{WA_CATEGORY_LABELS[category]}</dt>
+                    <dd
+                      className={`text-sm font-semibold ${free ? 'text-green-500' : 'text-fg'}`}
+                    >
+                      {formatRate(rate)}
+                    </dd>
+                  </div>
+                )
+              })}
+            </dl>
+          </div>
+        )}
+      </div>
+
       <div className="mt-4">
         <p className="mb-2 text-xs font-medium text-muted">Recharge</p>
         <div className="flex flex-wrap gap-2">
@@ -222,10 +296,10 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
         <div className="mt-2 flex items-center gap-2">
           <input
             type="number"
-            min={100}
+            min={MIN_RECHARGE_AMOUNT}
             value={customAmount}
             onChange={(e) => setCustomAmount(e.target.value)}
-            placeholder="Custom amount (min ₹100)"
+            placeholder={`Custom amount (min ₹${MIN_RECHARGE_AMOUNT})`}
             className="w-48 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
           />
           <button
@@ -264,9 +338,11 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
               <tbody>
                 {data.summary.categories.map((c) => (
                   <tr key={c.category} className="border-b border-border/50 last:border-0">
-                    <td className="py-2 pr-2 text-xs capitalize text-fg">{c.category}</td>
+                    <td className="py-2 pr-2 text-xs capitalize text-fg">{categoryLabel(c.category)}</td>
                     <td className="py-2 pr-2 text-xs text-muted2">{c.count.toLocaleString()}</td>
-                    <td className="py-2 text-xs text-muted2">₹ {c.totalCharged.toFixed(2)}</td>
+                    <td className={`py-2 text-xs ${c.totalCharged <= 0 ? 'text-green-500' : 'text-muted2'}`}>
+                      {c.totalCharged <= 0 ? 'Free' : `₹ ${c.totalCharged.toFixed(2)}`}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -294,11 +370,14 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
                       <td className="py-2 pr-2 text-xs text-muted2">
                         {t.type === 'recharge'
                           ? `₹${t.grossAmount?.toFixed(2)} paid, ₹${t.cutAmount?.toFixed(2)} fee`
-                          : t.templateName || t.messageCategory || '—'}
+                          : t.templateName || categoryLabel(t.messageCategory) || '—'}
                       </td>
-                      <td className={`py-2 pr-2 text-xs ${t.amount >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {t.amount >= 0 ? '+' : ''}
-                        {t.amount.toFixed(2)}
+                      <td
+                        className={`py-2 pr-2 text-xs ${
+                          t.amount === 0 ? 'text-green-500' : t.amount > 0 ? 'text-green-400' : 'text-red-400'
+                        }`}
+                      >
+                        {t.amount === 0 ? 'Free' : `${t.amount > 0 ? '+' : ''}${t.amount.toFixed(3).replace(/0$/, '')}`}
                       </td>
                       <td className="py-2 text-xs text-muted2">₹ {t.balanceAfter.toFixed(2)}</td>
                     </tr>
