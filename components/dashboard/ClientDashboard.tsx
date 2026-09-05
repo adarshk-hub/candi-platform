@@ -4,6 +4,7 @@ import NotificationBell from '@/components/NotificationBell'
 import { getClientDashboardMetrics } from '@/lib/clientDashboardMetrics'
 import { getCapiSummary } from '@/lib/capiSummary'
 import { getExcludedCampaignIds } from '@/lib/dashboardPrefs'
+import { clampToRange, getLeadDateRange } from '@/lib/leadDateRange'
 import { formatLakh, formatDateTime } from '@/lib/format'
 import { Card, SectionLabel, Row, Pill } from '@/components/ui'
 import GenerateReportButton from './GenerateReportButton'
@@ -45,6 +46,14 @@ export default async function ClientDashboard({
   to?: string
   basePath?: string
 }) {
+  // Held inside the global window before anything is queried, so a stale
+  // bookmark or a hand-edited ?from= in the URL can't widen the dashboard
+  // past what Settings allows.
+  const leadRange = await getLeadDateRange(clientId)
+  const clamped = clampToRange(from, to, leadRange)
+  from = clamped.from
+  to = clamped.to
+
   const metrics = await getClientDashboardMetrics(clientId, from, to)
   const capi = await getCapiSummary(clientId, from, to)
   // Fetched server-side so the dashboard paints with the saved selection
@@ -52,11 +61,13 @@ export default async function ClientDashboard({
   // round trip loads the preferences.
   const excludedCampaigns = await getExcludedCampaignIds(clientId)
 
-  const presets = [
-    { label: '7d', ...presetRange(7) },
-    { label: '30d', ...presetRange(30) },
-    { label: '90d', ...presetRange(90) },
-  ]
+  // A "90d" preset on a window that only opened 3 weeks ago would
+  // otherwise link to a range two months wider than anything visible.
+  const presets = [7, 30, 90].map((days) => {
+    const raw = presetRange(days)
+    const fitted = clampToRange(raw.from, raw.to, leadRange)
+    return { label: `${days}d`, from: fitted.from || raw.from, to: fitted.to || raw.to }
+  })
 
   return (
     <div className="space-y-8">
@@ -95,6 +106,8 @@ export default async function ClientDashboard({
             type="date"
             name="from"
             defaultValue={from}
+            min={leadRange.from || undefined}
+            max={leadRange.to || undefined}
             className="rounded-md border border-border bg-card2 px-3 py-2 text-fg outline-none focus:border-blue-500"
           />
         </div>
@@ -104,6 +117,8 @@ export default async function ClientDashboard({
             type="date"
             name="to"
             defaultValue={to}
+            min={leadRange.from || undefined}
+            max={leadRange.to || undefined}
             className="rounded-md border border-border bg-card2 px-3 py-2 text-fg outline-none focus:border-blue-500"
           />
         </div>
