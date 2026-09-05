@@ -1,5 +1,6 @@
 // path: app/api/clients/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveLeadColumns } from '@/lib/leadTableColumns'
 import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const rows = await query(
-    `SELECT id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to,
+    `SELECT id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to, lead_table_columns,
             school_email, email_from_name, smtp_host, smtp_port, smtp_user,
             (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
             meta_ad_account_id, meta_page_id
@@ -47,6 +48,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   if (body.leadRangeFrom && body.leadRangeTo && body.leadRangeFrom > body.leadRangeTo) {
     return NextResponse.json({ error: 'The "from" date must be on or before the "to" date.' }, { status: 400 })
+  }
+  if (body.leadTableColumns !== undefined) {
+    // Normalised server-side rather than trusted: this drops unknown keys
+    // and re-adds required ones, so a hand-rolled request can't store a
+    // selection that renders an unusable table.
+    const columns = resolveLeadColumns(body.leadTableColumns)
+    values.push(columns)
+    setClauses.push(`lead_table_columns = $${values.length}`)
   }
   if (body.leadsPerPage !== undefined) {
     const n = Number(body.leadsPerPage)
@@ -102,7 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(params.id)
     const rows = await query(
       `UPDATE clients SET ${setClauses.join(', ')} WHERE id = $${values.length}
-       RETURNING id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to,
+       RETURNING id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to, lead_table_columns,
                  school_email, email_from_name, smtp_host, smtp_port, smtp_user,
                  (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
                  meta_ad_account_id, meta_page_id`,
@@ -114,7 +123,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // vague "Updated client" line, so the Activity tab stays meaningful.
     const SECTION_FIELDS: Record<string, string[]> = {
       'Lead Date Range': ['leadRangeFrom', 'leadRangeTo'],
-      'Display Preferences': ['leadsPerPage', 'showLeadStatusTabs'],
+      'Display Preferences': ['leadsPerPage', 'showLeadStatusTabs', 'leadTableColumns'],
       'School Email': ['schoolEmail', 'emailFromName', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPass'],
       'Ad Account Connection': ['metaAdAccountId', 'metaPageId'],
     }
