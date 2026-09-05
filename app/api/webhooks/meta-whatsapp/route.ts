@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { queryAsClient, centralQuery } from '@/lib/db'
 import { findOrCreateLead } from '@/lib/leadIntake'
 import { verifySignature } from '@/lib/metaLeadAds'
+import { createNotification } from '@/lib/notifications'
 
 // Meta's one-time subscription handshake for the WhatsApp Business
 // Account's webhook — same pattern as /api/webhooks/meta-leads, but this
@@ -113,8 +114,17 @@ async function handleInboundMessage(clientId: string, msg: any) {
     [lead.id, text, wamid, JSON.stringify(msg), timestamp]
   )
 
+  // msgRows is empty when ON CONFLICT DO NOTHING swallowed a retried
+  // delivery of a message we already stored — notifying there would ring
+  // the bell twice for one parent message.
   if (msgRows.length > 0) {
     await applyReplyScoreBonus(clientId, lead.id)
+    await createNotification({
+      clientId,
+      leadId: lead.id,
+      type: 'wa_message',
+      body: text,
+    })
   }
 
   return { leadId: lead.id, created, duplicate, wamid }
