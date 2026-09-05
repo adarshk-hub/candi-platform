@@ -1,17 +1,31 @@
+/* path: app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Light theme.
+   Every value below is chosen against its actual background (white cards on
+   an off-white page), targeting WCAG AA — 4.5:1 for body text. The previous
+   values were picked to look right in dark mode and then reused as-is here,
+   which is why secondary text washed out against white. */
 :root {
   --bg: 244 245 247;
   --card: 255 255 255;
-  --card2: 243 244 246;
-  --border: 224 226 230;
-  --muted: 107 114 128;
-  --muted2: 130 137 148;
-  --fg: 23 23 23;
+  --card2: 241 243 245;
+  /* Darker than before so table row separators and input outlines are
+     actually visible on white rather than implied. */
+  --border: 213 217 223;
+  /* gray-600 — 7.0:1 on white. Column headers, labels, timestamps. */
+  --muted: 75 85 99;
+  /* 5.5:1 on white and 5.0:1 on --card2. Was 130 137 148, which was only
+     3.5:1 on white — that failure is what made secondary text like child
+     names and source labels blur into the background. Sits a touch darker
+     than plain gray-500 so it still clears AA on the --card2 surface used
+     for table header strips, not just on white. */
+  --muted2: 98 105 118;
+  --fg: 17 17 17;
   --sidebar: 255 255 255;
-  --sidebar-hover: 243 244 246;
+  --sidebar-hover: 241 243 245;
   --sidebar-active: 219 234 254;
 }
 
@@ -33,4 +47,55 @@
 body {
   background-color: rgb(var(--bg));
   color: rgb(var(--fg));
+}
+
+/* Light-mode accent text corrections.
+   Roughly 160 places across the app use Tailwind's -300/-400 accent shades
+   for text (lead numbers in green, lead names in blue, errors in red).
+   Those shades are built for dark backgrounds — on white they land between
+   1.8:1 and 2.6:1, well under the 4.5:1 needed to read comfortably, which
+   is why the ID and Lead columns looked faded.
+
+   Correcting this at the source would mean adding a dark: variant to every
+   one of those 160 usages. Overriding the utilities here instead keeps the
+   fix in one reviewable place and leaves dark mode untouched, since these
+   rules only apply when .dark is absent.
+
+   The replacement shades are the darkest step of each hue that still reads
+   as that colour: all clear AA on white, and they also sit correctly on the
+   translucent tinted pill backgrounds (bg-red-500/10 and friends) this app
+   uses, because those render as very pale washes in light mode.
+
+   These are deliberately low-specificity (one class deep), so a dark:/light:
+   utility on a specific element still wins if you want to override one. */
+html:not(.dark) .text-blue-400,
+html:not(.dark) .text-blue-300 {
+  color: rgb(37 99 235); /* blue-600 — 4.6:1 */
+}
+
+html:not(.dark) .text-green-400,
+html:not(.dark) .text-green-300 {
+  color: rgb(21 128 61); /* green-700 — 4.8:1; green-600 is only 3.1:1 */
+}
+
+html:not(.dark) .text-red-400,
+html:not(.dark) .text-red-300 {
+  color: rgb(220 38 38); /* red-600 — 4.5:1 */
+}
+
+html:not(.dark) .text-amber-400,
+html:not(.dark) .text-amber-300 {
+  color: rgb(180 83 9); /* amber-700 — 4.6:1; amber-500/600 are unreadable */
+}
+
+html:not(.dark) .text-zinc-300 {
+  color: rgb(63 63 70); /* zinc-700 */
+}
+
+/* Placeholders inherit from --muted by default, which is tuned for real
+   text. Nudge them lighter so a placeholder still reads as a prompt rather
+   than as an already-filled value, while staying above the 3:1 floor. */
+html:not(.dark) ::placeholder {
+  color: rgb(120 128 140);
+  opacity: 1;
 }
