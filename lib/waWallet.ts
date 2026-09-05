@@ -1,5 +1,5 @@
 import { query } from './db'
-import { getRateForCategory, RECHARGE_CUT_PERCENTAGE, WaMessageCategory } from './waCreditRates'
+import { getRateForCategory, isFreeCategory, RECHARGE_CUT_PERCENTAGE, WaMessageCategory } from './waCreditRates'
 
 export interface WalletDebitResult {
   ok: boolean
@@ -51,24 +51,38 @@ export async function debitForMessage(params: {
   templateName?: string
   wamid?: string
 }): Promise<WalletDebitResult> {
-  await getOrCreateWallet(params.clientId)
+  const currentBalance = await getOrCreateWallet(params.clientId)
   const cost = getRateForCategory(params.category)
 
-  const updated = (
-    await query<{ balance: string }>(
-      `UPDATE wa_client_wallet
-         SET balance = balance - $2, updated_at = now()
-       WHERE client_id = $1
-       RETURNING balance`,
-      [params.clientId, cost]
-    )
-  )[0]
+  // Free categories — today that's 'session', a free-form reply sent
+  // inside the 24hr customer service window a lead opened by messaging
+  // in (see lib/waWindow.ts). Skip the balance UPDATE entirely rather
+  // than running a no-op "balance - 0", and never block the send on
+  // balance: a message that costs nothing must go out even at ₹0 or a
+  // negative balance, otherwise an out-of-credit client can't reply to
+  // a parent who is actively talking to them. The ledger row is still
+  // written so free sends stay visible in the 30-day rollup.
+  let balanceAfter = currentBalance
+  if (!isFreeCategory(params.category)) {
+    const updated = (
+      await query<{ balance: string }>(
+        `UPDATE wa_client_wallet
+           SET balance = balance - $2, updated_at = now()
+         WHERE client_id = $1
+         RETURNING balance`,
+        [params.clientId, cost]
+      )
+    )[0]
 
-  if (!updated) {
-    return { ok: false, error: 'Insufficient WhatsApp credits. Please recharge your wallet to keep sending messages.' }
+    if (!updated) {
+      return {
+        ok: false,
+        error: 'Insufficient WhatsApp credits. Please recharge your wallet to keep sending messages.',
+      }
+    }
+    balanceAfter = Number(updated.balance)
   }
 
-  const balanceAfter = Number(updated.balance)
   await query(
     `INSERT INTO wa_wallet_transactions
        (client_id, type, message_category, template_name, wamid, amount, balance_after)
@@ -88,6 +102,11 @@ export async function refundMessage(params: {
   templateName?: string
 }): Promise<void> {
   const cost = getRateForCategory(params.category)
+
+  // Nothing was charged, so there is nothing to give back — a refund row
+  // for a free send would just be ledger noise (a "+0.00 refund" against
+  // a "-0.00 debit").
+  if (cost <= 0) return
 
   const updated = (
     await query<{ balance: string }>(
