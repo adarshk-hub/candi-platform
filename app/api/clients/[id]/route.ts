@@ -1,3 +1,4 @@
+// path: app/api/clients/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
@@ -5,17 +6,12 @@ import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
-// A logo is small enough that a base64 data URL stored directly on the row
-// is a reasonable tradeoff given there's no object-storage integration in
-// this project — reject anything that would bloat the row unreasonably.
-const MAX_LOGO_BYTES = 500 * 1024
-
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
   if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const rows = await query(
-    `SELECT id, name, logo_data_url, leads_per_page, show_lead_status_tabs,
+    `SELECT id, name, leads_per_page, show_lead_status_tabs,
             school_email, email_from_name, smtp_host, smtp_port, smtp_user,
             (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
             meta_ad_account_id, meta_page_id
@@ -34,13 +30,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const setClauses: string[] = []
   const values: any[] = []
 
-  if (body.logoDataUrl !== undefined) {
-    if (body.logoDataUrl && body.logoDataUrl.length > MAX_LOGO_BYTES) {
-      return NextResponse.json({ error: 'Logo image is too large (max 500KB). Please use a smaller file.' }, { status: 400 })
-    }
-    values.push(body.logoDataUrl || null)
-    setClauses.push(`logo_data_url = $${values.length}`)
-  }
   if (body.leadsPerPage !== undefined) {
     const n = Number(body.leadsPerPage)
     if (!Number.isFinite(n) || n < 10 || n > 1000) {
@@ -95,7 +84,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(params.id)
     const rows = await query(
       `UPDATE clients SET ${setClauses.join(', ')} WHERE id = $${values.length}
-       RETURNING id, name, logo_data_url, leads_per_page, show_lead_status_tabs,
+       RETURNING id, name, leads_per_page, show_lead_status_tabs,
                  school_email, email_from_name, smtp_host, smtp_port, smtp_user,
                  (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
                  meta_ad_account_id, meta_page_id`,
@@ -106,7 +95,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // log one activity entry per section actually touched, rather than one
     // vague "Updated client" line, so the Activity tab stays meaningful.
     const SECTION_FIELDS: Record<string, string[]> = {
-      'Institute Logo': ['logoDataUrl'],
       'Display Preferences': ['leadsPerPage', 'showLeadStatusTabs'],
       'School Email': ['schoolEmail', 'emailFromName', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPass'],
       'Ad Account Connection': ['metaAdAccountId', 'metaPageId'],
