@@ -1,3 +1,4 @@
+// path: components/settings/CustomizeShell.tsx
 //Re
 
 'use client'
@@ -5,6 +6,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
+import NotificationBell from '@/components/NotificationBell'
 import {
   ArrowLeft,
   ListOrdered,
@@ -78,6 +80,9 @@ export default function CustomizeShell({
           </Link>
         )}
         <h1 className="text-2xl font-bold text-fg">Customize</h1>
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
       </div>
 
       {!lockedToClientId && institutes.length > 1 && (
