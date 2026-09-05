@@ -3,6 +3,7 @@ import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import { getClientDashboardMetrics } from '@/lib/clientDashboardMetrics'
 import { getCapiSummary } from '@/lib/capiSummary'
+import { getExcludedCampaignIds } from '@/lib/dashboardPrefs'
 import { formatLakh, formatDateTime } from '@/lib/format'
 import { Card, SectionLabel, Row, Pill } from '@/components/ui'
 import GenerateReportButton from './GenerateReportButton'
@@ -46,6 +47,10 @@ export default async function ClientDashboard({
 }) {
   const metrics = await getClientDashboardMetrics(clientId, from, to)
   const capi = await getCapiSummary(clientId, from, to)
+  // Fetched server-side so the dashboard paints with the saved selection
+  // already applied — no flash of the unfiltered totals while a client
+  // round trip loads the preferences.
+  const excludedCampaigns = await getExcludedCampaignIds(clientId)
 
   const presets = [
     { label: '7d', ...presetRange(7) },
@@ -107,7 +112,7 @@ export default async function ClientDashboard({
         </button>
       </form>
 
-      <PipelineDashboard metrics={metrics} />
+      <PipelineDashboard metrics={metrics} clientId={clientId} initialExcluded={excludedCampaigns} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
