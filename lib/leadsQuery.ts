@@ -1,5 +1,7 @@
+// path: lib/leadsQuery.ts
 import { query } from '@/lib/db'
 import { SessionUser } from '@/lib/auth'
+import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 const DEFAULT_PAGE_SIZE = 250
 
@@ -92,6 +94,9 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
     )
   }
 
+  // Global lead visibility window (Settings > Customize > Lead Date
+  // Range). Applied last so it can never be widened by anything above.
+  where.push(leadDateRangeSql('l'))
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   // One combined round trip for page size + count (see route.ts history —
