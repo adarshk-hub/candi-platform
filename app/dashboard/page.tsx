@@ -1,3 +1,4 @@
+// path: app/dashboard/page.tsx
 import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/serverAuth'
 import { query } from '@/lib/db'
@@ -22,16 +23,24 @@ export default async function DashboardPage({
     // The full agency-wide overview (AgencyDashboard) is being deferred for
     // now — clicking "Dashboard" should land straight on the same rich
     // per-institute pipeline view a client_admin sees, not the old
-    // cross-client summary. Redirects to the same institute ordering
-    // AgencyDashboard's own "Institutes" list uses (by name), so this is
-    // just "start on the first one" rather than a different order.
-    const first = (await query<{ id: string }>('SELECT id FROM clients ORDER BY name LIMIT 1'))[0]
-    if (first) {
+    // cross-client summary.
+    //
+    // Which institute: the one this session is already in. Login resolves it
+    // from the institute name typed on the sign-in form, and the sidebar's
+    // InstituteSwitcher rewrites it on the cookie. Re-deriving it here with
+    // "first by name" ignored both — an agency user who signed into Candid,
+    // or switched to it, still got bounced to whichever institute sorted
+    // first. The alphabetical lookup below is now only a fallback for a
+    // session that somehow carries no institute at all.
+    const target =
+      session.clientId ||
+      (await query<{ id: string }>('SELECT id FROM clients ORDER BY name LIMIT 1'))[0]?.id
+    if (target) {
       const qs = new URLSearchParams()
       if (searchParams.from) qs.set('from', searchParams.from)
       if (searchParams.to) qs.set('to', searchParams.to)
       const suffix = qs.toString() ? `?${qs.toString()}` : ''
-      redirect(`/dashboard/${first.id}${suffix}`)
+      redirect(`/dashboard/${target}${suffix}`)
     }
     return <AgencyDashboard from={searchParams.from} to={searchParams.to} />
   }
