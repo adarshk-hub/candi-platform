@@ -1,3 +1,4 @@
+// path: app/layout.tsx
 import type { Metadata } from 'next'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
@@ -9,6 +10,20 @@ import { query } from '@/lib/db'
 export const metadata: Metadata = {
   title: 'Candi Connect',
   description: 'Lead-to-admission CRM for education marketing',
+  // Without this, Next only picks up a favicon placed at app/favicon.ico by
+  // convention — a PNG sitting in /public is never referenced, which is why
+  // the tab showed the default globe. Pointing at it explicitly makes every
+  // page use it, since this metadata is inherited by all routes.
+  //
+  // The ?v=1 forces browsers past a cached previous favicon; bump it if you
+  // replace the file later, otherwise the old icon can persist for days.
+  icons: {
+    icon: [{ url: '/favicon.png?v=1', type: 'image/png' }],
+    shortcut: '/favicon.png?v=1',
+    // iOS home-screen icon. Reusing the same file rather than a dedicated
+    // 180x180 — fine unless it looks soft when saved to a home screen.
+    apple: '/favicon.png?v=1',
+  },
 }
 
 // Applies the saved theme class before first paint (falling back to the
