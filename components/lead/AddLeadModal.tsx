@@ -1,3 +1,4 @@
+// path: components/lead/AddLeadModal.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -48,7 +49,10 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
         setInstitutes(Array.isArray(data) ? data : [])
-        if (Array.isArray(data) && data[0]) setClientId((c) => c || data[0].id)
+        // Deliberately no default. An agency user works across institutes,
+        // and quietly pre-selecting whichever sorts first files the lead
+        // against the wrong school with no visible mistake to notice.
+        // A client user's own clientId is still set above.
       })
   }, [])
 
@@ -66,7 +70,13 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
-    if (!fullName.trim() || !whatsappNumber.trim() || !clientId) return
+    if (!fullName.trim() || !whatsappNumber.trim()) return
+    // Was a bare `return` alongside the checks above, so with no institute
+    // chosen the Save button simply did nothing and gave no reason why.
+    if (!clientId) {
+      setError('Choose which institution this lead belongs to.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -117,9 +127,11 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
               <label className="mb-1 block text-xs text-muted">Institution</label>
               <select
                 value={clientId}
+                required
                 onChange={(e) => setClientId(e.target.value)}
                 className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
               >
+                <option value="">Select an institution…</option>
                 {institutes.map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.name}
