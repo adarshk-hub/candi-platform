@@ -1,3 +1,4 @@
+// path: components/settings/panels/UsersPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -207,7 +208,11 @@ function UserForm({
   const [email, setEmail] = useState(existing?.email || '')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>(existing?.role || (isAgency ? 'agency_staff' : 'client_counsellor'))
-  const [clientId, setClientId] = useState(existing?.client_id || clients[0]?.id || '')
+  // No fallback to clients[0]: creating a user is a permission grant, and
+  // silently defaulting to whichever institute sorts first would hand
+  // someone access to the wrong school's data with nothing on screen to
+  // show it happened. Editing keeps the user's existing institute.
+  const [clientId, setClientId] = useState(existing?.client_id || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -230,6 +235,10 @@ function UserForm({
     if (!fullName.trim() || !email.trim()) return
     if (!existing && password.length < 8) {
       setError('Password must be at least 8 characters')
+      return
+    }
+    if (!existing && needsClientPicker && !clientId) {
+      setError('Choose which institute this user belongs to.')
       return
     }
     setSaving(true)
@@ -305,9 +314,11 @@ function UserForm({
             <label className="mb-1 block text-xs text-muted">Institute</label>
             <select
               value={clientId}
+              required
               onChange={(e) => setClientId(e.target.value)}
               className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
             >
+              <option value="">Select an institute…</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
