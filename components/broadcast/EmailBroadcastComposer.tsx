@@ -1,3 +1,4 @@
+// path: components/broadcast/EmailBroadcastComposer.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -35,6 +36,8 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
 
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewSample, setPreviewSample] = useState<AudienceLead[]>([])
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set())
+  const [audienceTruncated, setAudienceTruncated] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -72,7 +75,10 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
     setPreviewing(true)
     setError('')
     try {
-      const res = await fetch('/api/email-broadcasts/preview', {
+      // audience-list rather than /preview: /preview returns only a 10-lead
+      // sample, which is fine for a count but useless for picking who to
+      // exclude. Same endpoint shape the WhatsApp composer uses.
+      const res = await fetch('/api/email-broadcasts/audience-list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, filters: currentFilters() }),
@@ -83,12 +89,32 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
         return
       }
       setPreviewCount(b.count)
-      setPreviewSample(b.sample || [])
+      setPreviewSample(b.leads || [])
+      setAudienceTruncated(!!b.truncated)
+      // Everyone matched starts selected — "send to everyone matching my
+      // filters" is the common case and shouldn't need extra clicks.
+      // Unchecking is for hand-excluding a few specific leads.
+      setSelectedLeadIds(new Set((b.leads || []).map((l: AudienceLead) => l.id)))
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     } finally {
       setPreviewing(false)
     }
+  }
+
+  function toggleLead(id: string) {
+    setSelectedLeadIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedLeadIds((prev) =>
+      prev.size === previewSample.length ? new Set() : new Set(previewSample.map((l) => l.id))
+    )
   }
 
   function toggleTag(tag: string) {
@@ -110,6 +136,10 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
       setError('Preview the audience before sending — click "Preview Audience" first.')
       return
     }
+    if (selectedLeadIds.size === 0) {
+      setError('Select at least one lead to send to.')
+      return
+    }
     setSending(true)
     setError('')
     try {
@@ -122,6 +152,10 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
           subject: subject.trim(),
           body,
           filters: currentFilters(),
+          // The server prefers this over `filters` when present, so an
+          // unticked lead is genuinely excluded rather than being re-added
+          // by the filters at send time.
+          explicitLeadIds: Array.from(selectedLeadIds),
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -305,7 +339,9 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
           </button>
           {previewCount !== null && (
             <span className="text-sm text-fg">
-              <strong>{previewCount.toLocaleString()}</strong> matching lead{previewCount === 1 ? '' : 's'} with email
+              <strong>{selectedLeadIds.size.toLocaleString()}</strong> of{' '}
+              <strong>{previewCount.toLocaleString()}</strong> matching lead
+              {previewCount === 1 ? '' : 's'} with email selected
             </span>
           )}
         </div>
@@ -316,13 +352,42 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
           </p>
         )}
 
+        {audienceTruncated && (
+          <p className="mt-3 flex items-center gap-2 text-sm text-amber-400">
+            <AlertTriangle size={14} /> Too many matches to list individually — narrow the filters to see and
+            select from the full match.
+          </p>
+        )}
+
         {previewSample.length > 0 && (
           <div className="mt-3">
-            <p className="mb-1.5 text-xs text-muted">Sample (most recent {previewSample.length}):</p>
-            <ul className="space-y-1 text-xs text-muted2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-medium text-fg">
+                <input
+                  type="checkbox"
+                  checked={selectedLeadIds.size === previewSample.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = selectedLeadIds.size > 0 && selectedLeadIds.size < previewSample.length
+                  }}
+                  onChange={toggleSelectAll}
+                  className="h-3.5 w-3.5"
+                />
+                Select all
+              </label>
+              <span className="text-xs text-muted">Uncheck any lead you want to leave out of this send.</span>
+            </div>
+            <ul className="max-h-72 space-y-0.5 overflow-y-auto rounded-md border border-border bg-card2 p-2">
               {previewSample.map((l) => (
                 <li key={l.id}>
-                  {l.full_name} — {l.email} ({l.pipeline_stage})
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-muted2 hover:bg-card">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeadIds.has(l.id)}
+                      onChange={() => toggleLead(l.id)}
+                      className="h-3.5 w-3.5 shrink-0"
+                    />
+                    <span className="text-fg">{l.full_name}</span> — {l.email} ({l.pipeline_stage})
+                  </label>
                 </li>
               ))}
             </ul>
@@ -334,10 +399,15 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
 
       <button
         onClick={send}
-        disabled={sending || !previewCount}
+        disabled={sending || selectedLeadIds.size === 0}
         className="flex items-center gap-2 rounded-md bg-green-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
       >
-        <Send size={16} /> {sending ? 'Queuing…' : `Send Broadcast${previewCount ? ` to ${previewCount.toLocaleString()} leads` : ''}`}
+        {/* Counts the SELECTION, not the match — after unticking three of
+            twenty, the button must not still promise twenty. */}
+        <Send size={16} />{' '}
+        {sending
+          ? 'Queuing…'
+          : `Send Broadcast${selectedLeadIds.size ? ` to ${selectedLeadIds.size.toLocaleString()} leads` : ''}`}
       </button>
       <p className="text-xs text-muted2">
         Sends happen gradually in the background via Resend. Replies go to this institute's own email (set in
