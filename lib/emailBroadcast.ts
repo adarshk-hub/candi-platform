@@ -1,6 +1,6 @@
 // path: lib/emailBroadcast.ts
 import { query } from './db'
-import { sendResendEmail } from './resendEmail'
+import { sendEmail } from './email'
 import { buildAudienceQuery, previewAudience as previewAudienceShared, BroadcastFilters, AudienceLead } from './leadAudience'
 import { leadDateRangeSql } from './leadDateRange'
 
@@ -141,25 +141,58 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
     )[0]
     if (!broadcast) continue
 
+    // Broadcasts now go out through the institute's OWN mailbox (the SMTP
+    // account in Settings > Customize > School Email), the same path the
+    // per-lead Email tab uses — not through a shared platform-wide Resend
+    // domain. Parents therefore see mail genuinely from the school on both
+    // one-off and bulk sends, and there is one set of credentials to keep
+    // working instead of two.
+    //
+    // The tradeoff is real and worth knowing: an SMTP mailbox has send-rate
+    // limits and no bounce or suppression handling. processNextBatch's
+    // batchSize is what keeps this within a provider's per-minute ceiling,
+    // so lower it rather than raising it if the provider starts throttling.
     const client = (
-      await query<{ name: string; school_email: string | null; email_from_name: string | null }>(
-        'SELECT name, school_email, email_from_name FROM clients WHERE id = $1',
+      await query<{
+        name: string
+        school_email: string | null
+        email_from_name: string | null
+        smtp_host: string | null
+        smtp_port: number | null
+        smtp_user: string | null
+        smtp_pass: string | null
+      }>(
+        `SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass
+         FROM clients WHERE id = $1`,
         [broadcast.client_id]
       )
     )[0]
 
-    const sendResult = await sendResendEmail({
-      toEmail: recipient.to_email,
-      fromName: client?.email_from_name || client?.name || 'School',
-      replyTo: client?.school_email || null,
-      subject: broadcast.subject,
-      html: broadcast.body,
-    })
+    const sendResult = await sendEmail(
+      {
+        host: client?.smtp_host || null,
+        port: client?.smtp_port ?? null,
+        user: client?.smtp_user || null,
+        pass: client?.smtp_pass || null,
+        fromEmail: client?.school_email || null,
+        fromName: client?.email_from_name || client?.name || null,
+      },
+      {
+        to: recipient.to_email,
+        subject: broadcast.subject,
+        body: broadcast.body,
+        html: true,
+        failIfUnconfigured: true,
+      }
+    )
 
     if (sendResult.ok) {
+      // resend_message_id stays NULL now that sends go via SMTP — the
+      // column name is a leftover from the Resend path. Kept rather than
+      // renamed so existing rows and history queries still line up.
       await query(
-        `UPDATE email_broadcast_recipients SET status = 'sent', resend_message_id = $1, sent_at = now() WHERE id = $2`,
-        [sendResult.messageId || null, recipient.id]
+        `UPDATE email_broadcast_recipients SET status = 'sent', sent_at = now() WHERE id = $1`,
+        [recipient.id]
       )
       await query('UPDATE email_broadcasts SET sent_count = sent_count + 1 WHERE id = $1', [recipient.broadcast_id])
       result.sent++
