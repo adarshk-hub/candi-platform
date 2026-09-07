@@ -1,6 +1,8 @@
+// path: lib/emailBroadcast.ts
 import { query } from './db'
 import { sendResendEmail } from './resendEmail'
 import { buildAudienceQuery, previewAudience as previewAudienceShared, BroadcastFilters, AudienceLead } from './leadAudience'
+import { leadDateRangeSql } from './leadDateRange'
 
 export type { BroadcastFilters, AudienceLead }
 
@@ -20,6 +22,11 @@ export interface CreateEmailBroadcastParams {
   subject: string
   body: string // HTML
   filters: BroadcastFilters
+  // Hand-picked recipients from the preview list. When present these win
+  // over `filters` entirely — the same behaviour as WhatsApp broadcasts,
+  // so unticking someone in the preview genuinely removes them rather
+  // than the filters silently re-adding them at send time.
+  explicitLeadIds?: string[] | null
   createdBy?: string | null
 }
 
@@ -54,17 +61,38 @@ export async function createBroadcast(
     )
   )[0]
 
-  const inserted = await query<{ one: number }>(
-    `WITH matched AS (
-       SELECT l.id AS lead_id, l.email AS to_email
-       FROM leads l
-       WHERE ${whereSql}
-     )
-     INSERT INTO email_broadcast_recipients (broadcast_id, lead_id, to_email)
-     SELECT $${audienceParams.length + 1}, lead_id, to_email FROM matched
-     RETURNING 1 AS one`,
-    [...audienceParams, broadcast.id]
-  )
+  let inserted: { one: number }[]
+  if (params.explicitLeadIds && params.explicitLeadIds.length > 0) {
+    // Hand-picked audience — still scoped to this client, still requires an
+    // email on file, and still held inside the global lead date range. A
+    // client-supplied id list is never trusted blindly: it could name a lead
+    // from another institute, one with no email, or one the date window
+    // hides.
+    inserted = await query<{ one: number }>(
+      `WITH matched AS (
+         SELECT l.id AS lead_id, l.email AS to_email
+         FROM leads l
+         WHERE l.client_id = $1 AND l.id = ANY($2) AND l.email IS NOT NULL AND l.email <> ''
+           AND ${leadDateRangeSql('l')}
+       )
+       INSERT INTO email_broadcast_recipients (broadcast_id, lead_id, to_email)
+       SELECT $3, lead_id, to_email FROM matched
+       RETURNING 1 AS one`,
+      [params.clientId, params.explicitLeadIds, broadcast.id]
+    )
+  } else {
+    inserted = await query<{ one: number }>(
+      `WITH matched AS (
+         SELECT l.id AS lead_id, l.email AS to_email
+         FROM leads l
+         WHERE ${whereSql}
+       )
+       INSERT INTO email_broadcast_recipients (broadcast_id, lead_id, to_email)
+       SELECT $${audienceParams.length + 1}, lead_id, to_email FROM matched
+       RETURNING 1 AS one`,
+      [...audienceParams, broadcast.id]
+    )
+  }
 
   const totalRecipients = inserted.length
   await query('UPDATE email_broadcasts SET total_recipients = $1 WHERE id = $2', [totalRecipients, broadcast.id])
