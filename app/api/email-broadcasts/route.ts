@@ -1,3 +1,4 @@
+// path: app/api/email-broadcasts/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
       subject,
       body: emailBody,
       filters,
+      explicitLeadIds: Array.isArray(body?.explicitLeadIds) ? body.explicitLeadIds : null,
       createdBy: session!.id,
     })
 
