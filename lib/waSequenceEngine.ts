@@ -1,4 +1,5 @@
-import { query } from './db'
+// path: lib/waSequenceEngine.ts
+import { query, queryAsClient, centralQuery } from './db'
 import { sendTemplateMessage, getTemplateBodyVariableCount } from './metaWhatsapp'
 import { NURTURE_STEPS } from './nurtureSteps'
 
@@ -79,16 +80,24 @@ export async function startSequence(leadId: string): Promise<{ ok: boolean; sequ
   return { ok: true, sequenceId: sequence.id }
 }
 
-async function sendDueMessage(msg: any): Promise<void> {
+// clientId is supplied by the cron path and omitted by the request path
+// (startSequence, which runs inside a logged-in request). query() resolves
+// its database from the session and throws when there isn't one, so the
+// cron caller has to say which institute it is working on; `q` below picks
+// whichever is correct rather than duplicating this function.
+async function sendDueMessage(msg: any, clientId?: string): Promise<void> {
+  const q = <T = any>(text: string, params?: any[]): Promise<T[]> =>
+    clientId ? queryAsClient<T>(clientId, text, params) : query<T>(text, params)
+
   if (!msg) return
 
-  const sequence = (await query('SELECT * FROM wa_sequences WHERE id = $1', [msg.sequence_id]))[0]
+  const sequence = (await q('SELECT * FROM wa_sequences WHERE id = $1', [msg.sequence_id]))[0]
   if (!sequence || sequence.status !== 'active') {
-    await query(`UPDATE wa_sequence_messages SET status = 'skipped' WHERE id = $1`, [msg.id])
+    await q(`UPDATE wa_sequence_messages SET status = 'skipped' WHERE id = $1`, [msg.id])
     return
   }
 
-  const lead = (await query('SELECT * FROM leads WHERE id = $1', [sequence.lead_id]))[0]
+  const lead = (await q('SELECT * FROM leads WHERE id = $1', [sequence.lead_id]))[0]
 
   // A template's approved body might have zero variables (a fully static
   // welcome/notice line) or several — sending a fixed one-parameter guess
@@ -127,14 +136,14 @@ async function sendDueMessage(msg: any): Promise<void> {
     result = { ok: false, error: err?.message || 'Unexpected error sending template' }
   }
 
-  await query(
+  await q(
     `UPDATE wa_sequence_messages
      SET status = $1, wamid = $2, sent_at = now(), error_text = $3
      WHERE id = $4`,
     [result.ok ? 'sent' : 'failed', result.wamid || null, result.error || null, msg.id]
   )
 
-  await query(
+  await q(
     `INSERT INTO whatsapp_messages
        (lead_id, direction, message_type, body, template_name, status, wamid, sequence_id, sequence_day)
      VALUES ($1, 'outbound', 'template', $2, $3, $4, $5, $6, $7)`,
@@ -149,7 +158,7 @@ async function sendDueMessage(msg: any): Promise<void> {
     ]
   )
 
-  await query(
+  await q(
     `INSERT INTO activity_log (lead_id, activity_type, title, description)
      VALUES ($1, 'system', 'Nurture Sequence', $2)`,
     [
@@ -158,18 +167,18 @@ async function sendDueMessage(msg: any): Promise<void> {
     ]
   )
 
-  await query(
+  await q(
     `UPDATE leads SET nurture_day = $1, nurture_started_at = COALESCE(nurture_started_at, now()) WHERE id = $2`,
     [msg.day_number, sequence.lead_id]
   )
 
   // Last step in the sequence — mark the whole sequence completed.
-  const remaining = await query(
+  const remaining = await q(
     `SELECT id FROM wa_sequence_messages WHERE sequence_id = $1 AND status = 'pending'`,
     [sequence.id]
   )
   if (remaining.length === 0) {
-    await query(`UPDATE wa_sequences SET status = 'completed' WHERE id = $1`, [sequence.id])
+    await q(`UPDATE wa_sequences SET status = 'completed' WHERE id = $1`, [sequence.id])
   }
 }
 
@@ -187,8 +196,30 @@ async function sendDueMessage(msg: any): Promise<void> {
 // consumes it happen inside the *same* statement/implicit-transaction, so
 // the row is flipped to 'processing' before the lock is ever released —
 // no other concurrent invocation can grab it in between.
+// Multi-tenant entry point for /api/cron/wa-sequence-advance. Each
+// institute has its own database, so due messages are claimed per
+// institute; the institute list itself is central-registry data.
+// Previously this called query(), which resolves its database from the
+// logged-in session — a cron request has none, so it threw and the
+// endpoint 500'd, meaning no nurture message ever sent for any institute.
 export async function advanceDueMessages(): Promise<{ processed: number }> {
-  const claimed = await query(
+  const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
+
+  let processed = 0
+  for (const client of clients) {
+    try {
+      processed += (await advanceDueMessagesForClient(client.id)).processed
+    } catch (err) {
+      // One institute's failure must not stop the others.
+      console.error(`[wa-sequence] client ${client.id} advance failed:`, err)
+    }
+  }
+  return { processed }
+}
+
+export async function advanceDueMessagesForClient(clientId: string): Promise<{ processed: number }> {
+  const claimed = await queryAsClient(
+    clientId,
     `UPDATE wa_sequence_messages
      SET status = 'processing'
      WHERE id IN (
@@ -204,7 +235,7 @@ export async function advanceDueMessages(): Promise<{ processed: number }> {
   )
 
   for (const msg of claimed) {
-    await sendDueMessage(msg)
+    await sendDueMessage(msg, clientId)
   }
 
   return { processed: claimed.length }
