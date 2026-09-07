@@ -1,4 +1,5 @@
-import { query } from './db'
+// path: lib/visitReminders.ts
+import { query, queryAsClient, centralQuery } from './db'
 import { sendOperationalTemplate } from './metaWhatsapp'
 import { sendEmail, SmtpConfig } from './email'
 import { renderEmailTemplate, VISIT_REMINDER_48H_KEY, VISIT_REMINDER_24H_KEY } from './emailTemplates'
@@ -41,7 +42,7 @@ async function sendReminderEmail(row: {
 }, templateKey: string): Promise<void> {
   if (!row.email) return
 
-  const [client] = await query<{
+  const [client] = await queryAsClient<{
     name: string
     school_email: string | null
     email_from_name: string | null
@@ -50,6 +51,7 @@ async function sendReminderEmail(row: {
     smtp_user: string | null
     smtp_pass: string | null
   }>(
+    row.client_id,
     `SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass
      FROM clients WHERE id = $1`,
     [row.client_id]
@@ -72,7 +74,8 @@ async function sendReminderEmail(row: {
   }
   const result = await sendEmail(config, { to: row.email, subject, body })
 
-  await query(
+  await queryAsClient(
+    row.client_id,
     `INSERT INTO email_messages (lead_id, template_key, subject, body, to_email, status, error)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [row.lead_id, templateKey, subject, body, row.email, result.ok ? 'sent' : 'failed', result.error || null]
@@ -86,8 +89,28 @@ async function sendReminderEmail(row: {
 // by an external scheduler hitting /api/cron/visit-reminders — this app has
 // no persistent background worker of its own to fire time-based sends on a
 // timer.
+// Multi-tenant entry point for /api/cron/visit-reminders. Each institute
+// has its own database, so due visits are found per institute; the
+// institute list is central-registry data. Previously this called query(),
+// which resolves its database from the logged-in session — a cron request
+// has none, so it threw and no reminder was ever sent for any institute.
 export async function sendDueVisitReminders(): Promise<ReminderResult[]> {
-  const rows = await query<{
+  const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
+
+  const all: ReminderResult[] = []
+  for (const client of clients) {
+    try {
+      all.push(...(await sendDueVisitRemindersForClient(client.id)))
+    } catch (err) {
+      // One institute's failure must not stop the others.
+      console.error(`[visit-reminders] client ${client.id} failed:`, err)
+    }
+  }
+  return all
+}
+
+export async function sendDueVisitRemindersForClient(clientId: string): Promise<ReminderResult[]> {
+  const rows = await queryAsClient<{
     id: string
     lead_id: string
     event_date: string
@@ -99,6 +122,7 @@ export async function sendDueVisitReminders(): Promise<ReminderResult[]> {
     email: string | null
     client_id: string
   }>(
+    clientId,
     `SELECT e.id, e.lead_id, e.event_date, e.event_time, e.reminder_48h_sent_at, e.reminder_24h_sent_at,
             l.full_name, l.whatsapp_number, l.email, l.client_id
      FROM events e
@@ -132,8 +156,9 @@ export async function sendDueVisitReminders(): Promise<ReminderResult[]> {
         bodyParams: [row.full_name, visitDateLabel],
       })
       await sendReminderEmail({ ...row, visitDateLabel }, VISIT_REMINDER_48H_KEY)
-      await query('UPDATE events SET reminder_48h_sent_at = now() WHERE id = $1', [row.id])
-      await query(
+      await queryAsClient(clientId, 'UPDATE events SET reminder_48h_sent_at = now() WHERE id = $1', [row.id])
+      await queryAsClient(
+        clientId,
         `INSERT INTO activity_log (lead_id, activity_type, title, description)
          VALUES ($1, 'system', 'Visit Reminder Sent', $2)`,
         [row.lead_id, `48-hour visit reminder ${result.ok ? 'sent' : 'failed to send'} via Meta WhatsApp API${row.email ? ' and email' : ''}.`]
@@ -149,8 +174,9 @@ export async function sendDueVisitReminders(): Promise<ReminderResult[]> {
         bodyParams: [row.full_name, visitDateLabel],
       })
       await sendReminderEmail({ ...row, visitDateLabel }, VISIT_REMINDER_24H_KEY)
-      await query('UPDATE events SET reminder_24h_sent_at = now() WHERE id = $1', [row.id])
-      await query(
+      await queryAsClient(clientId, 'UPDATE events SET reminder_24h_sent_at = now() WHERE id = $1', [row.id])
+      await queryAsClient(
+        clientId,
         `INSERT INTO activity_log (lead_id, activity_type, title, description)
          VALUES ($1, 'system', 'Visit Reminder Sent', $2)`,
         [row.lead_id, `24-hour visit reminder ${result.ok ? 'sent' : 'failed to send'} via Meta WhatsApp API${row.email ? ' and email' : ''}.`]
