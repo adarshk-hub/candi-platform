@@ -1,5 +1,5 @@
 // path: lib/emailBroadcast.ts
-import { query } from './db'
+import { query, queryAsClient, centralQuery } from './db'
 import { sendEmail } from './email'
 import { buildAudienceQuery, previewAudience as previewAudienceShared, BroadcastFilters, AudienceLead } from './leadAudience'
 import { leadDateRangeSql } from './leadDateRange'
@@ -115,9 +115,50 @@ export interface EmailBroadcastBatchResult {
 // truth for "what did we email this lead," regardless of which flow
 // sent it. Meant to be called every ~30-60s by the same external cron
 // scheduler already hitting the WhatsApp broadcast/sequence endpoints.
+// Drains one institute's queue. Split out from processNextBatch because
+// the cron endpoint has no session: query() resolves its database from
+// whoever is logged in (see lib/db.ts) and throws outright when nobody is,
+// which is why the cron was returning 500 rather than sending anything.
+// Every statement here is therefore explicitly scoped with queryAsClient.
+// Multi-tenant entry point for the cron endpoint. Each institute has its
+// own database, so "drain pending broadcasts" means looping over every
+// registered institute rather than querying one place — the institute list
+// is central-registry data (lib/clientRegistry.ts), the queues are not.
+//
+// batchSize is per institute, so two institutes with work pending can send
+// up to 2 x batchSize in one tick. Kept deliberately small: these now go
+// through each school's own SMTP mailbox, which has a send-rate ceiling.
+//
+// One institute failing (unreachable database, bad credentials) must not
+// stop the others, so each is wrapped individually and the error recorded
+// rather than thrown.
 export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBatchResult> {
-  const pending = await query<{ id: string; broadcast_id: string; lead_id: string; to_email: string }>(
-    `SELECT r.id, r.broadcast_id, r.lead_id, r.to_email
+  const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
+
+  const total: EmailBroadcastBatchResult = { processed: 0, sent: 0, failed: 0, broadcastsCompleted: 0 }
+
+  for (const client of clients) {
+    try {
+      const r = await processClientBatch(client.id, batchSize)
+      total.processed += r.processed
+      total.sent += r.sent
+      total.failed += r.failed
+      total.broadcastsCompleted += r.broadcastsCompleted
+    } catch (err) {
+      console.error(`[email-broadcast] client ${client.id} batch failed:`, err)
+    }
+  }
+
+  return total
+}
+
+export async function processClientBatch(
+  clientId: string,
+  batchSize = 20
+): Promise<EmailBroadcastBatchResult> {
+  const pending = await queryAsClient<{ id: string; broadcast_id: string; lead_id: string; to_email: string }>(
+  clientId,
+`SELECT r.id, r.broadcast_id, r.lead_id, r.to_email
      FROM email_broadcast_recipients r
      JOIN email_broadcasts b ON b.id = r.broadcast_id
      WHERE r.status = 'pending' AND b.status = 'sending'
@@ -134,7 +175,8 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
     result.processed++
 
     const broadcast = (
-      await query<{ subject: string; body: string; client_id: string }>(
+      await queryAsClient<{ subject: string; body: string; client_id: string }>(
+        clientId,
         'SELECT subject, body, client_id FROM email_broadcasts WHERE id = $1',
         [recipient.broadcast_id]
       )
@@ -153,7 +195,7 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
     // batchSize is what keeps this within a provider's per-minute ceiling,
     // so lower it rather than raising it if the provider starts throttling.
     const client = (
-      await query<{
+      await queryAsClient<{
         name: string
         school_email: string | null
         email_from_name: string | null
@@ -162,7 +204,8 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
         smtp_user: string | null
         smtp_pass: string | null
       }>(
-        `SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass
+  clientId,
+`SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass
          FROM clients WHERE id = $1`,
         [broadcast.client_id]
       )
@@ -190,25 +233,27 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
       // resend_message_id stays NULL now that sends go via SMTP — the
       // column name is a leftover from the Resend path. Kept rather than
       // renamed so existing rows and history queries still line up.
-      await query(
+      await queryAsClient(
+        clientId,
         `UPDATE email_broadcast_recipients SET status = 'sent', sent_at = now() WHERE id = $1`,
         [recipient.id]
       )
-      await query('UPDATE email_broadcasts SET sent_count = sent_count + 1 WHERE id = $1', [recipient.broadcast_id])
+      await queryAsClient(clientId, 'UPDATE email_broadcasts SET sent_count = sent_count + 1 WHERE id = $1', [recipient.broadcast_id])
       result.sent++
     } else {
-      await query(`UPDATE email_broadcast_recipients SET status = 'failed', error = $1 WHERE id = $2`, [
+      await queryAsClient(clientId, `UPDATE email_broadcast_recipients SET status = 'failed', error = $1 WHERE id = $2`, [
         sendResult.error || 'Unknown error',
         recipient.id,
       ])
-      await query('UPDATE email_broadcasts SET failed_count = failed_count + 1 WHERE id = $1', [recipient.broadcast_id])
+      await queryAsClient(clientId, 'UPDATE email_broadcasts SET failed_count = failed_count + 1 WHERE id = $1', [recipient.broadcast_id])
       result.failed++
     }
 
     // Log into email_messages either way (sent or failed), matching how
     // the per-lead one-off email route logs both outcomes — keeps the
     // lead's Email tab history complete even for failures.
-    await query(
+    await queryAsClient(
+      clientId,
       `INSERT INTO email_messages (lead_id, template_key, subject, body, to_email, status, error)
        VALUES ($1, 'broadcast', $2, $3, $4, $5, $6)`,
       [
@@ -223,12 +268,13 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
   }
 
   for (const broadcastId of touchedBroadcastIds) {
-    const [{ remaining }] = await query<{ remaining: string }>(
-      `SELECT COUNT(*)::int AS remaining FROM email_broadcast_recipients WHERE broadcast_id = $1 AND status = 'pending'`,
+    const [{ remaining }] = await queryAsClient<{ remaining: string }>(
+  clientId,
+`SELECT COUNT(*)::int AS remaining FROM email_broadcast_recipients WHERE broadcast_id = $1 AND status = 'pending'`,
       [broadcastId]
     )
     if (Number(remaining) === 0) {
-      await query(`UPDATE email_broadcasts SET status = 'completed', completed_at = now() WHERE id = $1 AND status = 'sending'`, [
+      await queryAsClient(clientId, `UPDATE email_broadcasts SET status = 'completed', completed_at = now() WHERE id = $1 AND status = 'sending'`, [
         broadcastId,
       ])
       result.broadcastsCompleted++
