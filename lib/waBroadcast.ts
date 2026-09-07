@@ -1,5 +1,5 @@
 // path: lib/waBroadcast.ts
-import { query } from './db'
+import { query, queryAsClient, centralQuery } from './db'
 import { sendTemplateMessage } from './metaWhatsapp'
 import { leadDateRangeSql } from './leadDateRange'
 import {
@@ -142,8 +142,40 @@ export interface BroadcastBatchResult {
 // avoiding surprise sends long after the admin expected the broadcast to
 // be done. Meant to be called every ~30-60s by the same external cron
 // scheduler already hitting /api/cron/wa-sequence-advance.
+// Multi-tenant entry point for /api/cron/wa-broadcast-send. Each institute
+// has its own database, so this loops the central registry rather than
+// querying one place. Previously called query(), which resolves its
+// database from the logged-in session (lib/db.ts) — there is no session on
+// a cron request, so it threw and the endpoint 500'd without sending.
+//
+// One institute failing must not stop the rest, so each is wrapped.
 export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchResult> {
-  const pending = await query<{ id: string; broadcast_id: string; lead_id: string; phone_number: string }>(
+  const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
+  const total: BroadcastBatchResult = {
+    processed: 0, sent: 0, failed: 0, insufficientCredit: 0, broadcastsCompleted: 0,
+  }
+  for (const client of clients) {
+    try {
+      const r = await processClientBatch(client.id, batchSize)
+      total.processed += r.processed
+      total.sent += r.sent
+      total.failed += r.failed
+      total.insufficientCredit += r.insufficientCredit
+      total.broadcastsCompleted += r.broadcastsCompleted
+    } catch (err) {
+      console.error(`[wa-broadcast] client ${client.id} batch failed:`, err)
+    }
+  }
+  return total
+}
+
+// Drains one institute's queue — see the note on the wrapper above.
+export async function processClientBatch(
+  clientId: string,
+  batchSize = 20
+): Promise<BroadcastBatchResult> {
+  const pending = await queryAsClient<{ id: string; broadcast_id: string; lead_id: string; phone_number: string }>(
+    clientId,
     `SELECT r.id, r.broadcast_id, r.lead_id, r.phone_number
      FROM wa_broadcast_recipients r
      JOIN wa_broadcasts b ON b.id = r.broadcast_id
@@ -161,7 +193,8 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
     result.processed++
 
     const broadcast = (
-      await query<{ name: string; template_name: string; language_code: string; personalize_field: string; client_id: string }>(
+      await queryAsClient<{ name: string; template_name: string; language_code: string; personalize_field: string; client_id: string }>(
+        clientId,
         'SELECT name, template_name, language_code, personalize_field, client_id FROM wa_broadcasts WHERE id = $1',
         [recipient.broadcast_id]
       )
@@ -171,7 +204,8 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
     let components: any[] | undefined
     if (broadcast.personalize_field !== 'none') {
       const lead = (
-        await query<{ full_name: string; child_name: string | null }>(
+        await queryAsClient<{ full_name: string; child_name: string | null }>(
+          clientId,
           'SELECT full_name, child_name FROM leads WHERE id = $1',
           [recipient.lead_id]
         )
@@ -196,7 +230,8 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
     // never appearing in a single lead's chat thread, which is exactly
     // what was happening before this fix.
     const logStatus = sendResult.ok ? 'sent' : 'failed'
-    await query(
+    await queryAsClient(
+      clientId,
       `INSERT INTO whatsapp_messages
          (lead_id, direction, message_type, body, template_name, status, wamid)
        VALUES ($1, 'outbound', 'template', $2, $3, $4, $5)`,
@@ -210,27 +245,28 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
     )
 
     if (sendResult.ok) {
-      await query(
+      await queryAsClient(
+        clientId,
         `UPDATE wa_broadcast_recipients SET status = 'sent', wamid = $1, sent_at = now() WHERE id = $2`,
         [sendResult.wamid || null, recipient.id]
       )
-      await query('UPDATE wa_broadcasts SET sent_count = sent_count + 1 WHERE id = $1', [recipient.broadcast_id])
+      await queryAsClient(clientId, 'UPDATE wa_broadcasts SET sent_count = sent_count + 1 WHERE id = $1', [recipient.broadcast_id])
       result.sent++
     } else if (sendResult.error?.toLowerCase().includes('insufficient')) {
-      await query(`UPDATE wa_broadcast_recipients SET status = 'insufficient_credit', error = $1 WHERE id = $2`, [
+      await queryAsClient(clientId, `UPDATE wa_broadcast_recipients SET status = 'insufficient_credit', error = $1 WHERE id = $2`, [
         sendResult.error,
         recipient.id,
       ])
-      await query('UPDATE wa_broadcasts SET insufficient_credit_count = insufficient_credit_count + 1 WHERE id = $1', [
+      await queryAsClient(clientId, 'UPDATE wa_broadcasts SET insufficient_credit_count = insufficient_credit_count + 1 WHERE id = $1', [
         recipient.broadcast_id,
       ])
       result.insufficientCredit++
     } else {
-      await query(`UPDATE wa_broadcast_recipients SET status = 'failed', error = $1 WHERE id = $2`, [
+      await queryAsClient(clientId, `UPDATE wa_broadcast_recipients SET status = 'failed', error = $1 WHERE id = $2`, [
         sendResult.error || 'Unknown error',
         recipient.id,
       ])
-      await query('UPDATE wa_broadcasts SET failed_count = failed_count + 1 WHERE id = $1', [recipient.broadcast_id])
+      await queryAsClient(clientId, 'UPDATE wa_broadcasts SET failed_count = failed_count + 1 WHERE id = $1', [recipient.broadcast_id])
       result.failed++
     }
   }
@@ -238,12 +274,13 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
   // Mark any touched broadcast as completed once it has no pending
   // recipients left.
   for (const broadcastId of touchedBroadcastIds) {
-    const [{ remaining }] = await query<{ remaining: string }>(
+    const [{ remaining }] = await queryAsClient<{ remaining: string }>(
+      clientId,
       `SELECT COUNT(*)::int AS remaining FROM wa_broadcast_recipients WHERE broadcast_id = $1 AND status = 'pending'`,
       [broadcastId]
     )
     if (Number(remaining) === 0) {
-      await query(`UPDATE wa_broadcasts SET status = 'completed', completed_at = now() WHERE id = $1 AND status = 'sending'`, [
+      await queryAsClient(clientId, `UPDATE wa_broadcasts SET status = 'completed', completed_at = now() WHERE id = $1 AND status = 'sending'`, [
         broadcastId,
       ])
       result.broadcastsCompleted++
