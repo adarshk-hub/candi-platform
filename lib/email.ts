@@ -1,3 +1,4 @@
+// path: lib/email.ts
 import nodemailer from 'nodemailer'
 
 interface SendResult {
@@ -22,8 +23,32 @@ export interface SmtpConfig {
 // network, matching the stub pattern used for Aisensy/Meta elsewhere in
 // this project — so the Email tab is fully usable in dev before any real
 // mailbox is connected.
-export async function sendEmail(config: SmtpConfig, params: { to: string; subject: string; body: string }): Promise<SendResult> {
+export async function sendEmail(
+  config: SmtpConfig,
+  params: {
+    to: string
+    subject: string
+    body: string
+    // Broadcast bodies are HTML; per-lead emails are plain text. Sending
+    // HTML as `text` delivers visible markup to the recipient, so the
+    // caller has to say which it is.
+    html?: boolean
+    // Broadcasts pass true: the stub-success path below is right for a
+    // dev inbox but wrong for a bulk send, where it would silently mark
+    // every recipient 'sent' while nothing left the building. With this
+    // set, an unconfigured mailbox fails loudly and the error lands on
+    // the recipient row where someone will see it.
+    failIfUnconfigured?: boolean
+  }
+): Promise<SendResult> {
   if (!config.host || !config.user || !config.pass || !config.fromEmail) {
+    if (params.failIfUnconfigured) {
+      return {
+        ok: false,
+        error:
+          'This institute has no mailbox configured — set SMTP host, username, password and the From address under Settings > Customize > School Email.',
+      }
+    }
     console.log(
       `[email:stub] would send "${params.subject}" to ${params.to} from ${config.fromEmail || '<school_email unset>'}`
     )
@@ -41,7 +66,7 @@ export async function sendEmail(config: SmtpConfig, params: { to: string; subjec
       from: config.fromName ? `"${config.fromName}" <${config.fromEmail}>` : config.fromEmail,
       to: params.to,
       subject: params.subject,
-      text: params.body,
+      ...(params.html ? { html: params.body } : { text: params.body }),
     })
     return { ok: true }
   } catch (err: any) {
