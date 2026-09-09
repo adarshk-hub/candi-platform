@@ -109,6 +109,93 @@ export async function fetchNextActionBuckets(counsellorId?: string): Promise<Nex
   return { overdue, unplanned, dueToday }
 }
 
+export type NextActionState = 'overdue' | 'unplanned' | 'due_today' | 'upcoming' | 'done'
+
+export interface NextActionListRow extends NextActionRow {
+  next_action_done_at: string | null
+  state: NextActionState
+}
+
+export interface NextActionListParams {
+  counsellorId?: string
+  from?: string
+  to?: string
+  search?: string
+  // 'open' hides completed actions — the default, since this is a worklist.
+  status?: 'open' | 'all' | 'done'
+}
+
+// One flat, filterable list for the Next Actions page, as opposed to the
+// three fixed buckets the day pages show. Same rules underneath, so a lead
+// can't be overdue on one screen and fine on the other.
+//
+// The state is computed in SQL rather than in the page, because "overdue"
+// has to mean the same thing here as it does in the buckets above, and two
+// implementations of that comparison would eventually disagree.
+export async function fetchNextActionList(params: NextActionListParams): Promise<NextActionListRow[]> {
+  const values: any[] = []
+  const where: string[] = [`l.assigned_counsellor_id IS NOT NULL`, leadDateRangeSql('l'), OPEN_ONLY]
+
+  if (params.counsellorId) {
+    values.push(params.counsellorId)
+    where.push(`l.assigned_counsellor_id = $${values.length}`)
+  }
+
+  // Leads with no plan at all have no date to filter on, so a date range
+  // would silently drop them — and they're the ones most worth seeing. They
+  // are kept in regardless of the range, and sorted to the top.
+  const unplannedSql = `(l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours')`
+
+  const dateWhere: string[] = []
+  if (params.from) {
+    values.push(params.from)
+    dateWhere.push(`l.next_action_at >= $${values.length}::date`)
+  }
+  if (params.to) {
+    values.push(params.to)
+    dateWhere.push(`l.next_action_at < $${values.length}::date + INTERVAL '1 day'`)
+  }
+  if (dateWhere.length > 0) {
+    where.push(`(${unplannedSql} OR (${dateWhere.join(' AND ')}))`)
+  }
+
+  if (params.search) {
+    values.push(`%${params.search}%`)
+    const i = values.length
+    where.push(`(l.full_name ILIKE $${i} OR l.whatsapp_number ILIKE $${i} OR l.next_action ILIKE $${i})`)
+  }
+
+  if (params.status === 'done') {
+    where.push('l.next_action_done_at IS NOT NULL')
+  } else if (params.status !== 'all') {
+    where.push(`(l.next_action_done_at IS NULL OR ${unplannedSql})`)
+  }
+
+  return query<NextActionListRow>(
+    `SELECT ${SELECT_COLS}, l.next_action_done_at,
+            CASE
+              WHEN l.next_action_done_at IS NOT NULL THEN 'done'
+              WHEN l.next_action_at IS NULL THEN 'unplanned'
+              WHEN l.next_action_at < now() THEN 'overdue'
+              WHEN l.next_action_at::date = now()::date THEN 'due_today'
+              ELSE 'upcoming'
+            END AS state
+     FROM leads l
+     LEFT JOIN users u ON u.id = l.assigned_counsellor_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY
+       CASE
+         WHEN l.next_action_done_at IS NOT NULL THEN 4
+         WHEN l.next_action_at IS NULL THEN 0
+         WHEN l.next_action_at < now() THEN 1
+         WHEN l.next_action_at::date = now()::date THEN 2
+         ELSE 3
+       END,
+       l.next_action_at ASC NULLS FIRST`,
+    values
+  )
+}
+
 // Per-counsellor counts for the admin view.
 export async function fetchNextActionSummary(): Promise<
   { id: string; full_name: string; overdue: number; unplanned: number; dueToday: number }[]
