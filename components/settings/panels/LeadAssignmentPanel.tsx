@@ -2,53 +2,29 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
-interface Counsellor {
-  id: string
-  full_name: string
-}
+type Mode = 'manual' | 'round_robin'
 
-interface Rule {
-  id?: string
-  counsellor_id: string
-  match_type: 'source' | 'campaign' | 'grade' | 'location' | 'any'
-  match_value: string | null
-  is_active: boolean
-}
-
-const MATCH_LABEL: Record<Rule['match_type'], string> = {
-  source: 'Source is',
-  campaign: 'Campaign name is',
-  grade: 'Class is',
-  location: 'City is',
-  any: 'Everything else',
-}
-
-const MODES: { key: 'manual' | 'rules' | 'round_robin'; title: string; blurb: string }[] = [
+const MODES: { key: Mode; title: string; blurb: string }[] = [
   {
     key: 'manual',
     title: 'Manual',
-    blurb: 'New leads arrive unassigned and somebody picks who takes them.',
-  },
-  {
-    key: 'rules',
-    title: 'By rule',
-    blurb: 'Route leads by source, campaign, class or city. Anything no rule matches falls back to round robin.',
+    blurb:
+      'New leads arrive unassigned. Pick who takes each one from the lead itself, or select several at once on the Activity page.',
   },
   {
     key: 'round_robin',
     title: 'Round robin',
-    blurb: 'Every new lead goes to whichever counsellor currently holds the fewest open leads.',
+    blurb:
+      'Every new lead goes straight to whichever counsellor currently holds the fewest open leads. Anyone added later joins the rotation on their own.',
   },
 ]
 
 export default function LeadAssignmentPanel({ clientId }: { clientId: string }) {
-  const [mode, setMode] = useState<'manual' | 'rules' | 'round_robin'>('manual')
+  const [mode, setMode] = useState<Mode>('manual')
   const [waWelcomeConfirm, setWaWelcomeConfirm] = useState(true)
-  const [rules, setRules] = useState<Rule[]>([])
-  const [counsellors, setCounsellors] = useState<Counsellor[]>([])
+  const [counsellorCount, setCounsellorCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -63,28 +39,15 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
     ])
       .then(([data, people]) => {
         if (data) {
-          setMode(data.mode || 'manual')
+          setMode(data.mode === 'round_robin' ? 'round_robin' : 'manual')
           setWaWelcomeConfirm(data.waWelcomeConfirm !== false)
-          setRules(Array.isArray(data.rules) ? data.rules : [])
           setMigrationNeeded(!!data.migrationNeeded)
         }
-        setCounsellors(Array.isArray(people) ? people : [])
+        setCounsellorCount(Array.isArray(people) ? people.length : 0)
         setLoading(false)
       })
       .catch(() => setLoading(false))
   }, [clientId])
-
-  function addRule() {
-    if (counsellors.length === 0) return
-    setRules((prev) => [
-      ...prev,
-      { counsellor_id: counsellors[0].id, match_type: 'source', match_value: '', is_active: true },
-    ])
-  }
-
-  function updateRule(index: number, patch: Partial<Rule>) {
-    setRules((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
-  }
 
   async function save() {
     setSaving(true)
@@ -94,7 +57,7 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
       const res = await fetch('/api/lead-automation', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, mode, waWelcomeConfirm, rules }),
+        body: JSON.stringify({ clientId, mode, waWelcomeConfirm }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -143,7 +106,7 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
         <h2 className="text-lg font-bold text-fg">Lead assignment</h2>
         <p className="mt-1 text-sm text-muted2">Who a new lead goes to before anybody touches it.</p>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {MODES.map((m) => (
             <button
               key={m.key}
@@ -159,72 +122,21 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
           ))}
         </div>
 
-        {mode === 'rules' && (
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted">Rules, in order</p>
-              <button
-                onClick={addRule}
-                disabled={counsellors.length === 0}
-                className="flex items-center gap-1.5 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg hover:border-blue-500 disabled:opacity-50"
-              >
-                <Plus size={14} /> Add rule
-              </button>
-            </div>
-            <p className="mb-3 text-xs text-muted2">
-              The first rule that matches wins, so put the specific ones above the general ones.
-            </p>
+        {/* Round robin with nobody to rotate between silently behaves like
+            manual, which looks like the setting simply didn't work. Better to
+            say so here than to let it be discovered a week later. */}
+        {mode === 'round_robin' && counsellorCount === 0 && (
+          <p className="mt-3 text-sm text-amber-400">
+            There are no counsellors yet, so leads will keep arriving unassigned. Add them under Settings &gt;
+            Counsellors first.
+          </p>
+        )}
 
-            <div className="space-y-2">
-              {rules.map((r, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card2 p-3">
-                  <span className="w-6 text-xs text-muted">{i + 1}</span>
-                  <select
-                    value={r.match_type}
-                    onChange={(e) => updateRule(i, { match_type: e.target.value as Rule['match_type'] })}
-                    className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-                  >
-                    {(Object.keys(MATCH_LABEL) as Rule['match_type'][]).map((k) => (
-                      <option key={k} value={k}>
-                        {MATCH_LABEL[k]}
-                      </option>
-                    ))}
-                  </select>
-                  {r.match_type !== 'any' && (
-                    <input
-                      value={r.match_value || ''}
-                      onChange={(e) => updateRule(i, { match_value: e.target.value })}
-                      placeholder="value"
-                      className="w-44 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-                    />
-                  )}
-                  <span className="text-sm text-muted2">→</span>
-                  <select
-                    value={r.counsellor_id}
-                    onChange={(e) => updateRule(i, { counsellor_id: e.target.value })}
-                    className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-                  >
-                    {counsellors.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
-                    className="ml-auto rounded-md border border-border p-1.5 text-muted2 hover:text-red-400"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-              {rules.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted">
-                  No rules yet — every lead will fall back to round robin.
-                </p>
-              )}
-            </div>
-          </div>
+        {mode === 'manual' && (
+          <p className="mt-3 text-xs text-muted2">
+            Assign from the Counsellor dropdown on any lead, or select several rows on the Activity page and
+            assign them together.
+          </p>
         )}
       </div>
 
