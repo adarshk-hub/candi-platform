@@ -1,3 +1,4 @@
+// path: app/api/leads/[id]/route.ts
 //Re
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
@@ -10,6 +11,7 @@ import { sendEmail } from '@/lib/email'
 import { renderEmailTemplate, POST_VISIT_SUMMARY_KEY } from '@/lib/emailTemplates'
 import { pauseSequenceForLead, resumeSequenceForLead } from '@/lib/waSequenceEngine'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
+import { normalizePhone } from '@/lib/leadIntake'
 
 const LEAD_QUERY = `
   SELECT
@@ -67,6 +69,75 @@ const FIELD_LABEL: Record<string, string> = {
 
 const DECISION_MAKER_VALUES = Object.keys(DECISION_MAKER_LABEL)
 
+interface TargetStage {
+  label: string
+  status_group: string
+  is_cold_lane: boolean
+}
+
+// "Cold" isn't a fixed stage key — each institute defines its own pipeline,
+// marking stages either with status_group = 'cold' or as the dedicated cold
+// lane. Both count, so the reason prompt fires for whichever way an institute
+// has set theirs up.
+async function loadTargetStage(clientId: string, key: string): Promise<TargetStage | null> {
+  const rows = await query<TargetStage>(
+    'SELECT label, status_group, is_cold_lane FROM pipeline_stages WHERE client_id = $1 AND key = $2',
+    [clientId, key]
+  )
+  return rows[0] || null
+}
+
+function isColdStage(stage: TargetStage | null): boolean {
+  return !!stage && (stage.status_group === 'cold' || stage.is_cold_lane)
+}
+
+// Writes the stage change together with the cold-reason columns in one
+// statement, so a lead can never be observed sitting in a cold stage with no
+// reason attached (or, going the other way, holding a stale reason after
+// being revived).
+//
+// The CASE arms are what keep a cold → cold move from wiping a reason that
+// was recorded earlier: a new reason replaces the old one, and no new reason
+// leaves what's already there alone.
+async function updateStageWithColdReason(
+  leadId: string,
+  stageKey: string,
+  cold: boolean,
+  reason: string,
+  note: string
+) {
+  try {
+    const rows = await query(
+      `UPDATE leads SET
+         pipeline_stage = $1,
+         cold_reason = CASE WHEN $3 THEN COALESCE(NULLIF($4, ''), cold_reason) ELSE NULL END,
+         cold_reason_note = CASE
+           WHEN NOT $3 THEN NULL
+           WHEN NULLIF($4, '') IS NOT NULL THEN NULLIF($5, '')
+           ELSE cold_reason_note
+         END,
+         cold_reason_at = CASE
+           WHEN NOT $3 THEN NULL
+           WHEN NULLIF($4, '') IS NOT NULL THEN now()
+           ELSE cold_reason_at
+         END
+       WHERE id = $2
+       RETURNING *`,
+      [stageKey, leadId, cold, reason, note]
+    )
+    return rows[0]
+  } catch (err: any) {
+    // 42703 undefined_column — a database that hasn't had
+    // scripts/activity-migration.sql applied yet. Moving a lead between
+    // stages is core to using the CRM at all and must not start failing
+    // just because the reason columns aren't there; the stage change goes
+    // through and the reason is simply not stored.
+    if (err?.code !== '42703') throw err
+    const rows = await query('UPDATE leads SET pipeline_stage = $1 WHERE id = $2 RETURNING *', [stageKey, leadId])
+    return rows[0]
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -104,24 +175,52 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json()
   let updated = existing
 
+  const coldReason = typeof body.cold_reason === 'string' ? body.cold_reason.trim() : ''
+  const coldReasonNote = typeof body.cold_reason_note === 'string' ? body.cold_reason_note.trim() : ''
+
   // Stage change (from the header's stage pill) — keeps its own activity entry.
   if (body.pipeline_stage) {
-    const rows = await query('UPDATE leads SET pipeline_stage = $1 WHERE id = $2 RETURNING *', [
-      body.pipeline_stage,
+    const targetStage = await loadTargetStage(existing.client_id, body.pipeline_stage)
+    const movingToCold = isColdStage(targetStage)
+    const isStageChange = body.pipeline_stage !== existing.pipeline_stage
+
+    // Refused rather than saved-then-nagged: a reason collected days later,
+    // once nobody remembers the call, is worth very little, and the whole
+    // point of the Activity page's cold breakdown is that the reasons are
+    // actually there. The client turns this 400 into the reason prompt.
+    if (movingToCold && isStageChange && !coldReason && !existing.cold_reason) {
+      return NextResponse.json(
+        {
+          error: 'Choose a reason before moving this lead to a cold stage.',
+          requiresColdReason: true,
+          stage: body.pipeline_stage,
+          stageLabel: targetStage?.label || body.pipeline_stage,
+        },
+        { status: 400 }
+      )
+    }
+
+    updated = await updateStageWithColdReason(
       params.id,
-    ])
-    updated = rows[0]
+      body.pipeline_stage,
+      movingToCold,
+      coldReason,
+      coldReasonNote
+    )
 
     if (body.pipeline_stage !== existing.pipeline_stage) {
       const fromLabel = await getStageLabel(existing.client_id, existing.pipeline_stage)
       const toLabel = await getStageLabel(existing.client_id, body.pipeline_stage)
       const commentSuffix = body.comment ? ` Comment: "${body.comment}".` : ''
+      const reasonSuffix = coldReason
+        ? ` Cold reason: "${coldReason}"${coldReasonNote ? ` — ${coldReasonNote}` : ''}.`
+        : ''
       await query(
         `INSERT INTO activity_log (lead_id, activity_type, title, description, actor_id)
          VALUES ($1, 'system', 'Stage Updated', $2, $3)`,
         [
           params.id,
-          `Stage changed from "${fromLabel}" to "${toLabel}" via table.${commentSuffix} Current Stage is "${toLabel}".`,
+          `Stage changed from "${fromLabel}" to "${toLabel}" via table.${commentSuffix}${reasonSuffix} Current Stage is "${toLabel}".`,
           session.id,
         ]
       )
@@ -203,6 +302,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // Recording or correcting the reason on a lead that is already cold — used
+  // by the Activity page to fill in the gaps for leads that went cold before
+  // the prompt existed, without having to move them out of the stage and
+  // back in again.
+  if (!body.pipeline_stage && coldReason) {
+    try {
+      const rows = await query(
+        `UPDATE leads SET cold_reason = $1, cold_reason_note = NULLIF($2, ''), cold_reason_at = now()
+         WHERE id = $3 RETURNING *`,
+        [coldReason, coldReasonNote, params.id]
+      )
+      updated = rows[0]
+      await query(
+        `INSERT INTO activity_log (lead_id, activity_type, title, description, actor_id)
+         VALUES ($1, 'system', 'Cold Reason Recorded', $2, $3)`,
+        [params.id, `Reason: "${coldReason}"${coldReasonNote ? ` — ${coldReasonNote}` : ''}.`, session.id]
+      )
+    } catch (err: any) {
+      if (err?.code !== '42703') throw err
+    }
+  }
+
   // Nurture sequence pause/resume — any role with write access to this lead
   // (agency, owning counsellor, owning client_admin) can take manual control
   // of the thread without losing the sequence's current day position. This
@@ -276,6 +397,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       )
     }
 
+    // Editing a phone number is the other way two leads can end up sharing
+    // one — the Add Lead form is guarded, but nothing stopped someone
+    // retyping an existing parent's number onto a different record here.
+    if ('whatsapp_number' in body && body.whatsapp_number) {
+      const normalized = normalizePhone(String(body.whatsapp_number))
+      if (normalized !== normalizePhone(String(existing.whatsapp_number || ''))) {
+        const clash = await query(
+          `SELECT id, lead_number, full_name FROM leads WHERE normalized_phone = $1 AND id <> $2 LIMIT 1`,
+          [normalized, params.id]
+        ).catch(() => [])
+        if (clash[0]) {
+          return NextResponse.json(
+            {
+              error: `That phone number already belongs to lead #${clash[0].lead_number} — ${clash[0].full_name}.`,
+              duplicate: true,
+              lead: clash[0],
+            },
+            { status: 409 }
+          )
+        }
+      }
+    }
+
     const setClauses: string[] = []
     const values: any[] = []
     const changes: string[] = []
@@ -291,10 +435,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (setClauses.length > 0) {
       values.push(params.id)
-      const rows = await query(
-        `UPDATE leads SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
-        values
-      )
+      let rows
+      try {
+        rows = await query(
+          `UPDATE leads SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING *`,
+          values
+        )
+      } catch (err: any) {
+        // Backstop for the check above losing a race with a concurrent edit.
+        if (err?.code === '23505' && String(err?.constraint || '').includes('normalized_phone')) {
+          return NextResponse.json(
+            { error: 'Another lead already has that phone number.', duplicate: true },
+            { status: 409 }
+          )
+        }
+        throw err
+      }
       updated = rows[0]
 
       await query(
