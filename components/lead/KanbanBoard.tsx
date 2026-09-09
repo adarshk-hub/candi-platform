@@ -1,13 +1,15 @@
+// path: components/lead/KanbanBoard.tsx
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { tierFromScore, TIER_COLOR } from '@/lib/leadScore'
-import { useStages } from '@/lib/StagesContext'
+import { useStages, StageRow } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { elapsedLabel } from '@/lib/format'
 import LeadSlideOver from './LeadSlideOver'
 import KanbanFilters, { KanbanFilterState } from './KanbanFilters'
+import ColdReasonModal, { ColdReasonValue } from './ColdReasonModal'
 
 interface KanbanLead {
   id: string
@@ -117,6 +119,10 @@ export default function KanbanBoard() {
   const [activeLead, setActiveLead] = useState<string | null>(null)
   const [dragLeadId, setDragLeadId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<string | null>(null)
+  // A drop onto a cold column is held here until a reason is given. Nothing
+  // is sent to the server in the meantime, so cancelling the prompt leaves
+  // the card where it started rather than moving it and asking afterwards.
+  const [pendingCold, setPendingCold] = useState<{ lead: KanbanLead; stage: StageRow } | null>(null)
   const dragState = useRef<{ leadId: string; moved: boolean; offsetX: number; offsetY: number } | null>(null)
   const ghostRef = useRef<HTMLDivElement>(null)
 
@@ -158,18 +164,32 @@ export default function KanbanBoard() {
 
   const draggingLead = dragLeadId ? leads.find((l) => l.id === dragLeadId) || null : null
 
-  async function moveLead(leadId: string, newStage: string) {
+  function moveLead(leadId: string, newStage: string) {
     const lead = leads.find((l) => l.id === leadId)
     if (!lead || lead.pipeline_stage === newStage) return
 
+    const target = COLUMNS.find((c) => c.key === newStage)
+    if (target && (target.status_group === 'cold' || target.is_cold_lane)) {
+      setPendingCold({ lead, stage: target })
+      return
+    }
+
+    commitMove(lead, newStage)
+  }
+
+  async function commitMove(lead: KanbanLead, newStage: string, coldReason?: ColdReasonValue) {
     setLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, pipeline_stage: newStage, stage_updated_at: new Date().toISOString() } : l))
+      prev.map((l) => (l.id === lead.id ? { ...l, pipeline_stage: newStage, stage_updated_at: new Date().toISOString() } : l))
     )
 
-    const res = await fetch(`/api/leads/${leadId}`, {
+    const res = await fetch(`/api/leads/${lead.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pipeline_stage: newStage }),
+      body: JSON.stringify({
+        pipeline_stage: newStage,
+        cold_reason: coldReason?.reason,
+        cold_reason_note: coldReason?.note,
+      }),
     })
     if (!res.ok) load() // revert to server truth on failure
   }
@@ -328,6 +348,19 @@ export default function KanbanBoard() {
       >
         {draggingLead && <CardContent lead={draggingLead} />}
       </div>
+
+      {pendingCold && (
+        <ColdReasonModal
+          clientId={pendingCold.lead.client_id}
+          stageLabel={pendingCold.stage.label}
+          onCancel={() => setPendingCold(null)}
+          onConfirm={(value) => {
+            const { lead, stage } = pendingCold
+            setPendingCold(null)
+            commitMove(lead, stage.key, value)
+          }}
+        />
+      )}
 
       {activeLead && (
         <LeadSlideOver
