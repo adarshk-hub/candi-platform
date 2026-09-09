@@ -30,19 +30,22 @@ const ALLOWED_TYPES = [
   'text/csv',
 ]
 
-// The Inbox is a shared mailbox view: everyone at the institute sees the same
-// messages, the same way they would if they were all looking at the school's
-// actual email account. That's the point of it — a reply that lands while the
-// assigned counsellor is out shouldn't be invisible to the person covering.
+// Everything this CRM has sent, visible to everyone at the institute — a
+// shared record of what parents have already been told, so the person
+// covering for an absent counsellor isn't guessing.
+//
+// Outbound only. There is no incoming side: reading a mailbox needs IMAP
+// credentials for wherever the From address is hosted, which is a different
+// account from the sending relay, and replies already arrive in the school's
+// own mail client.
 export async function GET(req: NextRequest) {
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const sp = req.nextUrl.searchParams
-  const box = sp.get('box') === 'sent' ? 'outbound' : 'inbound'
   const search = sp.get('search')?.trim() || ''
 
-  const params: any[] = [box]
+  const params: any[] = ['outbound']
   let where = 'WHERE em.direction = $1'
   if (search) {
     params.push(`%${search}%`)
@@ -53,30 +56,25 @@ export async function GET(req: NextRequest) {
   try {
     const rows = await query(
       `SELECT em.id, em.lead_id, em.direction, em.subject, em.body, em.to_email, em.from_email,
-              em.status, em.is_read, em.created_at, em.received_at, em.attachments,
+              em.status, em.created_at, em.attachments,
               l.full_name AS lead_name, l.lead_number, l.whatsapp_number,
               u.full_name AS sent_by_name
        FROM email_messages em
        LEFT JOIN leads l ON l.id = em.lead_id
        LEFT JOIN users u ON u.id = em.sent_by
        ${where}
-       ORDER BY COALESCE(em.received_at, em.created_at) DESC
+       ORDER BY em.created_at DESC
        LIMIT ${PAGE_SIZE}`,
       params
     )
 
-    const [unread] = await query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM email_messages WHERE direction = 'inbound' AND NOT is_read`
-    )
-
-    return NextResponse.json({ rows, unread: unread?.count ?? 0 })
+    return NextResponse.json({ rows })
   } catch (err: any) {
     if (err?.code === '42703') {
       return NextResponse.json({
         migrationNeeded: true,
         rows: [],
-        unread: 0,
-        error: 'Run scripts/phase3-migration.sql against this database first.',
+        error: 'Run scripts/phase3-migration.sql and scripts/phase3b-attachments.sql against this database first.',
       })
     }
     console.error('[inbox:email] failed:', err)
@@ -189,28 +187,6 @@ export async function POST(req: NextRequest) {
 
     if (!result.ok) return NextResponse.json({ error: result.error, message: rows[0] }, { status: 502 })
     return NextResponse.json(rows[0])
-  } catch (err: any) {
-    return handleWriteError(err)
-  }
-}
-
-// Marks one message read, or all of them. Read state is shared, like the
-// mailbox itself — if a colleague has already dealt with a message, it should
-// stop shouting at everyone else too.
-export async function PATCH(req: NextRequest) {
-  const session = getSession(req)
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const body = await req.json().catch(() => ({}))
-  try {
-    if (body.all) {
-      await query(`UPDATE email_messages SET is_read = true WHERE direction = 'inbound' AND NOT is_read`)
-    } else if (body.id) {
-      await query('UPDATE email_messages SET is_read = true WHERE id = $1', [body.id])
-    } else {
-      return NextResponse.json({ error: 'id or all is required' }, { status: 400 })
-    }
-    return NextResponse.json({ ok: true })
   } catch (err: any) {
     return handleWriteError(err)
   }
