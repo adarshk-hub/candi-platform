@@ -35,19 +35,45 @@ export async function syncInbox(clientId: string): Promise<SyncResult> {
     imap_pass: string | null
     imap_last_uid: string | number | null
     school_email: string | null
+    smtp_user: string | null
+    smtp_pass: string | null
   }>(
     clientId,
-    `SELECT imap_host, imap_port, imap_user, imap_pass, imap_last_uid, school_email
+    `SELECT imap_host, imap_port, imap_user, imap_pass, imap_last_uid, school_email,
+            smtp_user, smtp_pass
      FROM clients WHERE id = $1`,
     [clientId]
   )
 
-  if (!client?.imap_host || !client.imap_user || !client.imap_pass) {
+  // Reading and sending are usually the same account with the same
+  // credentials, so an empty IMAP username or password falls back to the
+  // SMTP one already on file rather than making somebody type it twice.
+  //
+  // The host gets no such fallback. If mail is sent through a relay
+  // (MSG91, SendGrid, SES) then smtp_host points at a service that holds no
+  // mail at all — copying it across would produce a hostname that either
+  // doesn't resolve or has no inbox behind it, and a confusing connection
+  // error two steps later. That one genuinely has to be supplied.
+  const user = client?.imap_user || client?.smtp_user || null
+  const pass = client?.imap_pass || client?.smtp_pass || null
+
+  if (!client?.imap_host) {
     return {
       ok: false,
       fetched: 0,
       matched: 0,
-      error: 'No incoming mailbox configured — add IMAP host, username and password under Settings > Customize > School Email.',
+      error:
+        'No incoming mailbox configured. A sending relay (MSG91, SendGrid, Amazon SES) is not one — those deliver mail but hold nothing. Replies go to whichever mailbox actually hosts your From address, so set the IMAP host to that (imap.gmail.com, imap.zoho.in, outlook.office365.com) under Settings > Customize > School Email.',
+    }
+  }
+
+  if (!user || !pass) {
+    return {
+      ok: false,
+      fetched: 0,
+      matched: 0,
+      error:
+        'The incoming mailbox has a host but no sign-in details. Add an IMAP username and password under Settings > Customize > School Email — for Gmail and Zoho this has to be an App Password, not the account password.',
     }
   }
 
@@ -56,7 +82,7 @@ export async function syncInbox(clientId: string): Promise<SyncResult> {
     host: client.imap_host,
     port: client.imap_port || 993,
     secure: (client.imap_port || 993) === 993,
-    auth: { user: client.imap_user, pass: client.imap_pass },
+    auth: { user, pass },
     logger: false,
   })
 
@@ -106,7 +132,7 @@ export async function syncInbox(clientId: string): Promise<SyncResult> {
             leadId,
             subject.slice(0, 500),
             body.slice(0, 20000),
-            client.school_email || client.imap_user,
+            client.school_email || user,
             fromEmail,
             messageId,
             receivedAt.toISOString(),
