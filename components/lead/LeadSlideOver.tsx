@@ -13,21 +13,21 @@ import WelcomePrompt from './WelcomePrompt'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
 import InfoTab from './tabs/InfoTab'
-import FollowUpTab from './tabs/FollowUpTab'
+import NextActionTab from './tabs/NextActionTab'
 import HistoryTab from './tabs/HistoryTab'
 import WhatsAppTab from './tabs/WhatsAppTab'
 import VisitTab from './tabs/VisitTab'
 import EmailTab from './tabs/EmailTab'
 import TagEditor from './TagEditor'
 
-type TabKey = 'info' | 'whatsapp' | 'email' | 'visit' | 'followup' | 'history'
+type TabKey = 'info' | 'whatsapp' | 'email' | 'visit' | 'nextaction' | 'history'
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'info', label: 'Info', icon: ClipboardList },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'email', label: 'Email', icon: Mail },
   { key: 'visit', label: 'Visit', icon: MapPin },
-  { key: 'followup', label: 'Follow Up', icon: CalendarDays },
+  { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
   { key: 'history', label: 'History', icon: History },
 ]
 
@@ -198,7 +198,7 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
               )}
               {tab === 'email' && <EmailTab lead={lead} />}
               {tab === 'visit' && <VisitTab leadId={lead.id} />}
-              {tab === 'followup' && <FollowUpTab leadId={lead.id} />}
+              {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
               {tab === 'history' && <HistoryTab leadId={lead.id} />}
             </div>
           </>
