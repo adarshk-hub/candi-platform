@@ -1,3 +1,4 @@
+// path: app/api/webhooks/landing-page/route.ts
 //Re
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -5,7 +6,7 @@ import { waitUntil } from '@vercel/functions'
 import { centralQuery } from '@/lib/db'
 import { findOrCreateLead } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
-import { startSequence } from '@/lib/waSequenceEngine'
+import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 
 // Generic intake for any client website/landing-page form. Auth is a bearer
 // token equal to the client's clients.api_key (see Settings page for the
@@ -68,12 +69,12 @@ export async function POST(req: NextRequest) {
         clientUserAgent: req.headers.get('user-agent'),
       })
     )
+    // Held for confirmation instead of sent outright when the institute
+    // has that switched on — see lib/welcomeMessage.ts.
     waitUntil(
-      startSequence(lead.id)
-        .then((r) => {
-          if (!r.ok) console.error(`[landing-page webhook] Could not start welcome sequence for lead ${lead.id}: ${r.error}`)
-        })
-        .catch((err) => console.error(`[landing-page webhook] startSequence threw for lead ${lead.id}`, err))
+      startWelcomeOrAsk(client.id, lead.id).catch((err) =>
+        console.error(`[landing-page webhook] welcome handling threw for lead ${lead.id}`, err)
+      )
     )
   }
 
