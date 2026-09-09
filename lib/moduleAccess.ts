@@ -16,7 +16,7 @@ export const MODULE_PAGES: ModulePage[] = [
   { key: 'my_day', label: 'My Day', href: '/my-day' },
   { key: 'team_day', label: 'Team Day', href: '/team-day' },
   { key: 'inbox', label: 'Inbox', href: '/inbox' },
-  { key: 'follow_ups', label: 'Follow Up', href: '/follow-ups' },
+  { key: 'follow_ups', label: 'Next Actions', href: '/follow-ups' },
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
   { key: 'leads', label: 'All Leads', href: '/leads' },
   { key: 'broadcasts', label: 'Broadcasts', href: '/broadcasts' },
