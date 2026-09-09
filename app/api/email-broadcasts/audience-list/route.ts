@@ -1,7 +1,7 @@
 // path: app/api/email-broadcasts/audience-list/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
-import { listAudience, BroadcastFilters } from '@/lib/leadAudience'
+import { listAudience, normalizeFilters, BroadcastFilters } from '@/lib/leadAudience'
 
 // Returns the full matching audience so the composer can render one row per
 // lead with a checkbox, rather than the 10-lead sample /preview returns.
