@@ -1,5 +1,5 @@
 // path: lib/leadAudience.ts
-import { query } from './db'
+import { query, queryAsClient } from './db'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
 
 export interface BroadcastFilters {
@@ -141,6 +141,25 @@ function buildAudienceQuery(
   }
 
   return { whereSql: where.join(' AND '), params }
+}
+
+// Counts an audience for a client named explicitly, rather than relying on
+// query() picking the database up from the session. Needed by the Audience
+// tab: an agency user is not always scoped to one institute, and query()
+// throws outright in that case — which surfaced as an empty audience list
+// rather than an error.
+export async function countAudienceAsClient(
+  clientId: string,
+  filters: BroadcastFilters,
+  requireContactMethod?: 'whatsapp_number' | 'email'
+): Promise<number> {
+  const { whereSql, params } = buildAudienceQuery(clientId, filters, requireContactMethod)
+  const rows = await queryAsClient<{ count: number }>(
+    clientId,
+    `SELECT COUNT(*)::int AS count FROM leads l WHERE ${whereSql}`,
+    params
+  )
+  return Number(rows[0]?.count ?? 0)
 }
 
 export interface AudienceLead {
