@@ -93,7 +93,14 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
     }
   }
 
+  // Only a starting point, and only useful when sending and receiving happen
+  // on the same provider (smtp.gmail.com / imap.gmail.com). It deliberately
+  // does nothing for a relay host, because copying smtp.msg91.com across
+  // would produce a hostname that doesn't exist and an error two steps later.
+  const smtpIsRelay = /msg91|sendgrid|amazonaws|mailgun|postmark|sparkpost|brevo|sendinblue/i.test(smtpHost)
+
   function copyFromSmtp() {
+    if (smtpIsRelay) return
     setImapUser(smtpUser)
     setImapHost(smtpHost.replace(/^smtp\./i, 'imap.'))
     setImapPort('993')
@@ -184,11 +191,13 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
       <div className="rounded-card border border-border bg-card p-5">
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-lg font-bold text-fg">Receiving (IMAP)</h2>
-          <button onClick={copyFromSmtp} className="text-xs text-blue-400 hover:underline">
-            Fill from SMTP
-          </button>
+          {!smtpIsRelay && (
+            <button onClick={copyFromSmtp} className="text-xs text-blue-400 hover:underline">
+              Fill from SMTP
+            </button>
+          )}
         </div>
-        <p className="mb-4 text-sm text-muted2">
+        <p className="mb-3 text-sm text-muted2">
           What the Inbox reads. Replies from parents are matched back to the lead by email address, and to the
           phone number in the message if the address doesn’t match. Port 993 for almost every provider.
           {lastSynced && (
@@ -197,6 +206,26 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
             </span>
           )}
         </p>
+
+        {/* The single most common misconfiguration: assuming the sending
+            service also receives. It doesn't, and the resulting "no mailbox
+            configured" error gives no hint as to why, so the explanation
+            belongs here where the fields are. */}
+        <div className="mb-4 rounded-md border border-border bg-card2 p-3 text-xs leading-relaxed text-muted2">
+          <span className="font-semibold text-fg">These are not the same as your SMTP settings.</span> If you send
+          through a relay like MSG91, SendGrid or Amazon SES, those services only deliver mail — they hold nothing,
+          so there is no inbox to read. Replies arrive at whichever mailbox actually hosts your From address. Point
+          the fields below at that mailbox:
+          <span className="mt-2 block text-muted">
+            Google Workspace / Gmail — imap.gmail.com, 993, App Password
+            <br />
+            Zoho Mail — imap.zoho.in (or imap.zoho.com), 993
+            <br />
+            Microsoft 365 / Outlook — outlook.office365.com, 993
+            <br />
+            cPanel or your own hosting — usually mail.yourdomain.com, 993
+          </span>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -222,7 +251,7 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
             <input
               value={imapUser}
               onChange={(e) => setImapUser(e.target.value)}
-              placeholder="admissions@yourschool.edu"
+              placeholder={smtpUser ? `Leave blank to use ${smtpUser}` : 'admissions@yourschool.edu'}
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
@@ -234,11 +263,25 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
               type="password"
               value={imapPass}
               onChange={(e) => setImapPass(e.target.value)}
-              placeholder={imapPassAlreadySet ? 'Leave blank to keep current' : 'App password'}
+              placeholder={
+                imapPassAlreadySet
+                  ? 'Leave blank to keep current'
+                  : passAlreadySet
+                  ? 'Leave blank to reuse the SMTP password'
+                  : 'App password'
+              }
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
         </div>
+
+        {/* Only the host is genuinely required — the sign-in details fall
+            back to the SMTP ones already saved, since they're normally the
+            same account. */}
+        <p className="mt-3 text-xs text-muted2">
+          Username and password are optional: left blank, the ones saved above are reused. The host is the only
+          field that has to be filled in, because a relay has no mailbox to read from.
+        </p>
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
