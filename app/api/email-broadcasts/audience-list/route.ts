@@ -22,15 +22,12 @@ export async function POST(req: NextRequest) {
   const clientId = resolveClientId(session, body?.clientId)
   if (!clientId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const filters: BroadcastFilters = {
-    tags: Array.isArray(body?.filters?.tags) ? body.filters.tags : [],
-    tagsMode: body?.filters?.tagsMode === 'all' ? 'all' : 'any',
-    stageKeys: Array.isArray(body?.filters?.stageKeys) ? body.filters.stageKeys : [],
-    createdFrom: body?.filters?.createdFrom || null,
-    createdTo: body?.filters?.createdTo || null,
-    lastContactedFrom: body?.filters?.lastContactedFrom || null,
-    lastContactedTo: body?.filters?.lastContactedTo || null,
-  }
+  // Normalised in one shared place (lib/leadAudience.ts) rather than
+  // rebuilt here. Each route used to spell this out itself, which is how a
+  // new filter ends up working in the preview and silently doing nothing at
+  // send time — the source and audience-group filters are exactly that
+  // shape of addition.
+  const filters: BroadcastFilters = normalizeFilters(body?.filters)
 
   const result = await listAudience(clientId, filters, 'email')
   return NextResponse.json(result)
