@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
+import { clsx } from 'clsx'
 import { SOURCE_LABEL, TIMELINE_LABEL, DECISION_MAKER_LABEL } from '@/lib/types'
 
 interface CustomFieldDef {
@@ -17,6 +18,14 @@ interface SourceOption {
   value: string
 }
 
+interface DuplicateLead {
+  id: string
+  lead_number: number
+  full_name: string
+  whatsapp_number: string
+  counsellor_name: string | null
+}
+
 export default function AddLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [session, setSession] = useState<{ role: string; clientId: string | null } | null>(null)
   const [institutes, setInstitutes] = useState<{ id: string; name: string }[]>([])
@@ -26,6 +35,8 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [duplicate, setDuplicate] = useState<DuplicateLead | null>(null)
+  const [checkingPhone, setCheckingPhone] = useState(false)
 
   const [fullName, setFullName] = useState('')
   const [childName, setChildName] = useState('')
@@ -56,6 +67,37 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
       })
   }, [])
 
+  // One lead per phone number is enforced by the API and by a unique index on
+  // the table, but finding that out only after filling in the whole form is a
+  // waste of the person's time. This checks as they type — debounced, so a
+  // ten-digit number is one request rather than ten.
+  useEffect(() => {
+    const digits = whatsappNumber.replace(/\D/g, '')
+    if (digits.length < 10) {
+      setDuplicate(null)
+      return
+    }
+    let cancelled = false
+    setCheckingPhone(true)
+    const t = setTimeout(() => {
+      fetch(`/api/leads/check-phone?phone=${encodeURIComponent(whatsappNumber)}`)
+        .then((r) => (r.ok ? r.json() : { duplicate: false, lead: null }))
+        .then((data) => {
+          if (cancelled) return
+          setDuplicate(data.duplicate ? data.lead : null)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setCheckingPhone(false)
+        })
+    }, 400)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+      setCheckingPhone(false)
+    }
+  }, [whatsappNumber])
+
   useEffect(() => {
     if (!clientId) return
     fetch(`/api/option-items?clientId=${clientId}&listKey=lead_source`)
@@ -75,6 +117,10 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
     // chosen the Save button simply did nothing and gave no reason why.
     if (!clientId) {
       setError('Choose which institution this lead belongs to.')
+      return
+    }
+    if (duplicate) {
+      setError(`This number is already on lead #${duplicate.lead_number} — ${duplicate.full_name}.`)
       return
     }
     setSaving(true)
@@ -165,8 +211,18 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
                 required
                 value={whatsappNumber}
                 onChange={(e) => setWhatsappNumber(e.target.value)}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+                className={clsx(
+                  'w-full rounded-md border bg-card2 px-3 py-2 text-sm text-fg outline-none',
+                  duplicate ? 'border-red-500 focus:border-red-500' : 'border-border focus:border-blue-500'
+                )}
               />
+              {checkingPhone && <p className="mt-1 text-xs text-muted">Checking…</p>}
+              {duplicate && (
+                <p className="mt-1 text-xs text-red-400">
+                  Already on lead #{duplicate.lead_number} — {duplicate.full_name}
+                  {duplicate.counsellor_name ? ` (with ${duplicate.counsellor_name})` : ''}. Open that lead instead.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">Second Phone</label>
@@ -296,7 +352,7 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !!duplicate}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Add Lead'}
