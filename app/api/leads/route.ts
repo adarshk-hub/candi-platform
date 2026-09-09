@@ -4,9 +4,11 @@ import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
-import { startSequence } from '@/lib/waSequenceEngine'
 import { fetchLeadsPage } from '@/lib/leadsQuery'
 import { normalizePhone } from '@/lib/leadIntake'
+import { resolveAssignee } from '@/lib/leadAssignment'
+import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
+import { createNotification } from '@/lib/notifications'
 
 function splitParam(v: string | null): string[] {
   return (v || '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -54,7 +56,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'fullName and whatsappNumber required' }, { status: 400 })
   }
 
-  const assignedCounsellorId = session.role === 'client_counsellor' ? session.id : body.assignedCounsellorId || null
+  // A counsellor adding a lead always owns it; otherwise an explicit choice
+  // on the form wins, and only if neither applies do the institute's
+  // automatic assignment settings get a say.
+  let assignedCounsellorId: string | null =
+    session.role === 'client_counsellor' ? session.id : body.assignedCounsellorId || null
 
   // One lead per phone number, full stop. The inbound channels
   // (lib/leadIntake.ts) already merge a repeat number into the existing
@@ -126,10 +132,36 @@ export async function POST(req: NextRequest) {
       [lead.id, `New lead added manually: ${fullName} - ${whatsappNumber}.`, session.id]
     )
 
-    // Fires the Day 0 welcome template (e.g. hello_candid) immediately —
-    // this is a brand-new lead the counsellor just entered by hand, so it
-    // should feel like the same "first touch" as a lead arriving from an
-    // ad or landing page. NOT awaited directly (that made the form take
+    // Auto-assignment runs after the insert rather than before it, because
+    // the round-robin count and the rule matching both want the real lead
+    // row (its source, campaign, grade) rather than the raw form body.
+    if (!lead.assigned_counsellor_id) {
+      const auto = await resolveAssignee(clientId, lead).catch(() => null)
+      if (auto) {
+        await query('UPDATE leads SET assigned_counsellor_id = $1 WHERE id = $2', [auto, lead.id])
+        lead.assigned_counsellor_id = auto
+        const [who] = await query<{ full_name: string }>('SELECT full_name FROM users WHERE id = $1', [auto])
+        await query(
+          `INSERT INTO activity_log (lead_id, activity_type, title, description)
+           VALUES ($1, 'system', 'Counsellor Assigned', $2)`,
+          [lead.id, `Assigned automatically to "${who?.full_name || 'counsellor'}".`]
+        )
+      }
+    }
+
+    // The bell had nothing to show for manually-added leads because this
+    // call didn't exist — only the webhook paths recorded a notification.
+    await createNotification({
+      clientId,
+      leadId: lead.id,
+      type: 'new_lead',
+      body: `${body.source || 'manual'} · added by ${session.fullName || session.email}`,
+    })
+
+    // Fires the Day 0 welcome template (e.g. hello_candid) — unless the
+    // institute has asked to confirm first, in which case the lead is
+    // parked as 'pending' and a prompt appears on top of it instead (see
+    // lib/welcomeMessage.ts). NOT awaited directly (that made the form take
     // 10-30s, waiting on live Meta network calls) — but a bare unawaited
     // promise doesn't work either: Vercel can freeze/kill this function
     // the instant the response below is sent, silently cutting the send
@@ -137,11 +169,9 @@ export async function POST(req: NextRequest) {
     // the function alive for this promise without making the response
     // wait for it.
     waitUntil(
-      startSequence(lead.id)
-        .then((r) => {
-          if (!r.ok) console.error(`[leads] Could not start welcome sequence for lead ${lead.id}: ${r.error}`)
-        })
-        .catch((err) => console.error(`[leads] startSequence threw for lead ${lead.id}`, err))
+      startWelcomeOrAsk(clientId, lead.id).catch((err) =>
+        console.error(`[leads] welcome handling threw for lead ${lead.id}`, err)
+      )
     )
 
     return NextResponse.json(lead)
