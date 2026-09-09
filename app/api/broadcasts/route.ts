@@ -1,8 +1,10 @@
+// path: app/api/broadcasts/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
 import { createBroadcast, listBroadcasts, BroadcastFilters } from '@/lib/waBroadcast'
+import { normalizeFilters } from '@/lib/leadAudience'
 
 function resolveClientId(session: ReturnType<typeof getSession>, requestedClientId?: string | null): string | null {
   if (!session) return null
@@ -56,15 +58,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Only Meta-approved templates can be used in a broadcast' }, { status: 400 })
   }
 
-  const filters: BroadcastFilters = {
-    tags: Array.isArray(body?.filters?.tags) ? body.filters.tags : [],
-    tagsMode: body?.filters?.tagsMode === 'all' ? 'all' : 'any',
-    stageKeys: Array.isArray(body?.filters?.stageKeys) ? body.filters.stageKeys : [],
-    createdFrom: body?.filters?.createdFrom || null,
-    createdTo: body?.filters?.createdTo || null,
-    lastContactedFrom: body?.filters?.lastContactedFrom || null,
-    lastContactedTo: body?.filters?.lastContactedTo || null,
-  }
+  // Normalised in one shared place (lib/leadAudience.ts) rather than
+  // rebuilt here. Each route used to spell this out itself, which is how a
+  // new filter ends up working in the preview and silently doing nothing at
+  // send time — the source and audience-group filters are exactly that
+  // shape of addition.
+  const filters: BroadcastFilters = normalizeFilters(body?.filters)
 
   try {
     const { broadcastId, totalRecipients } = await createBroadcast({
