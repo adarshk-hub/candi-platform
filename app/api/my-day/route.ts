@@ -1,12 +1,8 @@
 // path: app/api/my-day/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
-import { getSession, AGENCY_ROLES } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
-
-function canViewOthers(role: string): boolean {
-  return AGENCY_ROLES.includes(role as any) || role === 'client_admin'
-}
 
 // One day's work for one person: what the CRM recorded automatically, and
 // what they wrote down themselves.
@@ -21,10 +17,10 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams
   const date = sp.get('date') || new Date().toISOString().slice(0, 10)
-  const requestedUser = sp.get('userId')?.trim() || ''
-  // A counsellor can only ever look at their own day. Managers can pick
-  // somebody, which is what makes this useful in a one-to-one.
-  const userId = requestedUser && canViewOthers(session.role) ? requestedUser : session.id
+  // Always the caller's own day, never anyone else's — managers read the
+  // whole team through GET /api/team-day instead, which keeps the "can I see
+  // somebody else's work" decision in one place rather than two.
+  const userId = session.id
 
   try {
     const activity = await query(
@@ -60,16 +56,7 @@ export async function GET(req: NextRequest) {
       leadsTouched: new Set(activity.map((a: any) => a.lead_id).filter(Boolean)).size,
     }
 
-    let people: any[] = []
-    if (canViewOthers(session.role)) {
-      people = await query(
-        `SELECT id, full_name FROM users
-         WHERE role IN ('client_counsellor', 'client_admin', 'client_staff')
-         ORDER BY full_name`
-      )
-    }
-
-    return NextResponse.json({ date, userId, activity, notes, summary, people, canViewOthers: canViewOthers(session.role) })
+    return NextResponse.json({ date, userId, activity, notes, summary })
   } catch (err: any) {
     if (err?.code === '42P01' || err?.code === '42703') {
       return NextResponse.json({
@@ -79,8 +66,6 @@ export async function GET(req: NextRequest) {
         activity: [],
         notes: [],
         summary: { stageMoves: 0, calls: 0, emails: 0, notes: 0, notesDone: 0, leadsTouched: 0 },
-        people: [],
-        canViewOthers: canViewOthers(session.role),
         error: 'Run scripts/phase3-migration.sql against this database first.',
       })
     }
