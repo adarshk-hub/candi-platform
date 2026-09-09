@@ -1,8 +1,10 @@
+// path: components/lead/StagePill.tsx
 'use client'
 
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { useStages } from '@/lib/StagesContext'
+import { useStages, StageRow } from '@/lib/StagesContext'
+import ColdReasonModal, { ColdReasonValue } from './ColdReasonModal'
 
 export default function StagePill({
   stage,
@@ -11,11 +13,29 @@ export default function StagePill({
 }: {
   stage: string
   clientId: string
-  onChange: (next: string, comment?: string) => void
+  // coldReason is supplied only when the new stage is a cold one — every
+  // other move passes it as undefined and the API leaves the reason columns
+  // alone.
+  onChange: (next: string, coldReason?: ColdReasonValue) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [pendingCold, setPendingCold] = useState<StageRow | null>(null)
   const { stagesFor, stageLabel, stageColor } = useStages()
   const stages = stagesFor(clientId)
+
+  function isCold(s: StageRow): boolean {
+    return s.status_group === 'cold' || s.is_cold_lane
+  }
+
+  function pick(s: StageRow) {
+    setOpen(false)
+    if (s.key === stage) return
+    // The reason is collected before anything is sent, so a cancelled prompt
+    // leaves the lead exactly where it was rather than moving it and then
+    // asking.
+    if (isCold(s)) setPendingCold(s)
+    else onChange(s.key)
+  }
 
   return (
     <div className="relative">
@@ -34,10 +54,7 @@ export default function StagePill({
             {stages.map((s) => (
               <button
                 key={s.key}
-                onClick={() => {
-                  setOpen(false)
-                  if (s.key !== stage) onChange(s.key)
-                }}
+                onClick={() => pick(s)}
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card"
               >
                 <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
@@ -46,6 +63,19 @@ export default function StagePill({
             ))}
           </div>
         </>
+      )}
+
+      {pendingCold && (
+        <ColdReasonModal
+          clientId={clientId}
+          stageLabel={pendingCold.label}
+          onCancel={() => setPendingCold(null)}
+          onConfirm={(value) => {
+            const target = pendingCold.key
+            setPendingCold(null)
+            onChange(target, value)
+          }}
+        />
       )}
     </div>
   )
