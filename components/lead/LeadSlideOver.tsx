@@ -9,6 +9,7 @@ import { formatDateTime } from '@/lib/format'
 import { markLeadRead } from '@/lib/useNotifications'
 import StagePill from './StagePill'
 import { ColdReasonValue } from './ColdReasonModal'
+import WelcomePrompt from './WelcomePrompt'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
 import InfoTab from './tabs/InfoTab'
@@ -86,6 +87,10 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
           <div className="p-8 text-muted">Loading…</div>
         ) : (
           <>
+            {lead.welcome_message_status === 'pending' && (
+              <WelcomePrompt leadId={lead.id} leadName={lead.full_name} onAnswered={load} />
+            )}
+
             <div className="border-b border-border p-6">
               <div className="flex items-start justify-between">
                 <div>
