@@ -7,7 +7,12 @@ import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
 
-type Tab = 'inbox' | 'sent' | 'whatsapp'
+// Two channels at the top level. Inbox and Sent are two views of the same
+// mailbox, not two separate places, so they sit inside Email rather than
+// beside it — otherwise WhatsApp looks like one third of the screen's
+// subject matter when it's actually one half.
+type Channel = 'email' | 'whatsapp'
+type Box = 'inbox' | 'sent'
 
 interface EmailRow {
   id: string
@@ -60,7 +65,8 @@ function when(value: string | null): string {
 }
 
 export default function InboxShell() {
-  const [tab, setTab] = useState<Tab>('inbox')
+  const [channel, setChannel] = useState<Channel>('email')
+  const [box, setBox] = useState<Box>('inbox')
   const [search, setSearch] = useState('')
   const [emails, setEmails] = useState<EmailRow[]>([])
   const [unread, setUnread] = useState(0)
@@ -80,7 +86,7 @@ export default function InboxShell() {
 
   const load = useCallback(() => {
     setLoading(true)
-    if (tab === 'whatsapp') {
+    if (channel === 'whatsapp') {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       fetch(`/api/inbox/whatsapp?${params.toString()}`)
@@ -93,7 +99,7 @@ export default function InboxShell() {
       return
     }
 
-    const params = new URLSearchParams({ box: tab === 'sent' ? 'sent' : 'inbox' })
+    const params = new URLSearchParams({ box })
     if (search) params.set('search', search)
     fetch(`/api/inbox/email?${params.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -104,7 +110,7 @@ export default function InboxShell() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [tab, search])
+  }, [channel, box, search])
 
   useEffect(load, [load])
 
@@ -204,32 +210,54 @@ export default function InboxShell() {
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {([
-          { key: 'inbox' as Tab, label: 'Email — Inbox', icon: Mail },
-          { key: 'sent' as Tab, label: 'Email — Sent', icon: Send },
-          { key: 'whatsapp' as Tab, label: 'WhatsApp', icon: MessageCircle },
+          { key: 'email' as Channel, label: 'Email', icon: Mail },
+          { key: 'whatsapp' as Channel, label: 'WhatsApp', icon: MessageCircle },
         ]).map((t) => (
           <button
             key={t.key}
             onClick={() => {
-              setTab(t.key)
+              setChannel(t.key)
               setOpenEmail(null)
               setOpenThread(null)
             }}
             className={clsx(
               'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
-              tab === t.key ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
+              channel === t.key ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
             )}
           >
             <t.icon size={15} />
             {t.label}
-            {t.key === 'inbox' && unread > 0 && (
+            {t.key === 'email' && unread > 0 && (
               <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">{unread}</span>
             )}
           </button>
         ))}
 
-        {tab !== 'whatsapp' && (
+        {channel === 'email' && (
           <div className="ml-auto flex items-center gap-2">
+            {/* Inbox / Sent as a segmented switch: same mailbox, two
+                directions, so it reads as a filter rather than navigation. */}
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {([
+                { key: 'inbox' as Box, label: 'Inbox' },
+                { key: 'sent' as Box, label: 'Sent' },
+              ]).map((b) => (
+                <button
+                  key={b.key}
+                  onClick={() => {
+                    setBox(b.key)
+                    setOpenEmail(null)
+                  }}
+                  className={clsx(
+                    'px-3 py-2 text-sm',
+                    box === b.key ? 'bg-card2 font-medium text-fg' : 'text-muted2 hover:text-fg'
+                  )}
+                >
+                  {b.label}
+                  {b.key === 'inbox' && unread > 0 ? ` (${unread})` : ''}
+                </button>
+              ))}
+            </div>
             <button
               onClick={sync}
               disabled={syncing}
@@ -249,7 +277,7 @@ export default function InboxShell() {
 
       {notice && <p className="mb-4 rounded-card border border-border bg-card p-3 text-sm text-muted2">{notice}</p>}
 
-      {tab === 'whatsapp' ? (
+      {channel === 'whatsapp' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
           <div className="overflow-hidden rounded-card border border-border bg-card">
             {conversations.map((c) => (
@@ -421,7 +449,7 @@ export default function InboxShell() {
           ))}
           {emails.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-muted">
-              {loading ? 'Loading…' : tab === 'sent' ? 'Nothing sent yet.' : 'Nothing here — press Refresh to check the mailbox.'}
+              {loading ? 'Loading…' : box === 'sent' ? 'Nothing sent yet.' : 'Nothing here — press Refresh to check the mailbox.'}
             </p>
           )}
         </div>
@@ -447,7 +475,7 @@ export default function InboxShell() {
           onClose={() => setComposing(false)}
           onSent={() => {
             setComposing(false)
-            setTab('sent')
+            setBox('sent')
           }}
         />
       )}
