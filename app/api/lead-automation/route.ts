@@ -6,8 +6,11 @@ import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
-const MODES = ['manual', 'rules', 'round_robin']
-const MATCH_TYPES = ['source', 'campaign', 'grade', 'location', 'any']
+// Two modes only: either a person picks who takes each lead, or the system
+// spreads them automatically. The rule-based routing that briefly lived here
+// was removed — it added a whole editor to configure something an institute
+// this size handles by simply looking at the lead.
+const MODES = ['manual', 'round_robin']
 
 // One route for the whole "what happens automatically when a lead arrives"
 // panel: who it gets assigned to, and whether the WhatsApp welcome goes out
@@ -26,34 +29,19 @@ export async function GET(req: NextRequest) {
       'SELECT lead_assignment_mode, wa_welcome_confirm FROM clients WHERE id = $1',
       [clientId]
     )
-    const rules = await query(
-      `SELECT r.id, r.counsellor_id, r.match_type, r.match_value, r.sort_order, r.is_active,
-              u.full_name AS counsellor_name
-       FROM lead_assignment_rules r
-       LEFT JOIN users u ON u.id = r.counsellor_id
-       WHERE r.client_id = $1
-       ORDER BY r.sort_order ASC, r.created_at ASC`,
-      [clientId]
-    )
     return NextResponse.json({
       mode: client?.lead_assignment_mode || 'manual',
       waWelcomeConfirm: client?.wa_welcome_confirm !== false,
-      rules,
     })
   } catch (err: any) {
     if (err?.code === '42703' || err?.code === '42P01') {
-      return NextResponse.json({ migrationNeeded: true, mode: 'manual', waWelcomeConfirm: false, rules: [] })
+      return NextResponse.json({ migrationNeeded: true, mode: 'manual', waWelcomeConfirm: false })
     }
     console.error('[lead-automation] read failed:', err)
     return NextResponse.json({ error: 'Could not load these settings.' }, { status: 500 })
   }
 }
 
-// Rules are replaced wholesale rather than patched one at a time. The panel
-// is a short ordered list that people reorder and prune as a unit, and
-// sending the whole list keeps the saved order exactly as it appears on
-// screen — no drift between a client-side array and a server-side
-// sort_order.
 export async function PUT(req: NextRequest) {
   const session = getSession(req)
   const body = await req.json().catch(() => ({}))
@@ -72,36 +60,6 @@ export async function PUT(req: NextRequest) {
     }
     if (body.waWelcomeConfirm !== undefined) {
       await query('UPDATE clients SET wa_welcome_confirm = $1 WHERE id = $2', [!!body.waWelcomeConfirm, clientId])
-    }
-
-    if (Array.isArray(body.rules)) {
-      const rules = body.rules.filter(
-        (r: any) => r && typeof r.counsellor_id === 'string' && MATCH_TYPES.includes(r.match_type)
-      )
-
-      // Validated before anything is deleted — a rule pointing at somebody
-      // else's counsellor would otherwise wipe the existing list and then
-      // refuse to write the replacement.
-      const ids = Array.from(new Set(rules.map((r: any) => r.counsellor_id)))
-      if (ids.length > 0) {
-        const valid = await query<{ id: string }>(
-          `SELECT id FROM users WHERE id = ANY($1) AND client_id = $2 AND role = 'client_counsellor'`,
-          [ids, clientId]
-        )
-        if (valid.length !== ids.length) {
-          return NextResponse.json({ error: 'A rule points at someone who is not a counsellor here.' }, { status: 400 })
-        }
-      }
-
-      await query('DELETE FROM lead_assignment_rules WHERE client_id = $1', [clientId])
-      for (let i = 0; i < rules.length; i++) {
-        const r = rules[i]
-        await query(
-          `INSERT INTO lead_assignment_rules (client_id, counsellor_id, match_type, match_value, sort_order, is_active)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [clientId, r.counsellor_id, r.match_type, r.match_type === 'any' ? null : r.match_value || null, i, r.is_active !== false]
-        )
-      }
     }
 
     await logSettingsActivity(clientId, session, 'Lead Assignment', 'Updated automatic assignment settings')
