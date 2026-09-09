@@ -2,6 +2,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
+import ModuleGuard from '@/components/ModuleGuard'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { StagesProvider } from '@/lib/StagesContext'
 import { getServerSession } from '@/lib/serverAuth'
@@ -68,7 +69,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       institutionName = rows[0].name
     }
   }
-  
+
+  // Read fresh from the users row rather than from the JWT: a login is
+  // valid for seven days, so page permissions changed this morning would
+  // otherwise not take effect until the person happened to log out.
+  let allowedPages: string[] | null = null
+  if (session) {
+    try {
+      const rows = await query<{ allowed_pages: string[] | null }>(
+        'SELECT allowed_pages FROM users WHERE id = $1',
+        [session.id]
+      )
+      allowedPages = rows[0]?.allowed_pages ?? null
+    } catch {
+      // Column missing (scripts/phase2-migration.sql not run yet) — treat
+      // as "no restrictions", which is exactly how the app behaved before.
+      allowedPages = null
+    }
+  }
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
@@ -78,8 +97,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider>
           {session ? (
             <StagesProvider>
+              <ModuleGuard role={session.role} allowedPages={allowedPages} />
               <div className="flex">
-                <Sidebar user={session} showLeadStatusTabs={showLeadStatusTabs} institutionName={institutionName} />
+                <Sidebar
+                  user={session}
+                  showLeadStatusTabs={showLeadStatusTabs}
+                  institutionName={institutionName}
+                  allowedPages={allowedPages}
+                />
                 <main className="min-h-screen flex-1 overflow-x-hidden px-8 py-8">{children}</main>
               </div>
             </StagesProvider>
