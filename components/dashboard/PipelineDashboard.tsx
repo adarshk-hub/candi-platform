@@ -150,25 +150,59 @@ function CampaignTable({
   campaigns,
   checked,
   onToggle,
+  onSetMany,
   saveState = 'idle',
 }: {
   campaigns: GroupedCampaignRow[]
   checked: Set<string>
   onToggle: (ids: string[]) => void
+  onSetMany: (ids: string[], include: boolean) => void
   saveState?: 'idle' | 'saving' | 'error'
 }) {
+  // An account that has been running for a year or two accumulates dozens of
+  // campaigns, almost all of them switched off — listing every one of them
+  // buried the handful that actually count behind a wall of zero rows. The
+  // table now shows only what's selected, which is also exactly what the
+  // numbers above it are calculated from, so the two finally agree at a
+  // glance. "Show all" brings the full list back whenever the selection
+  // itself needs changing.
+  const [showAll, setShowAll] = useState(false)
+
+  const selectedRows = campaigns.filter((c) => c.memberIds.every((id) => checked.has(id)))
+  const visibleRows = showAll ? campaigns : selectedRows
+  const allIds = campaigns.flatMap((c) => c.memberIds)
+
   return (
     <div className="mt-4">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted">Campaigns &amp; Targeting</p>
-        {saveState === 'saving' && <p className="text-xs text-muted">Saving…</p>}
-        {saveState === 'error' && (
-          <p className="text-xs text-red-400">Couldn't save — this selection won't be here next time.</p>
-        )}
+        <div className="flex items-center gap-3">
+          {saveState === 'saving' && <p className="text-xs text-muted">Saving…</p>}
+          {saveState === 'error' && (
+            <p className="text-xs text-red-400">Couldn't save — this selection won't be here next time.</p>
+          )}
+          {showAll && (
+            <>
+              <button onClick={() => onSetMany(allIds, true)} className="text-xs text-blue-400 hover:underline">
+                Select all
+              </button>
+              <button onClick={() => onSetMany(allIds, false)} className="text-xs text-blue-400 hover:underline">
+                Clear all
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className="rounded-md border border-border px-3 py-1 text-xs text-muted2 hover:text-fg"
+          >
+            {showAll ? 'Show selected only' : `Show all (${campaigns.length})`}
+          </button>
+        </div>
       </div>
       <p className="mb-3 mt-1 text-xs text-muted2">
-        Uncheck a campaign to leave it out of every number on this page — useful for boosted posts or one-off
-        campaigns you don't want counted. Your selection is saved and reapplied next time.
+        {showAll
+          ? "Tick the campaigns you want counted in the numbers above. Unticked ones are left out entirely — useful for boosted posts or one-off campaigns. Your selection is saved and reapplied next time."
+          : `Showing the ${selectedRows.length} selected campaign${selectedRows.length === 1 ? '' : 's'} of ${campaigns.length}. These are the ones the numbers above are based on.`}
       </p>
       <div className="overflow-x-auto rounded-card border border-border">
         <table className="w-full text-sm">
@@ -186,10 +220,10 @@ function CampaignTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {campaigns.map((c) => {
+            {visibleRows.map((c) => {
               const isChecked = c.memberIds.every((id) => checked.has(id))
               return (
-                <tr key={c.memberIds.join(',')}>
+                <tr key={c.memberIds.join(',')} className={isChecked ? undefined : 'opacity-50'}>
                   <td className="px-3 py-2.5">
                     <input
                       type="checkbox"
@@ -214,10 +248,20 @@ function CampaignTable({
                 </tr>
               )
             })}
-            {campaigns.length === 0 && (
+            {visibleRows.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-3 py-6 text-center text-muted">
-                  No campaigns in this range.
+                  {campaigns.length === 0 ? (
+                    'No campaigns in this range.'
+                  ) : (
+                    <>
+                      No campaigns selected.{' '}
+                      <button onClick={() => setShowAll(true)} className="text-blue-400 hover:underline">
+                        Show all {campaigns.length}
+                      </button>{' '}
+                      to pick some.
+                    </>
+                  )}
                 </td>
               </tr>
             )}
@@ -384,6 +428,20 @@ export default function PipelineDashboard({
     for (const id of ids) {
       if (allIncluded) next.add(id)
       else next.delete(id)
+    }
+    touched.current = true
+    setExcluded(next)
+    persist(next)
+  }
+
+  // Select all / clear all for one platform's table. Written as a single
+  // state update and a single save rather than looping toggleCampaignGroup,
+  // which would fire one PUT per campaign and let the last one to land win.
+  function setCampaignInclusion(ids: string[], include: boolean) {
+    const next = new Set(excluded)
+    for (const id of ids) {
+      if (include) next.delete(id)
+      else next.add(id)
     }
     touched.current = true
     setExcluded(next)
@@ -568,7 +626,13 @@ export default function PipelineDashboard({
               {formatLakh(buckets.meta.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedMeta} checked={includedIds} onToggle={toggleCampaignGroup} saveState={saveState} />
+          <CampaignTable
+            campaigns={sortedMeta}
+            checked={includedIds}
+            onToggle={toggleCampaignGroup}
+            onSetMany={setCampaignInclusion}
+            saveState={saveState}
+          />
         </div>
       )}
 
@@ -584,7 +648,13 @@ export default function PipelineDashboard({
               {formatLakh(buckets.google.spend)} spent
             </p>
           </div>
-          <CampaignTable campaigns={sortedGoogle} checked={includedIds} onToggle={toggleCampaignGroup} saveState={saveState} />
+          <CampaignTable
+            campaigns={sortedGoogle}
+            checked={includedIds}
+            onToggle={toggleCampaignGroup}
+            onSetMany={setCampaignInclusion}
+            saveState={saveState}
+          />
         </div>
       )}
     </div>
