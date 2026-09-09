@@ -15,6 +15,14 @@ export interface SmtpConfig {
   fromName: string | null
 }
 
+export interface EmailAttachment {
+  filename: string
+  contentType: string
+  // Base64, without the data: URI prefix — the browser's FileReader gives a
+  // data URL, and the API route strips the header before it gets here.
+  data: string
+}
+
 // Sends via the institute's own mailbox (SMTP), not a shared agency-wide
 // provider — each school configures its own account in Settings > Customize
 // > School Email so recipients see mail genuinely coming from the school,
@@ -39,6 +47,7 @@ export async function sendEmail(
     // set, an unconfigured mailbox fails loudly and the error lands on
     // the recipient row where someone will see it.
     failIfUnconfigured?: boolean
+    attachments?: EmailAttachment[]
   }
 ): Promise<SendResult> {
   if (!config.host || !config.user || !config.pass || !config.fromEmail) {
@@ -50,7 +59,8 @@ export async function sendEmail(
       }
     }
     console.log(
-      `[email:stub] would send "${params.subject}" to ${params.to} from ${config.fromEmail || '<school_email unset>'}`
+      `[email:stub] would send "${params.subject}" to ${params.to} from ${config.fromEmail || '<school_email unset>'}` +
+        (params.attachments?.length ? ` with ${params.attachments.length} attachment(s)` : '')
     )
     return { ok: true }
   }
@@ -67,6 +77,17 @@ export async function sendEmail(
       to: params.to,
       subject: params.subject,
       ...(params.html ? { html: params.body } : { text: params.body }),
+      // Decoded here rather than passed through as a base64 string, so
+      // nodemailer sets the transfer encoding and MIME boundaries itself.
+      ...(params.attachments?.length
+        ? {
+            attachments: params.attachments.map((a) => ({
+              filename: a.filename,
+              content: Buffer.from(a.data, 'base64'),
+              contentType: a.contentType || 'application/octet-stream',
+            })),
+          }
+        : {}),
     })
     return { ok: true }
   } catch (err: any) {
