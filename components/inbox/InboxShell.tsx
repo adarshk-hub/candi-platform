@@ -21,24 +21,22 @@ import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
 
-// Two channels at the top level. Inbox and Sent are two views of the same
-// mailbox, not two separate places, so they sit inside Email rather than
-// beside it.
+// Two channels at the top level. Email here means mail this CRM has sent —
+// there is no incoming side. Reading a mailbox needs IMAP credentials for
+// wherever the From address is hosted, which is a separate account from the
+// sending relay and more setup than it was worth; replies land in the
+// school's own mail client as they always did.
 type Channel = 'email' | 'whatsapp'
-type Box = 'inbox' | 'sent'
 
 interface EmailRow {
   id: string
   lead_id: string | null
-  direction: string
   subject: string
   body: string
   to_email: string
   from_email: string | null
   status: string
-  is_read: boolean
   created_at: string
-  received_at: string | null
   lead_name: string | null
   lead_number: number | null
   sent_by_name: string | null
@@ -118,10 +116,8 @@ function StatusTicks({ status }: { status: string }) {
 
 export default function InboxShell() {
   const [channel, setChannel] = useState<Channel>('email')
-  const [box, setBox] = useState<Box>('inbox')
   const [search, setSearch] = useState('')
   const [emails, setEmails] = useState<EmailRow[]>([])
-  const [unread, setUnread] = useState(0)
   const [openEmail, setOpenEmail] = useState<EmailRow | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [openThread, setOpenThread] = useState<string | null>(null)
@@ -130,7 +126,6 @@ export default function InboxShell() {
   const [activeLead, setActiveLead] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
   const [notice, setNotice] = useState('')
 
   const load = useCallback(() => {
@@ -148,18 +143,17 @@ export default function InboxShell() {
       return
     }
 
-    const params = new URLSearchParams({ box })
+    const params = new URLSearchParams()
     if (search) params.set('search', search)
     fetch(`/api/inbox/email?${params.toString()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         setEmails(data?.rows || [])
-        setUnread(data?.unread || 0)
         setNotice(data?.error || '')
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [channel, box, search])
+  }, [channel, search])
 
   useEffect(load, [load])
 
@@ -175,40 +169,6 @@ export default function InboxShell() {
   }, [openThread])
 
   useEffect(loadThread, [loadThread])
-
-  async function sync() {
-    setSyncing(true)
-    setNotice('')
-    try {
-      const res = await fetch('/api/inbox/email/sync', { method: 'POST' })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setNotice(body.error || 'Could not reach the mailbox.')
-        return
-      }
-      setNotice(
-        body.fetched > 0
-          ? `${body.fetched} new message${body.fetched === 1 ? '' : 's'}, ${body.matched} matched to a lead.`
-          : 'Nothing new.'
-      )
-      load()
-    } finally {
-      setSyncing(false)
-    }
-  }
-
-  async function openMessage(row: EmailRow) {
-    setOpenEmail(row)
-    if (!row.is_read && row.direction === 'inbound') {
-      await fetch('/api/inbox/email', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: row.id }),
-      }).catch(() => {})
-      setEmails((prev) => prev.map((e) => (e.id === row.id ? { ...e, is_read: true } : e)))
-      setUnread((n) => Math.max(0, n - 1))
-    }
-  }
 
   return (
     <div>
@@ -249,9 +209,6 @@ export default function InboxShell() {
           >
             <t.icon size={15} />
             {t.label}
-            {t.key === 'email' && unread > 0 && (
-              <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">{unread}</span>
-            )}
           </button>
         ))}
       </div>
@@ -347,153 +304,61 @@ export default function InboxShell() {
           </div>
         </div>
       ) : (
-        // Two panes, the way every mail client is laid out: folders on the
-        // left, messages on the right. The previous segmented switch made
-        // "Inbox" and "Sent" look like filters on a table rather than the
-        // two places mail lives, which is why it wasn't obvious which one
-        // you were in.
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr]">
-          <div className="space-y-2">
+        <div className="overflow-hidden rounded-card border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border bg-card2 px-4 py-2.5">
+            <p className="text-sm font-semibold text-fg">
+              Sent mail
+              <span className="ml-2 text-xs font-normal text-muted2">
+                {emails.length} message{emails.length === 1 ? '' : 's'}
+              </span>
+            </p>
             <button
               onClick={() => setComposing(true)}
-              className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+              className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
             >
               Compose
             </button>
+          </div>
 
-            <div className="overflow-hidden rounded-card border border-border bg-card">
-              {([
-                { key: 'inbox' as Box, label: 'Inbox', icon: Inbox },
-                { key: 'sent' as Box, label: 'Sent', icon: Send },
-              ]).map((b) => (
-                <button
-                  key={b.key}
-                  onClick={() => {
-                    setBox(b.key)
-                    setOpenEmail(null)
-                  }}
-                  className={clsx(
-                    'flex w-full items-center gap-2.5 border-l-2 px-3 py-2.5 text-sm transition-colors',
-                    box === b.key
-                      ? 'border-blue-500 bg-card2 font-semibold text-fg'
-                      : 'border-transparent text-muted2 hover:bg-card2 hover:text-fg'
-                  )}
-                >
-                  <b.icon size={15} />
-                  {b.label}
-                  {b.key === 'inbox' && unread > 0 && (
-                    <span className="ml-auto rounded-full bg-blue-500 px-1.5 text-[11px] font-bold text-white">
-                      {unread}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
+          {emails.map((e) => (
             <button
-              onClick={sync}
-              disabled={syncing}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted2 hover:text-fg disabled:opacity-50"
+              key={e.id}
+              onClick={() => setOpenEmail(e)}
+              className="flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2"
             >
-              <RefreshCw size={14} className={syncing ? 'animate-spin' : undefined} />
-              {syncing ? 'Checking…' : 'Check for new mail'}
-            </button>
-          </div>
-
-          <div className="overflow-hidden rounded-card border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border bg-card2 px-4 py-2.5">
-              <p className="text-sm font-semibold text-fg">
-                {box === 'inbox' ? 'Inbox' : 'Sent'}
-                <span className="ml-2 text-xs font-normal text-muted2">
-                  {emails.length} message{emails.length === 1 ? '' : 's'}
-                </span>
-              </p>
-              {box === 'inbox' && unread > 0 && (
-                <button
-                  onClick={async () => {
-                    await fetch('/api/inbox/email', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ all: true }),
-                    }).catch(() => {})
-                    load()
-                  }}
-                  className="text-xs text-blue-400 hover:underline"
-                >
-                  Mark all read
-                </button>
-              )}
-            </div>
-            {emails.map((e) => (
-            <button
-                key={e.id}
-                onClick={() => openMessage(e)}
-                className={clsx(
-                  'flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2',
-                  e.direction === 'inbound' && !e.is_read && 'bg-blue-500/[0.04]'
-                )}
-              >
-                <span
-                  className={clsx(
-                    'mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                    e.direction === 'inbound'
-                      ? 'bg-blue-500/15 text-blue-400'
-                      : 'bg-card2 text-muted2'
-                  )}
-                >
-                  {(e.direction === 'inbound' ? e.from_email || '?' : e.to_email).slice(0, 2).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={clsx(
-                        'truncate text-sm',
-                        e.direction === 'inbound' && !e.is_read ? 'font-semibold text-fg' : 'text-muted2'
-                      )}
-                    >
-                      {e.direction === 'inbound' ? e.from_email || 'Unknown sender' : `To ${e.to_email}`}
+              <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card2 text-xs font-semibold text-muted2">
+                {e.to_email.slice(0, 2).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm text-muted2">To {e.to_email}</span>
+                  {e.lead_name && (
+                    <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 text-[11px] text-blue-300">
+                      #{e.lead_number} {e.lead_name}
                     </span>
-                    {e.lead_name && (
-                      <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 text-[11px] text-blue-300">
-                        #{e.lead_number} {e.lead_name}
-                      </span>
-                    )}
-                    {e.status === 'failed' && (
-                      <span className="shrink-0 rounded-md bg-red-500/15 px-1.5 text-[11px] text-red-400">
-                        not delivered
-                      </span>
-                    )}
-                  </span>
-                  <span
-                    className={clsx(
-                      'block truncate text-sm',
-                      e.direction === 'inbound' && !e.is_read ? 'font-medium text-fg' : 'text-fg'
-                    )}
-                  >
-                    {e.subject}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted2">
-                    {e.attachments && e.attachments.length > 0 && (
-                      <Paperclip size={12} className="shrink-0 text-muted" />
-                    )}
-                    <span className="truncate">{e.body.slice(0, 120)}</span>
-                  </span>
+                  )}
+                  {e.status === 'failed' && (
+                    <span className="shrink-0 rounded-md bg-red-500/15 px-1.5 text-[11px] text-red-400">
+                      not delivered
+                    </span>
+                  )}
                 </span>
-                <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">
-                  {when(e.received_at || e.created_at)}
+                <span className="block truncate text-sm text-fg">{e.subject}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted2">
+                  {e.attachments && e.attachments.length > 0 && (
+                    <Paperclip size={12} className="shrink-0 text-muted" />
+                  )}
+                  <span className="truncate">{e.body.slice(0, 120)}</span>
                 </span>
-              </button>
-            ))}
-            {emails.length === 0 && (
-              <p className="px-4 py-14 text-center text-sm text-muted">
-                {loading
-                  ? 'Loading…'
-                  : box === 'sent'
-                  ? 'Nothing sent yet.'
-                  : 'Nothing here — use “Check for new mail” to pull from the mailbox.'}
-              </p>
-            )}
-          </div>
+              </span>
+              <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">{when(e.created_at)}</span>
+            </button>
+          ))}
+          {emails.length === 0 && (
+            <p className="px-4 py-14 text-center text-sm text-muted">
+              {loading ? 'Loading…' : 'Nothing sent yet.'}
+            </p>
+          )}
         </div>
       )}
 
@@ -517,7 +382,7 @@ export default function InboxShell() {
           onClose={() => setComposing(false)}
           onSent={() => {
             setComposing(false)
-            setBox('sent')
+            load()
           }}
         />
       )}
@@ -813,7 +678,7 @@ function EmailReader({
       <Composer
         onClose={() => setReplying(false)}
         onSent={onReplied}
-        initialTo={email.direction === 'inbound' ? email.from_email || '' : email.to_email}
+        initialTo={email.to_email}
         // "Re: Re: Re:" is what happens when a reply subject is built
         // blindly, so an existing prefix is left alone.
         initialSubject={email.subject.toLowerCase().startsWith('re:') ? email.subject : `Re: ${email.subject}`}
@@ -829,8 +694,7 @@ function EmailReader({
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-fg">{email.subject}</h2>
             <p className="mt-1 text-xs text-muted2">
-              {email.direction === 'inbound' ? `From ${email.from_email}` : `To ${email.to_email}`} ·{' '}
-              {when(email.received_at || email.created_at)}
+              To {email.to_email} · {when(email.created_at)}
               {email.sent_by_name ? ` · sent by ${email.sent_by_name}` : ''}
             </p>
             {email.lead_id && (
