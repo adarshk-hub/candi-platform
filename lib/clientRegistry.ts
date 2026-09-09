@@ -10,24 +10,27 @@ const globalForRegistry = globalThis as unknown as {
   clientPools?: Map<string, Pool>
 }
 
-// How many sockets a single pool may hold open.
+// Sized for serverless, but not starved.
 //
-// pg defaults to 10, which is what caused
-// "(EMAXCONNSESSION) max clients reached in session mode - max clients are
-// limited to pool_size: 15": the central pool alone could claim 10 and one
-// institute's pool another 10, so the second page to do any real work got
-// refused. Supabase's session-mode pooler hands out a fixed, small number of
-// slots for the whole project, shared by every serverless instance at once —
-// so each pool has to stay modest and give connections back quickly.
+// pg's default of 10 per pool is too many when Supabase's session-mode
+// pooler gives roughly 15 slots for the entire project, shared by every warm
+// instance — that combination is what produced "(EMAXCONNSESSION) max
+// clients reached in session mode". But going to 1 is worse: a single slow
+// query then blocks every other query on that instance behind it until they
+// time out. Five leaves room for a page that fires a few requests at once
+// while staying well clear of the cap.
 //
-// Three is enough for a request that runs a handful of sequential queries
-// (which is nearly all of them here) while leaving room for other instances.
-const CLIENT_POOL_MAX = 3
-// Two, because the central pool only ever does single-row registry lookups.
-const CENTRAL_POOL_MAX = 2
-// Released after 10s idle rather than pg's 30s default: on serverless, an
-// instance often handles one request and then sits idle, holding slots the
-// next instance needs.
+// If EMAXCONNSESSION comes back, the pool size is not the lever. Check
+// whether DATABASE_URL (and clients.database_url_enc) point at port 5432
+// rather than 6543. Port 5432 is session mode, where a connection is held
+// for the whole session and the cap really is ~15. Port 6543 is transaction
+// mode, which returns the connection after each statement and allows
+// hundreds of concurrent clients. pg works with it here because this
+// codebase never names prepared statements.
+const CLIENT_POOL_MAX = 5
+const CENTRAL_POOL_MAX = 3
+// Released after 10s idle rather than pg's 30s default, so a serverless
+// instance that has finished its request hands slots back reasonably fast.
 const IDLE_TIMEOUT_MS = 10_000
 
 const POOL_DEFAULTS = {
@@ -43,7 +46,27 @@ const POOL_DEFAULTS = {
   keepAliveInitialDelayMillis: 10_000,
   connectionTimeoutMillis: 5_000,
   idleTimeoutMillis: IDLE_TIMEOUT_MS,
-  allowExitOnIdle: true,
+  // allowExitOnIdle is deliberately NOT set. It lets a pool shut itself
+  // down once every connection goes idle — which, combined with caching
+  // pools on globalThis below, leaves a dead pool sitting in the cache that
+  // the next request happily pulls out and tries to query. That failure mode
+  // looks like requests hanging rather than erroring, which is far harder to
+  // recognise than the connection-limit error it was meant to help with.
+}
+
+// Logged once per cold start. If the port here is 5432, the connection
+// errors are coming from session mode's ~15-slot cap and no pool setting
+// will fix them — switch to the 6543 transaction-mode string.
+try {
+  const url = new URL(process.env.DATABASE_URL || '')
+  if (url.port === '5432') {
+    console.warn(
+      '[clientRegistry] DATABASE_URL uses port 5432 (session mode, ~15 connections for the whole project). ' +
+        'Switch to the port 6543 transaction-mode pooler string for serverless.'
+    )
+  }
+} catch {
+  // No DATABASE_URL, or not a parseable URL — nothing useful to warn about.
 }
 
 export const centralPool =
