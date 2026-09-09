@@ -14,6 +14,7 @@ export const MODULE_PAGES: ModulePage[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard' },
   { key: 'activity', label: 'Activity', href: '/activity' },
   { key: 'my_day', label: 'My Day', href: '/my-day' },
+  { key: 'team_day', label: 'Team Day', href: '/team-day' },
   { key: 'inbox', label: 'Inbox', href: '/inbox' },
   { key: 'follow_ups', label: 'Follow Up', href: '/follow-ups' },
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
@@ -31,7 +32,7 @@ export const DEFAULT_COUNSELLOR_PAGES = ['activity', 'my_day', 'inbox', 'follow_
 // management no matter what boxes get ticked on a counsellor's login.
 // Dashboard is deliberately not in here: it's ordinary role-gated content
 // that an institute can choose to open up to a counsellor.
-const ADMIN_ONLY_PAGES = ['performance']
+const ADMIN_ONLY_PAGES = ['performance', 'team_day']
 
 // The mirror image: pages that only make sense for the people doing the
 // day-to-day work. My Day is a personal worklog — an admin has no leads of
@@ -57,6 +58,7 @@ export function pageKeyForPath(pathname: string): string | null {
   if (pathname.startsWith('/dashboard')) return 'dashboard'
   if (pathname.startsWith('/activity')) return 'activity'
   if (pathname.startsWith('/my-day')) return 'my_day'
+  if (pathname.startsWith('/team-day')) return 'team_day'
   if (pathname.startsWith('/inbox')) return 'inbox'
   if (pathname.startsWith('/follow-ups')) return 'follow_ups'
   if (pathname.startsWith('/calendar')) return 'calendar'
