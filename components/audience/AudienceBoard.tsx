@@ -46,15 +46,21 @@ export default function AudienceBoard({
 
   const load = useCallback(() => {
     setLoading(true)
+    // Parsed whether or not the response was ok — a failed request that
+    // silently produced empty lists was indistinguishable from an institute
+    // with no leads, which is the wrong thing to show somebody twice.
     fetch(`/api/audience?clientId=${clientId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        setSources(d?.sources || [])
-        setSaved(d?.saved || [])
-        setNotice(d?.error || '')
+      .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
+      .then(({ ok, body }) => {
+        setSources(body?.sources || [])
+        setSaved(body?.saved || [])
+        setNotice(body?.error || (ok ? '' : 'Could not load audiences.'))
         setLoading(false)
       })
-      .catch(() => setLoading(false))
+      .catch((err) => {
+        setNotice(err?.message || 'Could not reach the server.')
+        setLoading(false)
+      })
   }, [clientId])
 
   useEffect(load, [load])
@@ -116,7 +122,11 @@ export default function AudienceBoard({
           ))}
           {sources.length === 0 && (
             <p className="col-span-full rounded-card border border-border bg-card p-6 text-center text-sm text-muted">
-              {loading ? 'Loading…' : 'No leads yet, so there are no source audiences.'}
+              {loading
+                ? 'Loading…'
+                : notice
+                ? 'Source audiences could not be loaded — see the message above.'
+                : 'No leads with a source recorded yet.'}
             </p>
           )}
         </div>
