@@ -49,6 +49,9 @@ export interface Lead {
   cold_reason?: string | null
   cold_reason_note?: string | null
   cold_reason_at?: string | null
+  // 'pending' means the automatic WhatsApp welcome is being held for
+  // confirmation — see lib/welcomeMessage.ts and components/lead/WelcomePrompt.
+  welcome_message_status?: 'pending' | 'sent' | 'skipped'
 }
 
 export const TIMELINE_LABEL: Record<string, string> = {
