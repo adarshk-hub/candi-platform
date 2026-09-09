@@ -12,7 +12,9 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  Paperclip,
   Send,
+  Trash2,
   X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -40,6 +42,7 @@ interface EmailRow {
   lead_name: string | null
   lead_number: number | null
   sent_by_name: string | null
+  attachments: { filename: string; size: number; contentType: string }[] | null
 }
 
 interface Conversation {
@@ -253,48 +256,6 @@ export default function InboxShell() {
         ))}
       </div>
 
-      {/* Mailbox controls sit on their own row underneath, left-aligned with
-          the tab they belong to — floated right they read as page-level
-          actions rather than as part of Email. */}
-      {channel === 'email' && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border border-border">
-            {([
-              { key: 'inbox' as Box, label: 'Inbox' },
-              { key: 'sent' as Box, label: 'Sent' },
-            ]).map((b) => (
-              <button
-                key={b.key}
-                onClick={() => {
-                  setBox(b.key)
-                  setOpenEmail(null)
-                }}
-                className={clsx(
-                  'px-3 py-2 text-sm',
-                  box === b.key ? 'bg-card2 font-medium text-fg' : 'text-muted2 hover:text-fg'
-                )}
-              >
-                {b.label}
-                {b.key === 'inbox' && unread > 0 ? ` (${unread})` : ''}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={sync}
-            disabled={syncing}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted2 hover:text-fg disabled:opacity-50"
-          >
-            <RefreshCw size={15} className={syncing ? 'animate-spin' : undefined} /> Refresh
-          </button>
-          <button
-            onClick={() => setComposing(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Compose
-          </button>
-        </div>
-      )}
-
       {notice && <p className="mb-4 rounded-card border border-border bg-card p-3 text-sm text-muted2">{notice}</p>}
 
       {channel === 'whatsapp' ? (
@@ -386,48 +347,153 @@ export default function InboxShell() {
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-card border border-border bg-card">
-          {emails.map((e) => (
+        // Two panes, the way every mail client is laid out: folders on the
+        // left, messages on the right. The previous segmented switch made
+        // "Inbox" and "Sent" look like filters on a table rather than the
+        // two places mail lives, which is why it wasn't obvious which one
+        // you were in.
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[210px_1fr]">
+          <div className="space-y-2">
             <button
-              key={e.id}
-              onClick={() => openMessage(e)}
-              className="flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2"
+              onClick={() => setComposing(true)}
+              className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
             >
-              <span
-                className={clsx(
-                  'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                  e.direction === 'inbound' && !e.is_read ? 'bg-blue-500' : 'bg-transparent'
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className={clsx('truncate text-sm', e.is_read ? 'text-muted2' : 'font-semibold text-fg')}>
-                    {e.direction === 'inbound' ? e.from_email || 'Unknown sender' : e.to_email}
-                  </span>
-                  {e.lead_name && (
-                    <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 text-[11px] text-blue-300">
-                      #{e.lead_number} {e.lead_name}
+              Compose
+            </button>
+
+            <div className="overflow-hidden rounded-card border border-border bg-card">
+              {([
+                { key: 'inbox' as Box, label: 'Inbox', icon: Inbox },
+                { key: 'sent' as Box, label: 'Sent', icon: Send },
+              ]).map((b) => (
+                <button
+                  key={b.key}
+                  onClick={() => {
+                    setBox(b.key)
+                    setOpenEmail(null)
+                  }}
+                  className={clsx(
+                    'flex w-full items-center gap-2.5 border-l-2 px-3 py-2.5 text-sm transition-colors',
+                    box === b.key
+                      ? 'border-blue-500 bg-card2 font-semibold text-fg'
+                      : 'border-transparent text-muted2 hover:bg-card2 hover:text-fg'
+                  )}
+                >
+                  <b.icon size={15} />
+                  {b.label}
+                  {b.key === 'inbox' && unread > 0 && (
+                    <span className="ml-auto rounded-full bg-blue-500 px-1.5 text-[11px] font-bold text-white">
+                      {unread}
                     </span>
                   )}
-                  {e.status === 'failed' && <span className="shrink-0 text-[11px] text-red-400">failed</span>}
-                </span>
-                <span className="block truncate text-sm text-fg">{e.subject}</span>
-                <span className="block truncate text-xs text-muted2">{e.body.slice(0, 120)}</span>
-              </span>
-              <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">
-                {when(e.received_at || e.created_at)}
-              </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={sync}
+              disabled={syncing}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted2 hover:text-fg disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : undefined} />
+              {syncing ? 'Checking…' : 'Check for new mail'}
             </button>
-          ))}
-          {emails.length === 0 && (
-            <p className="px-4 py-10 text-center text-sm text-muted">
-              {loading
-                ? 'Loading…'
-                : box === 'sent'
-                ? 'Nothing sent yet.'
-                : 'Nothing here — press Refresh to check the mailbox.'}
-            </p>
-          )}
+          </div>
+
+          <div className="overflow-hidden rounded-card border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border bg-card2 px-4 py-2.5">
+              <p className="text-sm font-semibold text-fg">
+                {box === 'inbox' ? 'Inbox' : 'Sent'}
+                <span className="ml-2 text-xs font-normal text-muted2">
+                  {emails.length} message{emails.length === 1 ? '' : 's'}
+                </span>
+              </p>
+              {box === 'inbox' && unread > 0 && (
+                <button
+                  onClick={async () => {
+                    await fetch('/api/inbox/email', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ all: true }),
+                    }).catch(() => {})
+                    load()
+                  }}
+                  className="text-xs text-blue-400 hover:underline"
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+            {emails.map((e) => (
+            <button
+                key={e.id}
+                onClick={() => openMessage(e)}
+                className={clsx(
+                  'flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2',
+                  e.direction === 'inbound' && !e.is_read && 'bg-blue-500/[0.04]'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                    e.direction === 'inbound'
+                      ? 'bg-blue-500/15 text-blue-400'
+                      : 'bg-card2 text-muted2'
+                  )}
+                >
+                  {(e.direction === 'inbound' ? e.from_email || '?' : e.to_email).slice(0, 2).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={clsx(
+                        'truncate text-sm',
+                        e.direction === 'inbound' && !e.is_read ? 'font-semibold text-fg' : 'text-muted2'
+                      )}
+                    >
+                      {e.direction === 'inbound' ? e.from_email || 'Unknown sender' : `To ${e.to_email}`}
+                    </span>
+                    {e.lead_name && (
+                      <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 text-[11px] text-blue-300">
+                        #{e.lead_number} {e.lead_name}
+                      </span>
+                    )}
+                    {e.status === 'failed' && (
+                      <span className="shrink-0 rounded-md bg-red-500/15 px-1.5 text-[11px] text-red-400">
+                        not delivered
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={clsx(
+                      'block truncate text-sm',
+                      e.direction === 'inbound' && !e.is_read ? 'font-medium text-fg' : 'text-fg'
+                    )}
+                  >
+                    {e.subject}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted2">
+                    {e.attachments && e.attachments.length > 0 && (
+                      <Paperclip size={12} className="shrink-0 text-muted" />
+                    )}
+                    <span className="truncate">{e.body.slice(0, 120)}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">
+                  {when(e.received_at || e.created_at)}
+                </span>
+              </button>
+            ))}
+            {emails.length === 0 && (
+              <p className="px-4 py-14 text-center text-sm text-muted">
+                {loading
+                  ? 'Loading…'
+                  : box === 'sent'
+                  ? 'Nothing sent yet.'
+                  : 'Nothing here — use “Check for new mail” to pull from the mailbox.'}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -780,6 +846,18 @@ function EmailReader({
 
         <p className="whitespace-pre-wrap text-sm text-fg">{email.body}</p>
 
+        {email.attachments && email.attachments.length > 0 && (
+          <div className="mt-4 border-t border-border pt-3">
+            <p className="mb-2 text-xs uppercase tracking-widest text-muted">Attached</p>
+            {email.attachments.map((a, i) => (
+              <p key={i} className="flex items-center gap-2 text-sm text-muted2">
+                <Paperclip size={13} /> {a.filename}
+                <span className="text-xs text-muted">{formatSize(a.size)}</span>
+              </p>
+            ))}
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
           <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg">
             Close
@@ -794,6 +872,24 @@ function EmailReader({
       </div>
     </div>
   )
+}
+
+interface PickedFile {
+  filename: string
+  contentType: string
+  size: number
+  data: string
+}
+
+// Mirrors the server-side cap in app/api/inbox/email/route.ts. Duplicated on
+// purpose — the client copy is for fast feedback, the server copy is the one
+// that actually enforces it.
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function Composer({
@@ -812,8 +908,48 @@ function Composer({
   const [to, setTo] = useState(initialTo)
   const [subject, setSubject] = useState(initialSubject)
   const [body, setBody] = useState('')
+  const [files, setFiles] = useState<PickedFile[]>([])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+
+  const totalBytes = files.reduce((n, f) => n + f.size, 0)
+
+  async function addFiles(list: FileList | null) {
+    if (!list) return
+    setError('')
+    const picked: PickedFile[] = []
+    let running = totalBytes
+
+    for (const file of Array.from(list)) {
+      running += file.size
+      // Checked before reading rather than after: a rejected 30 MB video
+      // shouldn't be base64-encoded into memory first.
+      if (running > MAX_ATTACHMENT_BYTES) {
+        setError('Attachments have to come to 2 MB or less in total.')
+        return
+      }
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        // readAsDataURL gives "data:<type>;base64,<payload>" — the API wants
+        // just the payload.
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+        reader.onerror = () => reject(new Error('Could not read that file'))
+        reader.readAsDataURL(file)
+      }).catch(() => '')
+
+      if (!data) {
+        setError(`Could not read "${file.name}".`)
+        return
+      }
+      picked.push({
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        size: file.size,
+        data,
+      })
+    }
+    setFiles((prev) => [...prev, ...picked])
+  }
 
   async function send() {
     if (!to.trim() || !subject.trim() || !body.trim()) {
@@ -826,7 +962,13 @@ function Composer({
       const res = await fetch('/api/inbox/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject, body, leadId }),
+        body: JSON.stringify({
+          to,
+          subject,
+          body,
+          leadId,
+          attachments: files.map((f) => ({ filename: f.filename, contentType: f.contentType, data: f.data })),
+        }),
       })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -841,7 +983,7 @@ function Composer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-2xl rounded-card border border-border bg-card p-6">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-card border border-border bg-card p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-fg">{initialSubject ? 'Reply' : 'New email'}</h2>
           <button onClick={onClose} className="text-muted2 hover:text-fg">
@@ -871,10 +1013,52 @@ function Composer({
             <label className="mb-1 block text-xs text-muted">Message</label>
             <textarea
               value={body}
-              rows={10}
+              rows={9}
               onChange={(e) => setBody(e.target.value)}
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
+          </div>
+
+          <div>
+            <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg">
+              <Paperclip size={14} /> Attach files
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                onChange={(e) => {
+                  addFiles(e.target.files)
+                  // Cleared so re-picking the same file still fires onChange.
+                  e.target.value = ''
+                }}
+                className="hidden"
+              />
+            </label>
+            <p className="mt-1 text-xs text-muted2">
+              PDF, images, Word, Excel, CSV or text. Up to 2 MB in total
+              {totalBytes > 0 ? ` — ${formatSize(totalBytes)} used` : ''}.
+            </p>
+
+            {files.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <div
+                    key={`${f.filename}-${i}`}
+                    className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm"
+                  >
+                    <Paperclip size={13} className="shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1 truncate text-fg">{f.filename}</span>
+                    <span className="shrink-0 text-xs text-muted2">{formatSize(f.size)}</span>
+                    <button
+                      onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                      className="shrink-0 text-muted2 hover:text-red-400"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
