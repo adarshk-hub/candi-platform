@@ -1,3 +1,4 @@
+// path: lib/clientRegistry.ts
 import { Pool } from 'pg'
 import { decrypt } from '@/lib/waEncryption'
 
@@ -9,27 +10,66 @@ const globalForRegistry = globalThis as unknown as {
   clientPools?: Map<string, Pool>
 }
 
+// How many sockets a single pool may hold open.
+//
+// pg defaults to 10, which is what caused
+// "(EMAXCONNSESSION) max clients reached in session mode - max clients are
+// limited to pool_size: 15": the central pool alone could claim 10 and one
+// institute's pool another 10, so the second page to do any real work got
+// refused. Supabase's session-mode pooler hands out a fixed, small number of
+// slots for the whole project, shared by every serverless instance at once —
+// so each pool has to stay modest and give connections back quickly.
+//
+// Three is enough for a request that runs a handful of sequential queries
+// (which is nearly all of them here) while leaving room for other instances.
+const CLIENT_POOL_MAX = 3
+// Two, because the central pool only ever does single-row registry lookups.
+const CENTRAL_POOL_MAX = 2
+// Released after 10s idle rather than pg's 30s default: on serverless, an
+// instance often handles one request and then sits idle, holding slots the
+// next instance needs.
+const IDLE_TIMEOUT_MS = 10_000
+
+const POOL_DEFAULTS = {
+  ssl: { rejectUnauthorized: false },
+  // keepAlive stops the OS/DB from silently dropping an idle TCP
+  // connection between requests — without it, a Postgres provider's own
+  // idle timeout (common on managed/serverless Postgres) can quietly
+  // close the socket, so what looks like a "warm" serverless instance
+  // still ends up paying for a brand new TCP+TLS+auth handshake on its
+  // next request anyway. connectionTimeoutMillis makes a genuinely dead
+  // connection fail fast (5s) instead of hanging.
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
+  connectionTimeoutMillis: 5_000,
+  idleTimeoutMillis: IDLE_TIMEOUT_MS,
+  allowExitOnIdle: true,
+}
+
 export const centralPool =
   globalForRegistry.centralPool ??
-  new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    // keepAlive stops the OS/DB from silently dropping an idle TCP
-    // connection between requests — without it, a Postgres provider's own
-    // idle timeout (common on managed/serverless Postgres) can quietly
-    // close the socket, so what looks like a "warm" serverless instance
-    // still ends up paying for a brand new TCP+TLS+auth handshake on its
-    // next request anyway. connectionTimeoutMillis makes a genuinely dead
-    // connection fail fast (5s) instead of hanging.
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10_000,
-    connectionTimeoutMillis: 5_000,
-  })
+  (() => {
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: CENTRAL_POOL_MAX,
+      ...POOL_DEFAULTS,
+    })
+    pool.on('error', (err) => console.error('[clientRegistry] idle central client error:', err.message))
+    return pool
+  })()
 
-if (process.env.NODE_ENV !== 'production') globalForRegistry.centralPool = centralPool
+// Cached in production too, not just development.
+//
+// The previous `if (NODE_ENV !== 'production')` guard was the standard
+// hot-reload workaround, but on serverless it had the opposite of the
+// intended effect: nothing was ever stored on globalThis in production, so
+// every module re-evaluation built brand new pools while the old ones kept
+// their sockets — connections leaked until the pooler started refusing them.
+// Reusing across re-evaluations is exactly what production needs most.
+globalForRegistry.centralPool = centralPool
 
 const clientPools = globalForRegistry.clientPools ?? new Map<string, Pool>()
-if (process.env.NODE_ENV !== 'production') globalForRegistry.clientPools = clientPools
+globalForRegistry.clientPools = clientPools
 
 export interface ClientRecord {
   id: string
@@ -49,7 +89,7 @@ const globalForResolve = globalThis as unknown as {
   clientResolveCache?: Map<string, { record: ClientRecord | null; expiresAt: number }>
 }
 const clientResolveCache = globalForResolve.clientResolveCache ?? new Map()
-if (process.env.NODE_ENV !== 'production') globalForResolve.clientResolveCache = clientResolveCache
+globalForResolve.clientResolveCache = clientResolveCache
 
 // Matches by slug first, falling back to the display name, both
 // case-insensitive — so "candid-schools" and "Candid Schools" both work
@@ -74,13 +114,21 @@ export async function resolveClient(nameOrSlug: string): Promise<ClientRecord | 
 }
 
 function buildPool(encrypted: string): Pool {
-  return new Pool({
+  const pool = new Pool({
     connectionString: decrypt(encrypted),
-    ssl: { rejectUnauthorized: false },
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10_000,
-    connectionTimeoutMillis: 5_000,
+    max: CLIENT_POOL_MAX,
+    ...POOL_DEFAULTS,
   })
+
+  // Without a listener, a socket dropped by the database (a pooler restart,
+  // an idle timeout on the server side) raises an unhandled 'error' event
+  // that takes the whole Node process down. pg removes the connection from
+  // the pool by itself; logging is all that's needed.
+  pool.on('error', (err) => {
+    console.error('[clientRegistry] idle client error:', err.message)
+  })
+
+  return pool
 }
 
 // Returns a cached pool for a client's own database, decrypting the stored
