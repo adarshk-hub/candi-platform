@@ -24,6 +24,7 @@ import {
   BarChart3,
   Inbox,
   CalendarCheck,
+  CalendarRange,
 } from 'lucide-react'
 import { canAccessPage } from '@/lib/moduleAccess'
 import type { Role } from '@/lib/auth'
@@ -185,6 +186,9 @@ export default function Sidebar({
         )}
         {can('my_day') && (
           <NavItem href="/my-day" icon={CalendarCheck} label="My Day" active={pathname === '/my-day'} collapsed={collapsed} />
+        )}
+        {can('team_day') && (
+          <NavItem href="/team-day" icon={CalendarRange} label="Team Day" active={pathname === '/team-day'} collapsed={collapsed} />
         )}
         {can('inbox') && (
           <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
