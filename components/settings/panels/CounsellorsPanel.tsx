@@ -1,14 +1,22 @@
+// path: components/settings/panels/CounsellorsPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, X, User } from 'lucide-react'
+import { MODULE_PAGES, DEFAULT_COUNSELLOR_PAGES } from '@/lib/moduleAccess'
 
 interface Counsellor {
   id: string
   full_name: string
   email: string
+  allowed_pages: string[] | null
   created_at: string
 }
+
+// Pages a counsellor can be granted. Performance is management reporting and
+// Dashboard is spend/attribution data, so neither is offered here — the
+// server-side rule in lib/moduleAccess.ts refuses them regardless.
+const GRANTABLE = MODULE_PAGES.filter((p) => p.key !== 'performance')
 
 export default function CounsellorsPanel({ clientId }: { clientId: string }) {
   const [counsellors, setCounsellors] = useState<Counsellor[]>([])
@@ -97,6 +105,14 @@ export default function CounsellorsPanel({ clientId }: { clientId: string }) {
                   <p className="truncate text-xs text-muted2">{c.email}</p>
                 </div>
               </div>
+
+              <p className="mb-2 text-xs text-muted2">
+                <span className="text-muted">Access: </span>
+                {(c.allowed_pages && c.allowed_pages.length > 0 ? c.allowed_pages : DEFAULT_COUNSELLOR_PAGES)
+                  .map((k) => MODULE_PAGES.find((p) => p.key === k)?.label || k)
+                  .join(', ')}
+              </p>
+
               <div className="flex items-center gap-2">
                 <span className="rounded-md bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">Counsellor</span>
                 <div className="ml-auto flex items-center gap-1.5">
@@ -139,8 +155,20 @@ function CounsellorForm({
   const [fullName, setFullName] = useState(existing?.full_name || '')
   const [email, setEmail] = useState(existing?.email || '')
   const [password, setPassword] = useState('')
+  // A brand-new login starts on the same defaults an unconfigured counsellor
+  // already gets, so ticking nothing produces the familiar behaviour rather
+  // than a surprise.
+  const [pages, setPages] = useState<string[]>(
+    existing?.allowed_pages && existing.allowed_pages.length > 0
+      ? existing.allowed_pages
+      : DEFAULT_COUNSELLOR_PAGES
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  function togglePage(key: string) {
+    setPages((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]))
+  }
 
   async function save() {
     if (!fullName.trim() || !email.trim()) return
@@ -153,7 +181,7 @@ function CounsellorForm({
     try {
       const url = existing ? `/api/counsellors/${existing.id}` : '/api/counsellors'
       const method = existing ? 'PATCH' : 'POST'
-      const body: any = { clientId, fullName, email }
+      const body: any = { clientId, fullName, email, allowedPages: pages }
       if (!existing || password) body.password = password
       const res = await fetch(url, {
         method,
@@ -164,6 +192,19 @@ function CounsellorForm({
         const b = await res.json().catch(() => ({}))
         setError(b.error || 'Failed to save')
         return
+      }
+      // Creating a counsellor goes through POST /api/counsellors, which
+      // doesn't take page access — so the new login gets a follow-up PATCH
+      // rather than silently ignoring the boxes that were just ticked.
+      if (!existing) {
+        const created = await res.json().catch(() => null)
+        if (created?.id) {
+          await fetch(`/api/counsellors/${created.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ allowedPages: pages }),
+          }).catch(() => {})
+        }
       }
       onSaved()
     } catch (err: any) {
@@ -204,6 +245,30 @@ function CounsellorForm({
             className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs text-muted">Pages this login can open</label>
+        <div className="flex flex-wrap gap-3">
+          {GRANTABLE.map((p) => (
+            <label key={p.key} className="flex items-center gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={pages.includes(p.key)}
+                onChange={() => togglePage(p.key)}
+                className="h-4 w-4 rounded border-border"
+              />
+              {p.label}
+            </label>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-muted2">
+          Settings is never available to a counsellor. Untick everything to fall back to the standard set
+          (Activity, Follow Up, Calendar, All Leads).
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
         <button
           onClick={save}
           disabled={saving}
@@ -214,8 +279,8 @@ function CounsellorForm({
         <button onClick={onCancel} className="rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg">
           Cancel
         </button>
+        {error && <p className="text-sm text-red-400">{error}</p>}
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
   )
 }
