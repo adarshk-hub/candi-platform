@@ -19,9 +19,16 @@ export async function GET(req: NextRequest) {
   if (!clientId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   try {
+    // Sequential, not Promise.all. Each half runs several queries, and the
+    // Supabase pooler hands out a small fixed number of connection slots for
+    // the whole project — doubling this page's concurrency to save a few
+    // milliseconds is how one tab starts refusing to load because another is
+    // mid-request.
+    //
     // Source groups first: they're the ones that exist without anybody doing
     // anything, and on a fresh install they're the only ones there are.
-    const [sources, saved] = await Promise.all([sourceGroups(clientId), savedGroups(clientId)])
+    const sources = await sourceGroups(clientId)
+    const saved = await savedGroups(clientId)
     return NextResponse.json({ sources, saved })
   } catch (err: any) {
     if (err?.code === '42P01' || err?.code === '42703') {
