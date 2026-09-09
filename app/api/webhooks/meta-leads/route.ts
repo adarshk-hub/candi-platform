@@ -1,10 +1,11 @@
+// path: app/api/webhooks/meta-leads/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { centralQuery } from '@/lib/db'
 import { verifySignature, fetchLeadFields } from '@/lib/metaLeadAds'
 import { findOrCreateLead, findOrCreateCampaign } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
-import { startSequence } from '@/lib/waSequenceEngine'
+import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 
 // Meta's one-time subscription handshake: echoes hub.challenge back if
 // hub.verify_token matches what you configured in the Meta App dashboard.
@@ -94,12 +95,12 @@ export async function POST(req: NextRequest) {
       // finish, without making the webhook response wait on it.
       if (created) {
         waitUntil(fireCapiEventForLead({ lead, trigger: 'lead_created', eventIdSeed: `lead:${lead.id}` }))
+        // Held for confirmation instead of sent outright when the
+        // institute has that switched on — see lib/welcomeMessage.ts.
         waitUntil(
-          startSequence(lead.id)
-            .then((r) => {
-              if (!r.ok) console.error(`[meta-leads webhook] Could not start welcome sequence for lead ${lead.id}: ${r.error}`)
-            })
-            .catch((err) => console.error(`[meta-leads webhook] startSequence threw for lead ${lead.id}`, err))
+          startWelcomeOrAsk(client.id, lead.id).catch((err) =>
+            console.error(`[meta-leads webhook] welcome handling threw for lead ${lead.id}`, err)
+          )
         )
       }
 
