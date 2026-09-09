@@ -2,7 +2,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarRange } from 'lucide-react'
+import { AlertTriangle, CalendarRange } from 'lucide-react'
 import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
@@ -40,6 +40,25 @@ interface NoteRow {
   lead_id: string | null
   lead_name: string | null
   lead_number: number | null
+}
+
+interface NextActionCounts {
+  id: string
+  full_name: string
+  overdue: number
+  unplanned: number
+  dueToday: number
+}
+
+interface NextActionRow {
+  id: string
+  lead_number: number
+  full_name: string
+  counsellor_name: string | null
+  assigned_counsellor_id: string | null
+  next_action: string | null
+  next_action_at: string | null
+  assigned_at: string | null
 }
 
 interface TeamDay {
@@ -85,6 +104,11 @@ export default function TeamDayBoard() {
   // usually how the day went overall, not how one person's did.
   const [selected, setSelected] = useState<string | null>(null)
   const [activeLead, setActiveLead] = useState<string | null>(null)
+  const [actions, setActions] = useState<{
+    overdue: NextActionRow[]
+    unplanned: NextActionRow[]
+    byCounsellor: NextActionCounts[]
+  } | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -98,6 +122,17 @@ export default function TeamDayBoard() {
   }, [date])
 
   useEffect(load, [load])
+
+  // Deliberately not filtered by the date picker: overdue is overdue as of
+  // right now, whichever day's work you happen to be reading.
+  const loadActions = useCallback(() => {
+    fetch('/api/next-actions?scope=all')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setActions)
+      .catch(() => {})
+  }, [])
+
+  useEffect(loadActions, [loadActions])
 
   // Changing the day can leave a filter pointing at somebody who did nothing
   // that day, which looks like a broken page rather than an empty one.
@@ -150,6 +185,56 @@ export default function TeamDayBoard() {
         <Stat label="Tasks done" value={`${totals?.notesDone ?? 0}/${totals?.notes ?? 0}`} />
       </div>
 
+      {actions && (actions.overdue.length > 0 || actions.unplanned.length > 0) && (
+        <div className="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {actions.overdue.length > 0 && (
+            <div className="rounded-card border border-red-500/50 bg-red-500/10 p-5">
+              <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-red-400">
+                <AlertTriangle size={14} /> Not executed — {actions.overdue.length} across the team
+              </p>
+              <div className="max-h-56 space-y-2 overflow-y-auto">
+                {actions.overdue
+                  .filter((a) => !selected || a.assigned_counsellor_id === selected)
+                  .map((a) => (
+                    <div key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                      <button onClick={() => setActiveLead(a.id)} className="font-medium text-fg hover:underline">
+                        #{a.lead_number} {a.full_name}
+                      </button>
+                      <span className="text-muted2">{a.next_action}</span>
+                      <span className="text-red-400">
+                        due{' '}
+                        {new Date(a.next_action_at!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </span>
+                      <span className="text-xs text-muted">{a.counsellor_name}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {actions.unplanned.length > 0 && (
+            <div className="rounded-card border border-amber-500/40 bg-amber-500/10 p-5">
+              <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-amber-400">
+                <AlertTriangle size={14} /> No next action planned — {actions.unplanned.length}
+              </p>
+              <p className="mb-3 text-xs text-muted2">Assigned more than a day ago with nothing planned.</p>
+              <div className="max-h-56 space-y-2 overflow-y-auto">
+                {actions.unplanned
+                  .filter((a) => !selected || a.assigned_counsellor_id === selected)
+                  .map((a) => (
+                    <div key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                      <button onClick={() => setActiveLead(a.id)} className="font-medium text-fg hover:underline">
+                        #{a.lead_number} {a.full_name}
+                      </button>
+                      <span className="text-xs text-muted">{a.counsellor_name}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-6 overflow-x-auto rounded-card border border-border bg-card">
         <table className="w-full text-sm">
           <thead>
@@ -160,6 +245,7 @@ export default function TeamDayBoard() {
               <th className="px-4 py-3 text-right">Emails</th>
               <th className="px-4 py-3 text-right">Leads touched</th>
               <th className="px-4 py-3 text-right">Notes</th>
+              <th className="px-4 py-3 text-right">Next actions</th>
             </tr>
           </thead>
           <tbody>
@@ -185,11 +271,25 @@ export default function TeamDayBoard() {
                 <td className="px-4 py-3 text-right text-muted2">
                   {c.notesDone}/{c.notes}
                 </td>
+                <td className="px-4 py-3 text-right">
+                  {(() => {
+                    const n = actions?.byCounsellor.find((b) => b.id === c.id)
+                    if (!n) return <span className="text-muted">—</span>
+                    if (n.overdue === 0 && n.unplanned === 0)
+                      return <span className="text-green-400">all planned</span>
+                    return (
+                      <span className="flex items-center justify-end gap-2">
+                        {n.overdue > 0 && <span className="text-red-400">{n.overdue} overdue</span>}
+                        {n.unplanned > 0 && <span className="text-amber-400">{n.unplanned} unplanned</span>}
+                      </span>
+                    )
+                  })()}
+                </td>
               </tr>
             ))}
             {(data?.counsellors || []).length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted">
+                <td colSpan={7} className="px-4 py-10 text-center text-muted">
                   {loading ? 'Loading…' : 'No counsellors to show.'}
                 </td>
               </tr>
@@ -289,6 +389,7 @@ export default function TeamDayBoard() {
           onClose={() => {
             setActiveLead(null)
             load()
+            loadActions()
           }}
         />
       )}
