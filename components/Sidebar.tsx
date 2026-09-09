@@ -25,7 +25,6 @@ import {
   Inbox,
   CalendarCheck,
   CalendarRange,
-  Layers,
 } from 'lucide-react'
 import { canAccessPage } from '@/lib/moduleAccess'
 import type { Role } from '@/lib/auth'
@@ -218,9 +217,6 @@ export default function Sidebar({
         </div>
         )}
 
-        {can('audience') && (
-          <NavItem href="/audience" icon={Layers} label="Audience" active={pathname === '/audience'} collapsed={collapsed} />
-        )}
         {can('broadcasts') && (
           <NavItem href="/broadcasts" icon={Radio} label="Broadcasts" active={pathname === '/broadcasts'} collapsed={collapsed} />
         )}
