@@ -224,9 +224,28 @@ async function deleteLeadDependents(leadId: string) {
     `DELETE FROM wa_sequence_messages WHERE sequence_id IN (SELECT id FROM wa_sequences WHERE lead_id = $1)`,
     [leadId]
   ).catch(ignoreMissingRelation)
+
+  // whatsapp_messages.sequence_id also points at wa_sequences — a message
+  // sent by the nurture engine records which sequence sent it. Clearing that
+  // pointer first is what lets wa_sequences go.
+  //
+  // Ordering the two tables in the list below would not be enough on its
+  // own: a message belonging to THIS lead's sequence is deleted with the
+  // lead, but the constraint is on sequence_id, not lead_id, and there is
+  // nothing stopping a row that survives from pointing at the sequence being
+  // removed. Setting it to NULL is unconditional and can't be got wrong by a
+  // later reordering of the list.
+  await query(
+    `UPDATE whatsapp_messages SET sequence_id = NULL
+     WHERE sequence_id IN (SELECT id FROM wa_sequences WHERE lead_id = $1)`,
+    [leadId]
+  ).catch(ignoreMissingRelation)
+
   const tables = [
-    'wa_sequences',
+    // whatsapp_messages before wa_sequences regardless, so the common case
+    // needs no reliance on the UPDATE above.
     'whatsapp_messages',
+    'wa_sequences',
     'email_messages',
     'email_broadcast_recipients',
     'wa_broadcast_recipients',
