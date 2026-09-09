@@ -44,8 +44,6 @@ interface DayData {
     notesDone: number
     leadsTouched: number
   }
-  people: { id: string; full_name: string }[]
-  canViewOthers: boolean
 }
 
 function today(): string {
@@ -69,7 +67,6 @@ function toneFor(title: string): string {
 
 export default function MyDayBoard() {
   const [date, setDate] = useState(today())
-  const [userId, setUserId] = useState('')
   const [data, setData] = useState<DayData | null>(null)
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
@@ -77,16 +74,14 @@ export default function MyDayBoard() {
 
   const load = useCallback(() => {
     setLoading(true)
-    const params = new URLSearchParams({ date })
-    if (userId) params.set('userId', userId)
-    fetch(`/api/my-day?${params.toString()}`)
+    fetch(`/api/my-day?date=${date}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         setData(d)
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [date, userId])
+  }, [date])
 
   useEffect(load, [load])
 
@@ -105,9 +100,6 @@ export default function MyDayBoard() {
   }
 
   const summary = data?.summary
-  // A manager looking at somebody else's day can read it but not write to it,
-  // because notes belong to the person who made them.
-  const viewingSomeoneElse = !!userId && userId !== data?.userId ? false : !!userId
 
   return (
     <div>
@@ -129,20 +121,6 @@ export default function MyDayBoard() {
           <button onClick={() => setDate(today())} className="text-sm text-blue-400 hover:underline">
             Back to today
           </button>
-        )}
-        {data?.canViewOthers && data.people.length > 0 && (
-          <select
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-          >
-            <option value="">My own day</option>
-            {data.people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.full_name}
-              </option>
-            ))}
-          </select>
         )}
       </div>
 
@@ -195,14 +173,12 @@ export default function MyDayBoard() {
         <div className="rounded-card border border-border bg-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted">My own notes</p>
-            {!viewingSomeoneElse && (
-              <button
-                onClick={() => setAdding(true)}
-                className="flex items-center gap-1.5 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg hover:border-blue-500"
-              >
-                <Plus size={14} /> Add
-              </button>
-            )}
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg hover:border-blue-500"
+            >
+              <Plus size={14} /> Add
+            </button>
           </div>
 
           {adding && (
@@ -223,7 +199,6 @@ export default function MyDayBoard() {
                   type="checkbox"
                   checked={n.is_done}
                   onChange={() => toggleNote(n)}
-                  disabled={viewingSomeoneElse}
                   className="mt-0.5 h-4 w-4 rounded border-border"
                 />
                 <div className="min-w-0 flex-1">
@@ -238,11 +213,9 @@ export default function MyDayBoard() {
                     </button>
                   )}
                 </div>
-                {!viewingSomeoneElse && (
-                  <button onClick={() => removeNote(n)} className="text-muted2 hover:text-red-400">
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <button onClick={() => removeNote(n)} className="text-muted2 hover:text-red-400">
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
             {(data?.notes || []).length === 0 && !adding && (
