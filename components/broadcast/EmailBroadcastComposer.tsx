@@ -1,4 +1,5 @@
 // path: components/broadcast/EmailBroadcastComposer.tsx
+// path: components/broadcast/EmailBroadcastComposer.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -26,6 +27,12 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
 
+  // A saved or automatic audience, picked instead of building filters by
+  // hand. Selecting one replaces the filter panel below — combining a saved
+  // group with ad-hoc filters would leave people unsure which of the two the
+  // count they're looking at came from.
+  const [groupId, setGroupId] = useState('')
+  const [groups, setGroups] = useState<{ id: string; name: string; count: number; kind: string }[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagsMode, setTagsMode] = useState<'any' | 'all'>('any')
   const [selectedStages, setSelectedStages] = useState<string[]>([])
@@ -53,13 +60,36 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
       .then(setAllTags)
       .catch(() => {})
 
+    fetch(`/api/audience?clientId=${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setGroups([...(d?.sources || []), ...(d?.saved || [])]))
+      .catch(() => {})
+
     setPreviewCount(null)
     setPreviewSample([])
     setSelectedTags([])
     setSelectedStages([])
+    setGroupId('')
   }, [clientId])
 
   function currentFilters() {
+    // A group carries its own definition, so the hand-built filters are left
+    // out entirely rather than ANDed on top — the server resolves the group
+    // into whichever rules or fixed member list it stands for.
+    if (groupId) {
+      const source = groupId.startsWith('source:') ? [groupId.slice('source:'.length)] : []
+      return {
+        tags: [],
+        tagsMode: 'any' as const,
+        stageKeys: [],
+        createdFrom: null,
+        createdTo: null,
+        lastContactedFrom: null,
+        lastContactedTo: null,
+        sourceKeys: source,
+        groupId: source.length > 0 ? null : groupId,
+      }
+    }
     return {
       tags: selectedTags,
       tagsMode,
@@ -68,6 +98,8 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
       createdTo: createdTo || null,
       lastContactedFrom: lastContactedFrom || null,
       lastContactedTo: lastContactedTo || null,
+      sourceKeys: [],
+      groupId: null,
     }
   }
 
@@ -212,11 +244,47 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
           <Users size={18} /> Audience
         </h2>
         <p className="mb-4 text-sm text-muted2">
-          All filters below combine together (AND) — leave any blank to not filter by it. Only leads with an email
-          on file are included.
+          Pick a saved audience, or build one with the filters below (they combine with AND). Only leads with an
+          email on file are included either way.
         </p>
 
         <div className="mb-4">
+          <label className="mb-1.5 block text-xs font-medium text-muted">Audience group</label>
+          <select
+            value={groupId}
+            onChange={(e) => {
+              setGroupId(e.target.value)
+              setPreviewCount(null)
+              setPreviewSample([])
+            }}
+            className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+          >
+            <option value="">Build my own with the filters below</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name} — {g.count.toLocaleString()} lead{g.count === 1 ? '' : 's'}
+                {g.kind === 'source' ? ' (automatic)' : g.kind === 'manual' ? ' (fixed)' : ''}
+              </option>
+            ))}
+          </select>
+          {groupId && (
+            <p className="mt-1.5 text-xs text-muted2">
+              Using this saved audience — the filters below are ignored.{' '}
+              <button
+                onClick={() => {
+                  setGroupId('')
+                  setPreviewCount(null)
+                  setPreviewSample([])
+                }}
+                className="text-blue-400 hover:underline"
+              >
+                Clear
+              </button>
+            </p>
+          )}
+        </div>
+
+        <div className={groupId ? 'pointer-events-none mb-4 opacity-40' : 'mb-4'}>
           <div className="mb-1.5 flex items-center justify-between">
             <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
               <TagIcon size={13} /> Tags
