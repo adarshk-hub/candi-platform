@@ -1,4 +1,4 @@
-// Re
+// path: components/Sidebar.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
