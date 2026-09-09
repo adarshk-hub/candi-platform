@@ -15,6 +15,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     `SELECT id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to, lead_table_columns,
             school_email, email_from_name, smtp_host, smtp_port, smtp_user,
             (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
+            imap_host, imap_port, imap_user,
+            (imap_pass IS NOT NULL AND imap_pass != '') AS imap_pass_set,
+            imap_last_synced_at,
             meta_ad_account_id, meta_page_id
      FROM clients WHERE id = $1`,
     [params.id]
@@ -97,6 +100,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(body.smtpPass || null)
     setClauses.push(`smtp_pass = $${values.length}`)
   }
+  // Incoming mail. Separate host/port from SMTP because most providers use
+  // different ones for reading and sending.
+  if (body.imapHost !== undefined) {
+    values.push(body.imapHost || null)
+    setClauses.push(`imap_host = $${values.length}`)
+  }
+  if (body.imapPort !== undefined) {
+    const n = body.imapPort ? Number(body.imapPort) : null
+    if (n !== null && (!Number.isFinite(n) || n < 1 || n > 65535)) {
+      return NextResponse.json({ error: 'imapPort must be a valid port number' }, { status: 400 })
+    }
+    values.push(n)
+    setClauses.push(`imap_port = $${values.length}`)
+  }
+  if (body.imapUser !== undefined) {
+    values.push(body.imapUser || null)
+    setClauses.push(`imap_user = $${values.length}`)
+  }
+  if (body.imapPass !== undefined) {
+    values.push(body.imapPass || null)
+    setClauses.push(`imap_pass = $${values.length}`)
+  }
   if (body.metaAdAccountId !== undefined) {
     values.push(body.metaAdAccountId || null)
     setClauses.push(`meta_ad_account_id = $${values.length}`)
@@ -114,6 +139,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
        RETURNING id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to, lead_table_columns,
                  school_email, email_from_name, smtp_host, smtp_port, smtp_user,
                  (smtp_pass IS NOT NULL AND smtp_pass != '') AS smtp_pass_set,
+                 imap_host, imap_port, imap_user,
+                 (imap_pass IS NOT NULL AND imap_pass != '') AS imap_pass_set,
                  meta_ad_account_id, meta_page_id`,
       values
     )
@@ -124,7 +151,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const SECTION_FIELDS: Record<string, string[]> = {
       'Lead Date Range': ['leadRangeFrom', 'leadRangeTo'],
       'Display Preferences': ['leadsPerPage', 'showLeadStatusTabs', 'leadTableColumns'],
-      'School Email': ['schoolEmail', 'emailFromName', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPass'],
+      'School Email': [
+        'schoolEmail', 'emailFromName',
+        'smtpHost', 'smtpPort', 'smtpUser', 'smtpPass',
+        'imapHost', 'imapPort', 'imapUser', 'imapPass',
+      ],
       'Ad Account Connection': ['metaAdAccountId', 'metaPageId'],
     }
     for (const [section, fields] of Object.entries(SECTION_FIELDS)) {
