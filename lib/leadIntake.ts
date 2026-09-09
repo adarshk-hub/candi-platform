@@ -1,7 +1,9 @@
+// path: lib/leadIntake.ts
 //Re
 import { queryAsClient } from './db'
 import { fetchMetaObjectName } from './metaAdsSpend'
 import { createNotification } from './notifications'
+import { resolveAssignee } from './leadAssignment'
 
 export function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -116,6 +118,35 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
        VALUES ($1, 'system', 'Lead Created', $2)`,
       [lead.id, `New lead created: ${input.fullName} - ${input.whatsappNumber} from ${input.source} (${input.entryType})`]
     )
+
+    // Routes the new lead to a counsellor if the institute has automatic
+    // assignment switched on (Settings > Customize > Lead Assignment).
+    // Wrapped so a failure here can never turn a successfully captured lead
+    // into a failed webhook that Meta then retries — an unassigned lead is
+    // recoverable, a lost one isn't.
+    try {
+      const assignee = await resolveAssignee(input.clientId, lead)
+      if (assignee) {
+        await queryAsClient(input.clientId, 'UPDATE leads SET assigned_counsellor_id = $1 WHERE id = $2', [
+          assignee,
+          lead.id,
+        ])
+        lead.assigned_counsellor_id = assignee
+        const [who] = await queryAsClient(
+          input.clientId,
+          'SELECT full_name FROM users WHERE id = $1',
+          [assignee]
+        )
+        await queryAsClient(
+          input.clientId,
+          `INSERT INTO activity_log (lead_id, activity_type, title, description)
+           VALUES ($1, 'system', 'Counsellor Assigned', $2)`,
+          [lead.id, `Assigned automatically to "${who?.full_name || 'counsellor'}".`]
+        )
+      }
+    } catch (err) {
+      console.error('[leadIntake] automatic assignment failed:', err)
+    }
 
     // Only genuinely new records notify. A duplicate touch merged into an
     // existing lead (the two return paths above) is not a new lead and
