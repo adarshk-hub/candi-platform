@@ -1,3 +1,4 @@
+// path: lib/types.ts
 //Re
 
 export interface Lead {
@@ -37,6 +38,17 @@ export interface Lead {
   nurture_day: number | null
   nurture_paused: boolean
   custom_fields: Record<string, any>
+  // Call tracking — written by POST /api/leads/[id]/call. Optional because a
+  // database that hasn't had scripts/activity-migration.sql applied yet
+  // simply won't return these columns.
+  first_called_at?: string | null
+  last_called_at?: string | null
+  call_attempt_count?: number
+  // Captured when the lead is moved into a cold stage, cleared if it is
+  // moved back out. See app/api/leads/[id]/route.ts.
+  cold_reason?: string | null
+  cold_reason_note?: string | null
+  cold_reason_at?: string | null
 }
 
 export const TIMELINE_LABEL: Record<string, string> = {
