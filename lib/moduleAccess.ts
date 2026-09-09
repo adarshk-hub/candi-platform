@@ -33,10 +33,18 @@ export const DEFAULT_COUNSELLOR_PAGES = ['activity', 'my_day', 'inbox', 'follow_
 // that an institute can choose to open up to a counsellor.
 const ADMIN_ONLY_PAGES = ['performance']
 
+// The mirror image: pages that only make sense for the people doing the
+// day-to-day work. My Day is a personal worklog — an admin has no leads of
+// their own to log against it, so for them it would only ever be an empty
+// screen. Managers who want to see how a counsellor's day went have the
+// Performance report instead.
+const COUNSELLOR_ONLY_PAGES = ['my_day']
+
 const ADMIN_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin']
 
 export function canAccessPage(role: Role, allowedPages: string[] | null, pageKey: string): boolean {
   if (ADMIN_ONLY_PAGES.includes(pageKey)) return ADMIN_ROLES.includes(role)
+  if (COUNSELLOR_ONLY_PAGES.includes(pageKey) && role !== 'client_counsellor') return false
   if (role !== 'client_counsellor') return true
   const allowed = allowedPages && allowedPages.length > 0 ? allowedPages : DEFAULT_COUNSELLOR_PAGES
   return allowed.includes(pageKey)
