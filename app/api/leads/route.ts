@@ -238,6 +238,16 @@ async function deleteLeadDependents(leadId: string) {
     'enrollments',
     'events',
     'notifications',
+    // Added with the My Day worklog (scripts/phase3-migration.sql). Its
+    // lead_id has no ON DELETE CASCADE, so a lead referenced by even one
+    // note refuses to delete until this row goes first.
+    'day_notes',
+    // Manual audience membership (scripts/phase4-migration.sql). This one
+    // does cascade, so it is belt and braces rather than strictly needed —
+    // but a table that references leads belongs on this list either way,
+    // because the next person to read it shouldn't have to go and check the
+    // constraint to know whether it's missing.
+    'audience_group_members',
   ]
   for (const table of tables) {
     await query(`DELETE FROM ${table} WHERE lead_id = $1`, [leadId]).catch(ignoreMissingRelation)
@@ -285,14 +295,25 @@ export async function DELETE(req: NextRequest) {
     // a row pointing at this lead and needs adding to the list above.
     console.error('[leads:delete] failed:', err)
     if (err?.code === '23503') {
+      // err.table is the table holding the offending row and err.constraint
+      // names the foreign key — both are needed to know which line to add to
+      // the list above, and neither is guessable from "could not delete".
       return NextResponse.json(
         {
-          error: `This lead still has linked records (${err?.table || 'unknown table'}) that couldn't be removed. Nothing was deleted.`,
+          error: `This lead still has linked records in "${err?.table || 'an unknown table'}"${
+            err?.constraint ? ` (${err.constraint})` : ''
+          } that couldn't be removed. Nothing was deleted.`,
         },
         { status: 409 }
       )
     }
-    return handleWriteError(err)
+    // Anything else — a missing column, a connection problem — is passed
+    // through rather than flattened into a generic failure, for the same
+    // reason: the message is the only clue the person on the other end gets.
+    return NextResponse.json(
+      { error: `Could not delete: ${err?.message || 'unknown error'}` },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({
