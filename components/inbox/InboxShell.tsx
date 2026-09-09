@@ -67,7 +67,11 @@ export default function InboxShell() {
   const [openEmail, setOpenEmail] = useState<EmailRow | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [openThread, setOpenThread] = useState<string | null>(null)
+  const [threadLead, setThreadLead] = useState<any | null>(null)
   const [threadMessages, setThreadMessages] = useState<WaMessage[]>([])
+  const [reply, setReply] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [replyError, setReplyError] = useState('')
   const [activeLead, setActiveLead] = useState<string | null>(null)
   const [composing, setComposing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -104,13 +108,45 @@ export default function InboxShell() {
 
   useEffect(load, [load])
 
-  useEffect(() => {
+  const loadThread = useCallback(() => {
     if (!openThread) return
     fetch(`/api/inbox/whatsapp?leadId=${openThread}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setThreadMessages(data?.messages || []))
+      .then((data) => {
+        setThreadMessages(data?.messages || [])
+        setThreadLead(data?.lead || null)
+      })
       .catch(() => {})
   }, [openThread])
+
+  useEffect(loadThread, [loadThread])
+
+  // Replies go through the existing per-lead endpoint rather than a new one,
+  // so the 24-hour window check, the tracked-link rewrite and the nurture
+  // pause all still happen — this screen is a different door to the same
+  // send, not a second implementation of it.
+  async function sendReply() {
+    if (!openThread || !reply.trim()) return
+    setReplySending(true)
+    setReplyError('')
+    try {
+      const res = await fetch(`/api/leads/${openThread}/whatsapp/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: reply }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setReplyError(body.error || 'Could not send that message.')
+        return
+      }
+      setReply('')
+      loadThread()
+      load()
+    } finally {
+      setReplySending(false)
+    }
+  }
 
   async function sync() {
     setSyncing(true)
@@ -219,7 +255,11 @@ export default function InboxShell() {
             {conversations.map((c) => (
               <button
                 key={c.lead_id}
-                onClick={() => setOpenThread(c.lead_id)}
+                onClick={() => {
+                  setOpenThread(c.lead_id)
+                  setReply('')
+                  setReplyError('')
+                }}
                 className={clsx(
                   'flex w-full flex-col gap-1 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2',
                   openThread === c.lead_id && 'bg-card2'
@@ -255,12 +295,22 @@ export default function InboxShell() {
             ) : (
               <>
                 <div className="mb-3 flex items-center justify-between border-b border-border pb-3">
-                  <p className="text-sm font-semibold text-fg">Conversation</p>
+                  <div>
+                    <p className="text-sm font-semibold text-fg">
+                      {threadLead?.full_name || 'Conversation'}
+                    </p>
+                    {threadLead && (
+                      <p className="text-xs text-muted2">
+                        {threadLead.whatsapp_number}
+                        {threadLead.counsellor_name ? ` · ${threadLead.counsellor_name}` : ' · unassigned'}
+                      </p>
+                    )}
+                  </div>
                   <button
                     onClick={() => setActiveLead(openThread)}
                     className="text-sm text-blue-400 hover:underline"
                   >
-                    Open lead to reply
+                    Open lead
                   </button>
                 </div>
                 <div className="max-h-[60vh] space-y-3 overflow-y-auto">
@@ -284,6 +334,49 @@ export default function InboxShell() {
                   ))}
                   {threadMessages.length === 0 && (
                     <p className="py-10 text-center text-sm text-muted">No messages in this thread.</p>
+                  )}
+                </div>
+
+                <div className="mt-4 border-t border-border pt-3">
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      value={reply}
+                      rows={2}
+                      onChange={(e) => setReply(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter sends, Shift+Enter breaks the line — the
+                        // convention people already have from WhatsApp itself.
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          sendReply()
+                        }
+                      }}
+                      placeholder="Type a reply…"
+                      className="flex-1 resize-none rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={sendReply}
+                      disabled={replySending || !reply.trim()}
+                      className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      <Send size={15} /> {replySending ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                  {replyError && (
+                    <p className="mt-2 text-sm text-red-400">
+                      {replyError}
+                      {/* The 24-hour rule is Meta's, not ours, and the only
+                          way out of it is an approved template — which lives
+                          on the lead's WhatsApp tab. */}
+                      {replyError.includes('24-hour') && (
+                        <button
+                          onClick={() => setActiveLead(openThread)}
+                          className="ml-1 text-blue-400 hover:underline"
+                        >
+                          Send a template instead
+                        </button>
+                      )}
+                    </p>
                   )}
                 </div>
               </>
