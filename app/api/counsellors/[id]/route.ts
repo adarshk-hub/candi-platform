@@ -1,3 +1,4 @@
+// path: app/api/counsellors/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { query } from '@/lib/db'
@@ -5,6 +6,7 @@ import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
+import { MODULE_PAGES } from '@/lib/moduleAccess'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -23,6 +25,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(body.email)
     setClauses.push(`email = $${values.length}`)
   }
+  // Which sidebar pages this login may open. An empty array is stored as
+  // NULL rather than as "nothing allowed" — an accidental save with every
+  // box unticked should mean "no restrictions set", not a counsellor locked
+  // out of their own CRM.
+  if (body.allowedPages !== undefined) {
+    const known = MODULE_PAGES.map((p) => p.key)
+    const pages = Array.isArray(body.allowedPages)
+      ? body.allowedPages.filter((p: any) => typeof p === 'string' && known.includes(p))
+      : []
+    values.push(pages.length > 0 ? pages : null)
+    setClauses.push(`allowed_pages = $${values.length}`)
+  }
   if (body.password) {
     if (body.password.length < 8) {
       return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
@@ -35,7 +49,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     values.push(params.id)
     const rows = await query(
-      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING id, full_name, email, client_id, created_at`,
+      `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING id, full_name, email, client_id, allowed_pages, created_at`,
       values
     )
     // Never log the password value itself — only that it changed.
