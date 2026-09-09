@@ -2,7 +2,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarCheck, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, CalendarClock, Plus, Trash2, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
@@ -27,6 +27,22 @@ interface NoteRow {
   lead_id: string | null
   lead_name: string | null
   lead_number: number | null
+}
+
+interface NextActionRow {
+  id: string
+  lead_number: number
+  full_name: string
+  next_action: string | null
+  next_action_at: string | null
+  assigned_at: string | null
+}
+
+interface NextActions {
+  overdue: NextActionRow[]
+  unplanned: NextActionRow[]
+  dueToday: NextActionRow[]
+  error?: string
 }
 
 interface DayData {
@@ -71,6 +87,7 @@ export default function MyDayBoard() {
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [activeLead, setActiveLead] = useState<string | null>(null)
+  const [actions, setActions] = useState<NextActions | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -84,6 +101,18 @@ export default function MyDayBoard() {
   }, [date])
 
   useEffect(load, [load])
+
+  // Next actions are always "as of now", not as of the date being viewed —
+  // what's overdue doesn't change because you scrolled back to look at last
+  // Tuesday, and showing it as if it did would be misleading.
+  const loadActions = useCallback(() => {
+    fetch('/api/next-actions')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setActions)
+      .catch(() => {})
+  }, [])
+
+  useEffect(loadActions, [loadActions])
 
   async function toggleNote(note: NoteRow) {
     await fetch(`/api/my-day/${note.id}`, {
@@ -135,6 +164,79 @@ export default function MyDayBoard() {
         <Stat label="Leads touched" value={summary?.leadsTouched ?? 0} />
         <Stat label="Tasks done" value={`${summary?.notesDone ?? 0}/${summary?.notes ?? 0}`} />
       </div>
+
+      {/* Sits above the day itself: these are the things already behind, and
+          burying them under a timeline of work already done gets the priority
+          backwards. */}
+      {actions && (actions.overdue.length > 0 || actions.unplanned.length > 0 || actions.dueToday.length > 0) && (
+        <div className="mb-6 space-y-3">
+          {actions.overdue.length > 0 && (
+            <div className="rounded-card border border-red-500/50 bg-red-500/10 p-5">
+              <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-red-400">
+                <AlertTriangle size={14} /> Not executed — {actions.overdue.length} overdue
+              </p>
+              <div className="space-y-2">
+                {actions.overdue.map((a) => (
+                  <div key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                    <button onClick={() => setActiveLead(a.id)} className="font-medium text-fg hover:underline">
+                      #{a.lead_number} {a.full_name}
+                    </button>
+                    <span className="text-muted2">{a.next_action}</span>
+                    <span className="text-red-400">
+                      due {new Date(a.next_action_at!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {actions.unplanned.length > 0 && (
+            <div className="rounded-card border border-amber-500/40 bg-amber-500/10 p-5">
+              <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-amber-400">
+                <AlertTriangle size={14} /> No next action planned — {actions.unplanned.length} lead
+                {actions.unplanned.length === 1 ? '' : 's'}
+              </p>
+              <p className="mb-3 text-xs text-muted2">
+                Assigned to you more than a day ago with nothing planned.
+              </p>
+              <div className="space-y-2">
+                {actions.unplanned.map((a) => (
+                  <div key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                    <button onClick={() => setActiveLead(a.id)} className="font-medium text-fg hover:underline">
+                      #{a.lead_number} {a.full_name}
+                    </button>
+                    <span className="text-muted2">
+                      yours since{' '}
+                      {a.assigned_at
+                        ? new Date(a.assigned_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                        : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {actions.dueToday.length > 0 && (
+            <div className="rounded-card border border-border bg-card p-5">
+              <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted">
+                <CalendarClock size={14} /> Due today — {actions.dueToday.length}
+              </p>
+              <div className="space-y-2">
+                {actions.dueToday.map((a) => (
+                  <div key={a.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                    <button onClick={() => setActiveLead(a.id)} className="font-medium text-fg hover:underline">
+                      #{a.lead_number} {a.full_name}
+                    </button>
+                    <span className="text-muted2">{a.next_action}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-card border border-border bg-card p-5">
@@ -233,6 +335,7 @@ export default function MyDayBoard() {
           onClose={() => {
             setActiveLead(null)
             load()
+            loadActions()
           }}
         />
       )}
