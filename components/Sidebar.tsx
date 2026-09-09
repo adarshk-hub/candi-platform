@@ -22,6 +22,8 @@ import {
   Radio,
   PhoneCall,
   BarChart3,
+  Inbox,
+  CalendarCheck,
 } from 'lucide-react'
 import { canAccessPage } from '@/lib/moduleAccess'
 import type { Role } from '@/lib/auth'
@@ -180,6 +182,12 @@ export default function Sidebar({
         )}
         {can('activity') && (
           <NavItem href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
+        )}
+        {can('my_day') && (
+          <NavItem href="/my-day" icon={CalendarCheck} label="My Day" active={pathname === '/my-day'} collapsed={collapsed} />
+        )}
+        {can('inbox') && (
+          <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
         )}
         {can('follow_ups') && (
           <NavItem href="/follow-ups" icon={CalendarClock} label="Follow Up" active={pathname === '/follow-ups'} collapsed={collapsed} />
