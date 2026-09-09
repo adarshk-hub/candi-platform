@@ -26,7 +26,16 @@ interface Member {
   pipeline_stage: string
 }
 
-export default function AudienceBoard({ clientId }: { clientId: string }) {
+// embedded: rendered inside the Broadcasts page, which already has its own
+// title and notification bell — repeating them would give the tab two
+// headers stacked on top of each other.
+export default function AudienceBoard({
+  clientId,
+  embedded = false,
+}: {
+  clientId: string
+  embedded?: boolean
+}) {
   const [sources, setSources] = useState<Group[]>([])
   const [saved, setSaved] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,9 +78,15 @@ export default function AudienceBoard({ clientId }: { clientId: string }) {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
-          <Users size={22} /> Audience
-        </h1>
+        {embedded ? (
+          <p className="text-sm text-muted2">
+            Groups you can send a broadcast to. Pick one from the dropdown on the New Broadcast tab.
+          </p>
+        ) : (
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
+            <Users size={22} /> Audience
+          </h1>
+        )}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setCreating(true)}
@@ -79,7 +94,7 @@ export default function AudienceBoard({ clientId }: { clientId: string }) {
           >
             <Plus size={15} /> New audience
           </button>
-          <NotificationBell />
+          {!embedded && <NotificationBell />}
         </div>
       </div>
 
@@ -177,12 +192,21 @@ export default function AudienceBoard({ clientId }: { clientId: string }) {
               ) : (
                 <span />
               )}
-              <a
-                href="/broadcasts"
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-              >
-                <Radio size={15} /> Broadcast to this
-              </a>
+              {embedded ? (
+                <button
+                  onClick={() => setOpen(null)}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                >
+                  <Radio size={15} /> Close and broadcast
+                </button>
+              ) : (
+                <a
+                  href="/broadcasts"
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                >
+                  <Radio size={15} /> Broadcast to this
+                </a>
+              )}
             </div>
           </div>
         </div>
