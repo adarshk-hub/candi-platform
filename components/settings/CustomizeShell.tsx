@@ -20,6 +20,7 @@ import {
   MessageCircle,
   Radio,
   History,
+  Shuffle,
 } from 'lucide-react'
 import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
@@ -30,6 +31,7 @@ import EmailSettingsPanel from './panels/EmailSettingsPanel'
 import WhatsAppSettingsPanel from './panels/WhatsAppSettingsPanel'
 import ConversionsApiPanel from './panels/ConversionsApiPanel'
 import SettingsActivityPanel from './panels/SettingsActivityPanel'
+import LeadAssignmentPanel from './panels/LeadAssignmentPanel'
 
 interface Institute {
   id: string
@@ -41,6 +43,7 @@ const CATEGORIES = [
   { key: 'lead_source', label: 'Lead Source', icon: Tags },
   { key: 'fields', label: 'Lead Form Fields', icon: FormInput },
   { key: 'counsellors', label: 'Counsellors', icon: Users },
+  { key: 'assignment', label: 'Lead Assignment', icon: Shuffle },
   { key: 'email', label: 'School Email', icon: Mail },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'capi', label: 'Conversions API', icon: Radio },
@@ -126,6 +129,7 @@ export default function CustomizeShell({
           {active === 'lead_source' && <OptionListPanel clientId={clientId} listKey="lead_source" title="Lead Source" />}
           {active === 'fields' && <LeadFormFieldsPanel clientId={clientId} />}
           {active === 'counsellors' && <CounsellorsPanel clientId={clientId} />}
+          {active === 'assignment' && <LeadAssignmentPanel clientId={clientId} />}
           {active === 'email' && <EmailSettingsPanel clientId={clientId} />}
           {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
