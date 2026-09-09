@@ -1,3 +1,4 @@
+// path: components/Sidebar.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -19,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Radio,
+  PhoneCall,
 } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import InstituteSwitcher from './settings/InstituteSwitcher'
@@ -161,6 +163,7 @@ export default function Sidebar({
         {user?.role !== 'client_counsellor' && (
           <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard'} collapsed={collapsed} />
         )}
+        <NavItem href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
         <NavItem href="/follow-ups" icon={CalendarClock} label="Follow Up" active={pathname === '/follow-ups'} collapsed={collapsed} />
         <NavItem href="/calendar" icon={CalendarDays} label="Calendar View" active={pathname === '/calendar'} collapsed={collapsed} />
 
