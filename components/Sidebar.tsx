@@ -194,7 +194,7 @@ export default function Sidebar({
           <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
         )}
         {can('follow_ups') && (
-          <NavItem href="/follow-ups" icon={CalendarClock} label="Follow Up" active={pathname === '/follow-ups'} collapsed={collapsed} />
+          <NavItem href="/follow-ups" icon={CalendarClock} label="Next Actions" active={pathname === '/follow-ups'} collapsed={collapsed} />
         )}
         {can('calendar') && (
           <NavItem href="/calendar" icon={CalendarDays} label="Calendar View" active={pathname === '/calendar'} collapsed={collapsed} />
