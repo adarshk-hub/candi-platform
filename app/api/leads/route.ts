@@ -6,6 +6,7 @@ import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
 import { startSequence } from '@/lib/waSequenceEngine'
 import { fetchLeadsPage } from '@/lib/leadsQuery'
+import { normalizePhone } from '@/lib/leadIntake'
 
 function splitParam(v: string | null): string[] {
   return (v || '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -54,6 +55,38 @@ export async function POST(req: NextRequest) {
   }
 
   const assignedCounsellorId = session.role === 'client_counsellor' ? session.id : body.assignedCounsellorId || null
+
+  // One lead per phone number, full stop. The inbound channels
+  // (lib/leadIntake.ts) already merge a repeat number into the existing
+  // record; manual entry had no equivalent rule, so the same parent could be
+  // typed in twice and end up owned by two counsellors calling them
+  // separately.
+  //
+  // Refusing rather than merging is deliberate here: a person filling out
+  // this form is looking at the screen and can be shown the existing lead,
+  // whereas a webhook has nobody to tell.
+  const normalized = normalizePhone(String(whatsappNumber))
+  const existing = await query(
+    `SELECT l.id, l.lead_number, l.full_name, l.pipeline_stage, l.created_at, u.full_name AS counsellor_name
+     FROM leads l
+     LEFT JOIN users u ON u.id = l.assigned_counsellor_id
+     WHERE l.normalized_phone = $1
+     ORDER BY l.created_at ASC LIMIT 1`,
+    [normalized]
+  ).catch(() => [])
+
+  if (existing[0]) {
+    return NextResponse.json(
+      {
+        error: `This phone number is already on lead #${existing[0].lead_number} — ${existing[0].full_name}${
+          existing[0].counsellor_name ? ` (with ${existing[0].counsellor_name})` : ''
+        }. Open that lead instead of creating a second one.`,
+        duplicate: true,
+        lead: existing[0],
+      },
+      { status: 409 }
+    )
+  }
 
   try {
     const rows = await query(
@@ -113,6 +146,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(lead)
   } catch (err: any) {
+    // The check above has a race window — two people adding the same walk-in
+    // at the same moment both pass it. idx_leads_client_normalized_phone is
+    // what actually prevents the duplicate row; this turns the resulting
+    // constraint error into the same readable message.
+    if (err?.code === '23505' && String(err?.constraint || '').includes('normalized_phone')) {
+      return NextResponse.json(
+        { error: 'A lead with this phone number already exists.', duplicate: true },
+        { status: 409 }
+      )
+    }
     return handleWriteError(err)
   }
 }
