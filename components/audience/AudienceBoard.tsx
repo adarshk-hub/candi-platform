@@ -1,4 +1,4 @@
-// path: components/audience/AudienceBoard.tsx
+//Re
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
