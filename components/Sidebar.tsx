@@ -21,7 +21,10 @@ import {
   ChevronRight,
   Radio,
   PhoneCall,
+  BarChart3,
 } from 'lucide-react'
+import { canAccessPage } from '@/lib/moduleAccess'
+import type { Role } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
 import InstituteSwitcher from './settings/InstituteSwitcher'
 
@@ -84,10 +87,15 @@ export default function Sidebar({
   user,
   showLeadStatusTabs = true,
   institutionName = null,
+  allowedPages = null,
 }: {
   user: SidebarUser | null
   showLeadStatusTabs?: boolean
   institutionName?: string | null
+  // Per-login page permissions (Settings > Customize > Counsellors). Null
+  // means "no restrictions picked", which resolves to the role's defaults
+  // inside canAccessPage rather than to an empty sidebar.
+  allowedPages?: string[] | null
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -115,6 +123,13 @@ export default function Sidebar({
   }
 
   const leadsActive = pathname.startsWith('/leads')
+
+  // One helper for every nav item, so a page can never be added to the
+  // sidebar without also being added to the permission list.
+  function can(pageKey: string): boolean {
+    if (!user) return false
+    return canAccessPage(user.role as Role, allowedPages, pageKey)
+  }
 
   return (
     <aside
@@ -160,13 +175,23 @@ export default function Sidebar({
       )}
 
       <nav className={clsx('w-full flex-1 space-y-1 overflow-y-auto', collapsed && 'mt-2')}>
-        {user?.role !== 'client_counsellor' && (
+        {can('dashboard') && (
           <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard'} collapsed={collapsed} />
         )}
-        <NavItem href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
-        <NavItem href="/follow-ups" icon={CalendarClock} label="Follow Up" active={pathname === '/follow-ups'} collapsed={collapsed} />
-        <NavItem href="/calendar" icon={CalendarDays} label="Calendar View" active={pathname === '/calendar'} collapsed={collapsed} />
+        {can('activity') && (
+          <NavItem href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
+        )}
+        {can('follow_ups') && (
+          <NavItem href="/follow-ups" icon={CalendarClock} label="Follow Up" active={pathname === '/follow-ups'} collapsed={collapsed} />
+        )}
+        {can('calendar') && (
+          <NavItem href="/calendar" icon={CalendarDays} label="Calendar View" active={pathname === '/calendar'} collapsed={collapsed} />
+        )}
+        {can('performance') && (
+          <NavItem href="/performance" icon={BarChart3} label="Performance" active={pathname === '/performance'} collapsed={collapsed} />
+        )}
 
+        {can('leads') && (
         <div className="pt-2">
           <NavItem href="/leads" icon={Users} label="All Leads" active={leadsActive && !tab} collapsed={collapsed} />
           {leadsActive && !collapsed && showLeadStatusTabs && (
@@ -178,8 +203,9 @@ export default function Sidebar({
             </div>
           )}
         </div>
+        )}
 
-        {user?.role !== 'client_counsellor' && (
+        {can('broadcasts') && (
           <NavItem href="/broadcasts" icon={Radio} label="Broadcasts" active={pathname === '/broadcasts'} collapsed={collapsed} />
         )}
       </nav>
