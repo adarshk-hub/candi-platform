@@ -1,3 +1,4 @@
+// path: components/broadcast/BroadcastComposer.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -34,6 +35,12 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   const [languageCode, setLanguageCode] = useState('en')
   const [personalizeField, setPersonalizeField] = useState<'none' | 'full_name' | 'child_name'>('none')
 
+  // A saved or automatic audience, picked instead of building filters by
+  // hand. Selecting one replaces the filter panel below — combining a saved
+  // group with ad-hoc filters would leave people unsure which of the two the
+  // count they're looking at came from.
+  const [groupId, setGroupId] = useState('')
+  const [groups, setGroups] = useState<{ id: string; name: string; count: number; kind: string }[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagsMode, setTagsMode] = useState<'any' | 'all'>('any')
   const [selectedStages, setSelectedStages] = useState<string[]>([])
@@ -76,6 +83,14 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   // a filter changes, since a stale count, sample, or (especially) a
   // stale set of checked lead ids would silently disagree with what the
   // current filters actually match.
+  useEffect(() => {
+    if (!clientId) return
+    fetch(`/api/audience?clientId=${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setGroups([...(d?.sources || []), ...(d?.saved || [])]))
+      .catch(() => {})
+  }, [clientId])
+
   function invalidatePreview() {
     setPreviewCount(null)
     setPreviewSample([])
@@ -84,6 +99,23 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   }
 
   function currentFilters() {
+    // A group carries its own definition, so the hand-built filters are left
+    // out entirely rather than ANDed on top — the server resolves the group
+    // into whichever rules or fixed member list it stands for.
+    if (groupId) {
+      const source = groupId.startsWith('source:') ? [groupId.slice('source:'.length)] : []
+      return {
+        tags: [],
+        tagsMode: 'any' as const,
+        stageKeys: [],
+        createdFrom: null,
+        createdTo: null,
+        lastContactedFrom: null,
+        lastContactedTo: null,
+        sourceKeys: source,
+        groupId: source.length > 0 ? null : groupId,
+      }
+    }
     return {
       tags: selectedTags,
       tagsMode,
@@ -92,6 +124,8 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
       createdTo: createdTo || null,
       lastContactedFrom: lastContactedFrom || null,
       lastContactedTo: lastContactedTo || null,
+      sourceKeys: [],
+      groupId: null,
     }
   }
 
@@ -244,9 +278,46 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
         <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-fg">
           <Users size={18} /> Audience
         </h2>
-        <p className="mb-4 text-sm text-muted2">All filters below combine together (AND) — leave any blank to not filter by it.</p>
+        <p className="mb-4 text-sm text-muted2">
+          Pick a saved audience, or build one with the filters below (they combine with AND — leave any blank to
+          not filter by it).
+        </p>
 
         <div className="mb-4">
+          <label className="mb-1.5 block text-xs font-medium text-muted">Audience group</label>
+          <select
+            value={groupId}
+            onChange={(e) => {
+              setGroupId(e.target.value)
+              invalidatePreview()
+            }}
+            className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+          >
+            <option value="">Build my own with the filters below</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name} — {g.count.toLocaleString()} lead{g.count === 1 ? '' : 's'}
+                {g.kind === 'source' ? ' (automatic)' : g.kind === 'manual' ? ' (fixed)' : ''}
+              </option>
+            ))}
+          </select>
+          {groupId && (
+            <p className="mt-1.5 text-xs text-muted2">
+              Using this saved audience — the filters below are ignored.{' '}
+              <button
+                onClick={() => {
+                  setGroupId('')
+                  invalidatePreview()
+                }}
+                className="text-blue-400 hover:underline"
+              >
+                Clear
+              </button>
+            </p>
+          )}
+        </div>
+
+        <div className={groupId ? 'pointer-events-none mb-4 opacity-40' : 'mb-4'}>
           <div className="mb-1.5 flex items-center justify-between">
             <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
               <TagIcon size={13} /> Tags
