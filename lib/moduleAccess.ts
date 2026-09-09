@@ -13,6 +13,8 @@ export interface ModulePage {
 export const MODULE_PAGES: ModulePage[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard' },
   { key: 'activity', label: 'Activity', href: '/activity' },
+  { key: 'my_day', label: 'My Day', href: '/my-day' },
+  { key: 'inbox', label: 'Inbox', href: '/inbox' },
   { key: 'follow_ups', label: 'Follow Up', href: '/follow-ups' },
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
   { key: 'leads', label: 'All Leads', href: '/leads' },
@@ -23,7 +25,7 @@ export const MODULE_PAGES: ModulePage[] = [
 // What a counsellor gets when nobody has picked pages for them yet. Chosen
 // to match what counsellors could already reach before this feature existed,
 // so turning the migration on changes nothing until someone edits a login.
-export const DEFAULT_COUNSELLOR_PAGES = ['activity', 'follow_ups', 'calendar', 'leads']
+export const DEFAULT_COUNSELLOR_PAGES = ['activity', 'my_day', 'inbox', 'follow_ups', 'calendar', 'leads']
 
 // Reporting on counsellors is management information, so it stays with
 // management no matter what boxes get ticked on a counsellor's login.
@@ -46,6 +48,8 @@ export function canAccessPage(role: Role, allowedPages: string[] | null, pageKey
 export function pageKeyForPath(pathname: string): string | null {
   if (pathname.startsWith('/dashboard')) return 'dashboard'
   if (pathname.startsWith('/activity')) return 'activity'
+  if (pathname.startsWith('/my-day')) return 'my_day'
+  if (pathname.startsWith('/inbox')) return 'inbox'
   if (pathname.startsWith('/follow-ups')) return 'follow_ups'
   if (pathname.startsWith('/calendar')) return 'calendar'
   if (pathname.startsWith('/leads')) return 'leads'
