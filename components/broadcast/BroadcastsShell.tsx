@@ -8,6 +8,7 @@ import BroadcastComposer from './BroadcastComposer'
 import BroadcastHistory from './BroadcastHistory'
 import EmailBroadcastComposer from './EmailBroadcastComposer'
 import EmailBroadcastHistory from './EmailBroadcastHistory'
+import AudienceBoard from '@/components/audience/AudienceBoard'
 
 interface Institute {
   id: string
@@ -23,7 +24,7 @@ export default function BroadcastsShell({
 }) {
   const [clientId, setClientId] = useState(lockedToClientId || institutes[0]?.id || '')
   const [channel, setChannel] = useState<'whatsapp' | 'email'>('whatsapp')
-  const [tab, setTab] = useState<'new' | 'history'>('new')
+  const [tab, setTab] = useState<'new' | 'history' | 'audience'>('new')
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   if (!clientId) {
@@ -34,6 +35,11 @@ export default function BroadcastsShell({
     setChannel(next)
     setTab('new')
   }
+
+  // Audiences are the same set of groups whichever channel you're sending
+  // through, so the WhatsApp/Email switch is hidden on that tab rather than
+  // left showing a choice that changes nothing.
+  const onAudience = tab === 'audience'
 
   return (
     <div>
@@ -62,7 +68,7 @@ export default function BroadcastsShell({
         </div>
       )}
 
-      <div className="mb-5 flex gap-2">
+      <div className={onAudience ? 'hidden' : 'mb-5 flex gap-2'}>
         <button
           onClick={() => switchChannel('whatsapp')}
           className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
@@ -82,7 +88,7 @@ export default function BroadcastsShell({
       </div>
 
       <div className="mb-5 flex gap-1 border-b border-border">
-        {(['new', 'history'] as const).map((t) => (
+        {(['new', 'history', 'audience'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -90,12 +96,14 @@ export default function BroadcastsShell({
               tab === t ? 'border-blue-500 text-fg' : 'border-transparent text-muted2 hover:text-fg'
             }`}
           >
-            {t === 'new' ? 'New Broadcast' : 'History'}
+            {t === 'new' ? 'New Broadcast' : t === 'history' ? 'History' : 'Audience'}
           </button>
         ))}
       </div>
 
-      {channel === 'whatsapp' ? (
+      {tab === 'audience' ? (
+        <AudienceBoard clientId={clientId} embedded />
+      ) : channel === 'whatsapp' ? (
         tab === 'new' ? (
           <BroadcastComposer
             clientId={clientId}
