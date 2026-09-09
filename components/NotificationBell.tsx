@@ -1,8 +1,9 @@
+// path: components/NotificationBell.tsx
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, MessageCircle, UserPlus } from 'lucide-react'
+import { Bell, Check, MessageCircle, UserPlus } from 'lucide-react'
 import { clsx } from 'clsx'
 import { elapsedLabel } from '@/lib/format'
 import {
@@ -12,35 +13,52 @@ import {
   type NotificationItem,
 } from '@/lib/useNotifications'
 
-function Row({ item, onOpen }: { item: NotificationItem; onOpen: (leadId: string) => void }) {
+function Row({
+  item,
+  onOpen,
+  onDismiss,
+}: {
+  item: NotificationItem
+  onOpen: (leadId: string) => void
+  onDismiss: (leadId: string) => void
+}) {
   const isMessage = item.type === 'wa_message'
   const Icon = isMessage ? MessageCircle : UserPlus
 
   return (
-    <button
-      onClick={() => onOpen(item.leadId)}
-      className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-card2"
-    >
-      <span
-        className={clsx(
-          'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
-          isMessage ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/15 text-blue-500'
-        )}
-      >
-        <Icon size={14} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm text-fg">
-          {isMessage ? 'New WhatsApp message' : 'New lead'}
-          <span className="ml-1.5 font-mono text-xs text-green-500">#{item.leadNumber}</span>
+    <div className="group flex w-full items-start gap-2 rounded-md px-1 hover:bg-card2">
+      <button onClick={() => onOpen(item.leadId)} className="flex flex-1 items-start gap-3 px-2 py-2.5 text-left">
+        <span
+          className={clsx(
+            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+            isMessage ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/15 text-blue-500'
+          )}
+        >
+          <Icon size={14} />
         </span>
-        <span className="block truncate text-xs font-medium text-blue-400">{item.leadName}</span>
-        {item.body && <span className="block truncate text-xs text-muted2">{item.body}</span>}
-      </span>
-      <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">
-        {elapsedLabel(item.createdAt)}
-      </span>
-    </button>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-fg">
+            {isMessage ? 'New WhatsApp message' : 'New lead'}
+            <span className="ml-1.5 font-mono text-xs text-green-500">#{item.leadNumber}</span>
+          </span>
+          <span className="block truncate text-xs font-medium text-blue-400">{item.leadName}</span>
+          {item.body && <span className="block truncate text-xs text-muted2">{item.body}</span>}
+        </span>
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">{elapsedLabel(item.createdAt)}</span>
+      </button>
+
+      {/* Dismissing is its own deliberate action, separate from opening the
+          lead. Opening used to clear the notification by itself, which meant
+          a glance at a lead silently emptied the bell — there was no way to
+          look at something and still keep it on the list. */}
+      <button
+        onClick={() => onDismiss(item.leadId)}
+        title="Dismiss this notification"
+        className="mt-2.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity hover:bg-card hover:text-green-400 group-hover:opacity-100"
+      >
+        <Check size={14} />
+      </button>
+    </div>
   )
 }
 
@@ -58,13 +76,16 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [open])
 
-  // Clicking a notification is what "checking" it means: mark that lead
-  // read, then jump to the leads list with it highlighted and its detail
-  // panel already open.
+  // Jumps to the lead but leaves the notification alone. Someone checking
+  // who a lead is, then coming back to work through the rest of the list,
+  // shouldn't lose their place.
   function openLead(leadId: string) {
     setOpen(false)
-    markLeadRead(leadId)
     router.push(`/leads?highlight=${leadId}`)
+  }
+
+  function dismiss(leadId: string) {
+    markLeadRead(leadId)
   }
 
   async function clearAll() {
@@ -107,9 +128,15 @@ export default function NotificationBell() {
             {items.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-muted">You're all caught up.</p>
             ) : (
-              items.map((item) => <Row key={item.id} item={item} onOpen={openLead} />)
+              items.map((item) => <Row key={item.id} item={item} onOpen={openLead} onDismiss={dismiss} />)
             )}
           </div>
+
+          {items.length > 0 && (
+            <p className="border-t border-border px-3 py-2 text-[11px] text-muted">
+              Notifications stay until you dismiss them with the tick.
+            </p>
+          )}
         </div>
       )}
     </div>
