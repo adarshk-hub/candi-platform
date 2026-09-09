@@ -10,6 +10,33 @@ export interface BroadcastFilters {
   createdTo?: string | null
   lastContactedFrom?: string | null
   lastContactedTo?: string | null
+  // Where the lead came from (facebook, instagram, direct_walkin…). The
+  // most-asked-for split, and the reason the Audience page can build usable
+  // groups with nobody configuring anything.
+  sourceKeys?: string[]
+  // A saved audience group. For a 'manual' group this pins the audience to
+  // exactly the leads in it; for a 'filters' group the stored filters are
+  // merged in by the caller before this runs.
+  groupId?: string | null
+}
+
+// One place that turns a request body into filters, so every route that
+// accepts them (preview, audience-list, the two send endpoints) agrees on
+// what a missing or malformed field means. Previously each route repeated
+// this, which is how a new filter ends up working in preview and silently
+// doing nothing at send time.
+export function normalizeFilters(raw: any): BroadcastFilters {
+  return {
+    tags: Array.isArray(raw?.tags) ? raw.tags : [],
+    tagsMode: raw?.tagsMode === 'all' ? 'all' : 'any',
+    stageKeys: Array.isArray(raw?.stageKeys) ? raw.stageKeys : [],
+    createdFrom: raw?.createdFrom || null,
+    createdTo: raw?.createdTo || null,
+    lastContactedFrom: raw?.lastContactedFrom || null,
+    lastContactedTo: raw?.lastContactedTo || null,
+    sourceKeys: Array.isArray(raw?.sourceKeys) ? raw.sourceKeys : [],
+    groupId: raw?.groupId || null,
+  }
 }
 
 interface AudienceQuery {
@@ -67,6 +94,21 @@ function buildAudienceQuery(
   if (filters.stageKeys.length > 0) {
     params.push(filters.stageKeys)
     where.push(`l.pipeline_stage = ANY($${params.length})`)
+  }
+
+  if (filters.sourceKeys && filters.sourceKeys.length > 0) {
+    params.push(filters.sourceKeys)
+    where.push(`l.source = ANY($${params.length})`)
+  }
+
+  // Membership of a hand-picked group narrows the audience like any other
+  // filter rather than replacing them, so "everyone in my Open Day list who
+  // is still at Enquiry" is expressible.
+  if (filters.groupId) {
+    params.push(filters.groupId)
+    where.push(
+      `EXISTS (SELECT 1 FROM audience_group_members m WHERE m.lead_id = l.id AND m.group_id = $${params.length})`
+    )
   }
 
   if (filters.createdFrom) {
