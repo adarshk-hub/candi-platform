@@ -1,84 +1,128 @@
 // path: app/follow-ups/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
-import { CalendarDays, Search, Filter } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, CalendarClock, Check, Search } from 'lucide-react'
 import { clsx } from 'clsx'
-import { tierFromScore } from '@/lib/leadScore'
 import { useStages } from '@/lib/StagesContext'
-import { useColumnWidths } from '@/lib/useColumnWidths'
-import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
-import { useLeadDateRange } from '@/lib/useLeadDateRange'
 
-interface FollowUpRow {
+// The Next Actions worklist. Replaces the follow-up list that used to live
+// here, and reads leads.next_action_* rather than the follow_ups table.
+//
+// The route path is unchanged so existing links and bookmarks keep working.
+//
+// The difference from the old page: a follow-up only existed if somebody
+// created one, so a lead with nothing planned simply didn't appear. Here the
+// leads with no plan are the first thing shown — a lead nobody has decided
+// anything about is the most urgent row on the page, not an absent one.
+type State = 'overdue' | 'unplanned' | 'due_today' | 'upcoming' | 'done'
+
+interface Row {
   id: string
-  follow_up_date: string
-  details: string | null
-  fu_status: string
-  lead_id: string
-  client_id: string
+  lead_number: number
   full_name: string
   whatsapp_number: string
-  grade: string | null
   pipeline_stage: string
-  lead_score: number
+  client_id: string
   counsellor_name: string | null
+  next_action: string | null
+  next_action_at: string | null
+  next_action_done_at: string | null
+  assigned_at: string | null
+  state: State
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
+interface CounsellorCount {
+  id: string
+  full_name: string
+  overdue: number
+  unplanned: number
+  dueToday: number
 }
 
-const COLUMN_DEFAULTS = {
-  id: 100,
-  parent: 160,
-  phone: 150,
-  grade: 90,
-  stage: 140,
-  status: 100,
-  counsellor: 130,
-  followUp: 220,
-  fuStatus: 100,
-  view: 90,
+const STATE_LABEL: Record<State, string> = {
+  unplanned: 'No action planned',
+  overdue: 'Not executed',
+  due_today: 'Due today',
+  upcoming: 'Upcoming',
+  done: 'Done',
 }
 
-const TOOLBAR_BTN = 'flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted2 hover:bg-card2 hover:text-fg'
-const TD = 'truncate border-r border-border px-4 py-3 last:border-r-0'
+const STATE_STYLE: Record<State, string> = {
+  unplanned: 'bg-amber-500/15 text-amber-400',
+  overdue: 'bg-red-500/15 text-red-400',
+  due_today: 'bg-blue-500/15 text-blue-300',
+  upcoming: 'bg-card2 text-muted2',
+  done: 'bg-green-500/15 text-green-400',
+}
 
-// Defaults to "today onward" rather than "today only" — a follow-up
-// scheduled for any future date should be visible the moment it's created,
-// not just on the day it's due. Counsellors can still narrow the range
-// with the date pickers if they want just today's worklist.
-export default function FollowUpsPage() {
-  const [from, setFrom] = useState(todayStr())
-  const [to, setTo] = useState('')
+function shortDate(value: string | null): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
+
+export default function NextActionsPage() {
+  const [rows, setRows] = useState<Row[]>([])
+  const [counsellors, setCounsellors] = useState<CounsellorCount[]>([])
+  const [counsellorId, setCounsellorId] = useState('')
   const [search, setSearch] = useState('')
-  const [rows, setRows] = useState<FollowUpRow[]>([])
+  const [status, setStatus] = useState<'open' | 'all' | 'done'>('open')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState('')
   const [activeLead, setActiveLead] = useState<string | null>(null)
-  const { widths, setWidth } = useColumnWidths('follow-ups', COLUMN_DEFAULTS)
+  const [busy, setBusy] = useState(false)
+
   const { stageLabel, stageColor } = useStages()
 
-  function load() {
-    const params = new URLSearchParams()
+  const load = useCallback(() => {
+    setLoading(true)
+    const params = new URLSearchParams({ view: 'list', status })
+    if (counsellorId) params.set('counsellorId', counsellorId)
+    if (search) params.set('search', search)
     if (from) params.set('from', from)
     if (to) params.set('to', to)
-    if (search) params.set('search', search)
-    fetch(`/api/follow-ups?${params.toString()}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setRows(Array.isArray(data) ? data : []))
+
+    fetch(`/api/next-actions?${params.toString()}`)
+      .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
+      .then(({ ok, body }) => {
+        setRows(body?.rows || [])
+        setCounsellors(body?.counsellors || [])
+        setNotice(body?.error || (ok ? '' : 'Could not load next actions.'))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [counsellorId, search, status, from, to])
+
+  useEffect(load, [load])
+
+  async function complete(row: Row) {
+    setBusy(true)
+    try {
+      await fetch(`/api/leads/${row.id}/next-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).catch(() => {})
+      load()
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const leadRange = useLeadDateRange()
-
-  useEffect(load, [from, to, search])
+  const counts = rows.reduce(
+    (acc, r) => ({ ...acc, [r.state]: (acc as any)[r.state] + 1 }),
+    { unplanned: 0, overdue: 0, due_today: 0, upcoming: 0, done: 0 } as Record<State, number>
+  )
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
-          <CalendarDays size={22} /> Follow-ups
+          <CalendarClock size={22} /> Next Actions
         </h1>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -86,96 +130,119 @@ export default function FollowUpsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search follow-ups..."
-              className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
+              placeholder="Search name, number or action…"
+              className="w-72 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
           <NotificationBell />
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-4">
+      {notice && (
+        <p className="mb-4 rounded-card border border-amber-500/40 bg-card p-4 text-sm text-amber-400">{notice}</p>
+      )}
+
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="No action planned" value={counts.unplanned} tone="warn" />
+        <Stat label="Not executed" value={counts.overdue} tone="bad" />
+        <Stat label="Due today" value={counts.due_today} />
+        <Stat label="Upcoming" value={counts.upcoming} />
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {counsellors.length > 0 && (
+          <select
+            value={counsellorId}
+            onChange={(e) => setCounsellorId(e.target.value)}
+            className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+          >
+            <option value="">All counsellors</option>
+            {counsellors.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.full_name}
+                {c.overdue > 0 ? ` — ${c.overdue} overdue` : ''}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as any)}
+          className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+        >
+          <option value="open">Outstanding</option>
+          <option value="done">Completed</option>
+          <option value="all">Everything</option>
+        </select>
+
         <label className="flex items-center gap-2 text-sm text-muted2">
-          From:
+          Due from
           <input
             type="date"
             value={from}
-            min={leadRange.from || undefined}
-            max={leadRange.to || undefined}
             onChange={(e) => setFrom(e.target.value)}
             className="rounded-md border border-border bg-card2 px-2 py-1 text-fg"
           />
         </label>
         <label className="flex items-center gap-2 text-sm text-muted2">
-          To:
+          to
           <input
             type="date"
             value={to}
-            min={leadRange.from || undefined}
-            max={leadRange.to || undefined}
             onChange={(e) => setTo(e.target.value)}
             className="rounded-md border border-border bg-card2 px-2 py-1 text-fg"
           />
         </label>
-        <button className={clsx('ml-auto', TOOLBAR_BTN)}>
-          <Filter size={16} /> Filter
-        </button>
+        {(from || to) && (
+          <button
+            onClick={() => {
+              setFrom('')
+              setTo('')
+            }}
+            className="text-sm text-blue-400 hover:underline"
+          >
+            Clear dates
+          </button>
+        )}
+        {/* Leads with nothing planned have no due date to filter on, so they
+            stay visible whatever range is chosen — hiding them behind a date
+            filter would hide exactly the rows that need attention most. */}
+        <span className="text-xs text-muted2">Unplanned leads always show, whatever the dates.</span>
       </div>
 
-      <p className="mb-2 text-sm text-muted2">Follow-ups Found: {rows.length}</p>
-
       <div className="overflow-x-auto rounded-card border border-border bg-card">
-        <table className="w-full table-fixed text-sm">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-card2 text-left text-xs uppercase tracking-wide text-muted">
-              <ResizableTh width={widths.id} onResize={(w) => setWidth('id', w)}>
-                ID
-              </ResizableTh>
-              <ResizableTh width={widths.parent} onResize={(w) => setWidth('parent', w)}>
-                Parent
-              </ResizableTh>
-              <ResizableTh width={widths.phone} onResize={(w) => setWidth('phone', w)}>
-                Phone
-              </ResizableTh>
-              <ResizableTh width={widths.grade} onResize={(w) => setWidth('grade', w)}>
-                Grade
-              </ResizableTh>
-              <ResizableTh width={widths.stage} onResize={(w) => setWidth('stage', w)}>
-                Stage
-              </ResizableTh>
-              <ResizableTh width={widths.status} onResize={(w) => setWidth('status', w)}>
-                Status
-              </ResizableTh>
-              <ResizableTh width={widths.counsellor} onResize={(w) => setWidth('counsellor', w)}>
-                Counsellor
-              </ResizableTh>
-              <ResizableTh width={widths.followUp} onResize={(w) => setWidth('followUp', w)}>
-                Follow-up
-              </ResizableTh>
-              <ResizableTh width={widths.fuStatus} onResize={(w) => setWidth('fuStatus', w)}>
-                F/U Status
-              </ResizableTh>
-              <ResizableTh width={widths.view} onResize={(w) => setWidth('view', w)}>
-                View Details
-              </ResizableTh>
+              <th className="px-4 py-3">Lead</th>
+              <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">Stage</th>
+              <th className="px-4 py-3">Counsellor</th>
+              <th className="px-4 py-3">Next action</th>
+              <th className="px-4 py-3">Due</th>
+              <th className="px-4 py-3">State</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="border-b border-border last:border-0 hover:bg-card2">
-                <td style={{ width: widths.id }} className={clsx(TD, 'font-mono text-xs text-green-400')}>
-                  {r.lead_id.slice(0, 8)}
+              <tr
+                key={r.id}
+                className={clsx(
+                  'border-b border-border last:border-0 hover:bg-card2',
+                  r.state === 'overdue' && 'bg-red-500/[0.05]',
+                  r.state === 'unplanned' && 'bg-amber-500/[0.05]'
+                )}
+              >
+                <td className="px-4 py-3">
+                  <button onClick={() => setActiveLead(r.id)} className="text-fg hover:underline">
+                    {r.full_name}
+                  </button>
+                  <p className="font-mono text-xs text-green-400">#{r.lead_number}</p>
                 </td>
-                <td style={{ width: widths.parent }} className={clsx(TD, 'text-fg')}>
-                  {r.full_name}
-                </td>
-                <td style={{ width: widths.phone }} className={clsx(TD, 'text-muted2')}>
-                  {r.whatsapp_number}
-                </td>
-                <td style={{ width: widths.grade }} className={clsx(TD, 'text-muted2')}>
-                  {r.grade || '—'}
-                </td>
-                <td style={{ width: widths.stage }} className={TD}>
+                <td className="px-4 py-3 text-muted2">{r.whatsapp_number}</td>
+                <td className="px-4 py-3">
                   <span
                     className="inline-block rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-900"
                     style={{ backgroundColor: stageColor(r.pipeline_stage, r.client_id) }}
@@ -183,31 +250,42 @@ export default function FollowUpsPage() {
                     {stageLabel(r.pipeline_stage, r.client_id)}
                   </span>
                 </td>
-                <td style={{ width: widths.status }} className={clsx(TD, 'text-muted2')}>
-                  {tierFromScore(r.lead_score)}
+                <td className="px-4 py-3 text-muted2">{r.counsellor_name || '—'}</td>
+                <td className="px-4 py-3 text-fg">
+                  {r.next_action || (
+                    <span className="flex items-center gap-1.5 text-amber-400">
+                      <AlertTriangle size={13} /> Nothing planned since {shortDate(r.assigned_at)}
+                    </span>
+                  )}
                 </td>
-                <td style={{ width: widths.counsellor }} className={clsx(TD, 'text-muted2')}>
-                  {r.counsellor_name || '—'}
+                <td className={clsx('px-4 py-3', r.state === 'overdue' ? 'text-red-400' : 'text-muted2')}>
+                  {shortDate(r.next_action_at)}
                 </td>
-                <td style={{ width: widths.followUp }} className={clsx(TD, 'text-muted2')}>
-                  {new Date(r.follow_up_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                  {r.details ? ` — ${r.details}` : ''}
+                <td className="px-4 py-3">
+                  <span className={clsx('rounded-md px-2 py-0.5 text-xs', STATE_STYLE[r.state])}>
+                    {STATE_LABEL[r.state]}
+                  </span>
                 </td>
-                <td style={{ width: widths.fuStatus }} className={clsx(TD, 'capitalize text-muted2')}>
-                  {r.fu_status}
-                </td>
-                <td style={{ width: widths.view }} className="border-r border-border px-4 py-3 last:border-r-0">
-                  <button onClick={() => setActiveLead(r.lead_id)} className="text-blue-400 hover:underline">
-                    View
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  {r.next_action && !r.next_action_done_at && (
+                    <button
+                      onClick={() => complete(r)}
+                      disabled={busy}
+                      className="mr-3 inline-flex items-center gap-1 text-green-400 hover:underline disabled:opacity-50"
+                    >
+                      <Check size={14} /> Done
+                    </button>
+                  )}
+                  <button onClick={() => setActiveLead(r.id)} className="text-blue-400 hover:underline">
+                    {r.next_action ? 'Change' : 'Plan'}
                   </button>
                 </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-muted">
-                  No follow-ups scheduled from {new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                  {to ? ` to ${new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ' onward'}
+                <td colSpan={8} className="px-4 py-12 text-center text-muted">
+                  {loading ? 'Loading…' : 'Nothing outstanding — every assigned lead has a plan.'}
                 </td>
               </tr>
             )}
@@ -224,6 +302,22 @@ export default function FollowUpsPage() {
           }}
         />
       )}
+    </div>
+  )
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone?: 'warn' | 'bad' }) {
+  return (
+    <div className="rounded-card border border-border bg-card p-4">
+      <p
+        className={clsx(
+          'text-2xl font-bold',
+          tone === 'bad' ? 'text-red-400' : tone === 'warn' ? 'text-amber-400' : 'text-fg'
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-1 text-xs uppercase tracking-widest text-muted">{label}</p>
     </div>
   )
 }
