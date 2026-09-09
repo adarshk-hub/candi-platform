@@ -1,6 +1,6 @@
 // path: app/api/audience/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
+import { queryAsClient } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
 import { normalizeFilters, listAudience } from '@/lib/leadAudience'
@@ -32,8 +32,15 @@ export async function GET(req: NextRequest) {
         error: 'Run scripts/phase4-migration.sql against this database first.',
       })
     }
+    // The message is passed through rather than replaced with something
+    // generic: an empty Audience tab and a broken one look identical from
+    // the outside, and the difference matters when a table is missing or
+    // the session isn't scoped to an institute.
     console.error('[audience] failed:', err)
-    return NextResponse.json({ error: 'Could not load audiences.' }, { status: 500 })
+    return NextResponse.json(
+      { error: `Could not load audiences: ${err?.message || 'unknown error'}`, sources: [], saved: [] },
+      { status: 500 }
+    )
   }
 }
 
@@ -57,7 +64,8 @@ export async function POST(req: NextRequest) {
   const filters = normalizeFilters(body.filters)
 
   try {
-    const rows = await query<{ id: string }>(
+    const rows = await queryAsClient<{ id: string }>(
+      clientId,
       `INSERT INTO audience_groups (client_id, name, description, kind, filters, origin, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
       [
@@ -81,7 +89,8 @@ export async function POST(req: NextRequest) {
         leadIds = matched.leads.map((l) => l.id)
       }
       for (const leadId of leadIds) {
-        await query(
+        await queryAsClient(
+          clientId,
           `INSERT INTO audience_group_members (group_id, lead_id) VALUES ($1,$2)
            ON CONFLICT DO NOTHING`,
           [groupId, leadId]
