@@ -7,6 +7,7 @@ import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
 import StagePill from './StagePill'
+import LogCallButton from './LogCallButton'
 import { ColdReasonValue } from './ColdReasonModal'
 import WelcomePrompt from './WelcomePrompt'
 import ScoreAndSla from './ScoreAndSla'
@@ -123,7 +124,8 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
                   </div>
                 </div>
                 <div className="space-y-3 text-right">
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-2">
+                    <LogCallButton leadId={lead.id} onLogged={load} />
                     <StagePill stage={lead.pipeline_stage} clientId={lead.client_id} onChange={changeStage} />
                   </div>
                   <div>
