@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { clsx } from 'clsx'
 import LeadDateRangePanel from './panels/LeadDateRangePanel'
 import NotificationBell from '@/components/NotificationBell'
@@ -68,7 +69,26 @@ export default function CustomizeShell({
   showSettingsLink?: boolean
 }) {
   const [clientId, setClientId] = useState(lockedToClientId || institutes[0]?.id || '')
-  const [active, setActive] = useState<CategoryKey>('stages')
+
+  // Which panel is open lives in the URL rather than in state, so a reload
+  // (or a link pasted to a colleague) lands on the same panel instead of
+  // bouncing back to Lead Stages. An unrecognised or missing value falls
+  // back to the first category.
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const requested = searchParams.get('panel') as CategoryKey | null
+  const active: CategoryKey = CATEGORIES.some((c) => c.key === requested)
+    ? (requested as CategoryKey)
+    : 'stages'
+
+  function setActive(key: CategoryKey) {
+    // replace, not push: switching panels is changing a view, not
+    // navigating, and stacking every click in history would make Back walk
+    // through each panel visited before leaving Settings.
+    router.replace(`${pathname}?panel=${key}`, { scroll: false })
+  }
 
   if (!clientId) {
     return <p className="text-muted">No institution to customize yet.</p>
