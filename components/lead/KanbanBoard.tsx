@@ -124,6 +124,14 @@ export default function KanbanBoard() {
   // is sent to the server in the meantime, so cancelling the prompt leaves
   // the card where it started rather than moving it and asking afterwards.
   const [pendingCold, setPendingCold] = useState<{ lead: KanbanLead; stage: StageRow } | null>(null)
+  // The horizontal scroller holding the stage columns. The native scrollbar
+  // is hidden (it sits under the cards and is easy to miss), so with more
+  // stages than fit on screen there was nothing to tell you the board
+  // continued — the arrows below are that signal as well as the control.
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
   const dragState = useRef<{ leadId: string; moved: boolean; offsetX: number; offsetY: number } | null>(null)
   const ghostRef = useRef<HTMLDivElement>(null)
 
@@ -164,6 +172,31 @@ export default function KanbanBoard() {
   }, [leads])
 
   const draggingLead = dragLeadId ? leads.find((l) => l.id === dragLeadId) || null : null
+
+  // A column and a bit per press: enough to feel like progress, little
+  // enough that the card you were reading stays partly in view as an anchor.
+  function scrollBy(direction: 1 | -1) {
+    const el = scrollerRef.current
+    if (!el) return
+    el.scrollBy({ left: direction * Math.round(el.clientWidth * 0.8), behavior: 'smooth' })
+  }
+
+  function updateScrollButtons() {
+    const el = scrollerRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 4)
+    // The 4px slack absorbs sub-pixel rounding, which otherwise leaves the
+    // right arrow enabled at the very end of the track.
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4)
+  }
+
+  // Re-checked after load (columns arrive asynchronously) and on resize,
+  // since either can change whether the board overflows at all.
+  useEffect(() => {
+    updateScrollButtons()
+    window.addEventListener('resize', updateScrollButtons)
+    return () => window.removeEventListener('resize', updateScrollButtons)
+  }, [loading, leads.length])
 
   function moveLead(leadId: string, newStage: string) {
     const lead = leads.find((l) => l.id === leadId)
@@ -296,7 +329,12 @@ export default function KanbanBoard() {
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : (
-        <div className="flex select-none gap-4 overflow-x-auto pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="relative">
+          <div
+            ref={scrollerRef}
+            onScroll={updateScrollButtons}
+            className="flex select-none gap-4 overflow-x-auto pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
           {COLUMNS.map((col) => {
             const columnLeads = byStage[col.key] || []
             return (
