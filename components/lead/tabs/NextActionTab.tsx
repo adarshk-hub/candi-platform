@@ -138,7 +138,7 @@ export default function NextActionTab({
           <p className="text-sm text-amber-300">
             {state?.next_action_done_at
               ? 'The last action was completed. Plan the next one so this lead doesn’t go quiet.'
-              : 'No next action planned for this lead yet — every assigned lead should have one.'}
+              : 'No next action planned for this lead yet; this should be always filled.'}
           </p>
         </div>
       )}
