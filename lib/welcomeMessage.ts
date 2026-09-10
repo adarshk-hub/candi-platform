@@ -4,21 +4,15 @@ import { startSequence } from './waSequenceEngine'
 
 export type WelcomeStatus = 'pending' | 'sent' | 'skipped'
 
-// Whether this institute wants a human to confirm before the automatic
-// WhatsApp welcome goes out. Defaults to true — asking is the safer side to
-// fail on, and a missing column (migration not run) reads as false so the
-// old fire-immediately behaviour is preserved until the schema catches up.
-export async function requiresWelcomeConfirmation(clientId: string): Promise<boolean> {
-  try {
-    const rows = await queryAsClient<{ wa_welcome_confirm: boolean }>(
-      clientId,
-      'SELECT wa_welcome_confirm FROM clients WHERE id = $1',
-      [clientId]
-    )
-    return rows[0]?.wa_welcome_confirm !== false
-  } catch {
-    return false
-  }
+// The welcome message always sends on its own now — the setting that used
+// to gate it has been removed from Settings, so reading the column would
+// mean behaviour nobody can see or change.
+//
+// The clients.wa_welcome_confirm column is deliberately left in place
+// rather than dropped: it costs nothing, and reinstating the control later
+// is then a UI change rather than another migration.
+export async function requiresWelcomeConfirmation(_clientId: string): Promise<boolean> {
+  return false
 }
 
 async function setStatus(clientId: string, leadId: string, status: WelcomeStatus): Promise<void> {
