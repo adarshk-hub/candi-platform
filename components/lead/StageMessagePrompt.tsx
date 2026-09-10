@@ -8,6 +8,7 @@ interface Assignment {
   day_number: number
   template_name: string
   stage_key: string | null
+  require_confirmation?: boolean
 }
 
 interface WaTemplate {
@@ -46,8 +47,10 @@ export default function StageMessagePrompt({
   onDone: () => void
 }) {
   const [template, setTemplate] = useState<WaTemplate | null>(null)
+  const [needsPrompt, setNeedsPrompt] = useState(false)
   const [checked, setChecked] = useState(false)
   const [sending, setSending] = useState(false)
+  const [autoFailed, setAutoFailed] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -85,8 +88,18 @@ export default function StageMessagePrompt({
         // since revoked) is treated as no template rather than as an error:
         // the stage change itself already succeeded, and a red box about
         // template approval is not the counsellor's problem in that moment.
-        if (found) setTemplate(found)
-        else onDone()
+        if (!found) {
+          onDone()
+          return
+        }
+
+        setTemplate(found)
+        setNeedsPrompt(!!match.require_confirmation)
+        // "Ask first" unticked in Settings means send without a prompt. The
+        // send still happens here rather than server-side, so there is one
+        // path to a stage message whether or not it was confirmed — two
+        // paths would eventually disagree about what got sent.
+        if (!match.require_confirmation) sendTemplate(found)
       } catch {
         if (!cancelled) {
           setChecked(true)
@@ -103,6 +116,10 @@ export default function StageMessagePrompt({
 
   async function send() {
     if (!template) return
+    sendTemplate(template)
+  }
+
+  async function sendTemplate(t: WaTemplate) {
     setSending(true)
     setError('')
     try {
@@ -110,16 +127,20 @@ export default function StageMessagePrompt({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          templateId: template.id,
+          templateId: t.id,
           // The first variable is the parent's name in every template this
           // app ships; anything beyond that is left blank rather than
           // guessed at.
-          variables: Array.from({ length: template.variableCount }, (_, i) => (i === 0 ? leadName : '')),
+          variables: Array.from({ length: t.variableCount }, (_, i) => (i === 0 ? leadName : '')),
         }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(body.error || 'Could not send that message.')
+        // Left on screen with the error rather than dismissed, so an
+        // auto-send that failed is visible instead of silently not
+        // happening.
+        setAutoFailed(true)
         return
       }
       onDone()
@@ -128,7 +149,11 @@ export default function StageMessagePrompt({
     }
   }
 
+  // Nothing on screen while an unconfirmed message sends itself — the only
+  // reason to show this dialog is to ask, or to report that an automatic
+  // send failed.
   if (!checked || !template) return null
+  if (!needsPrompt && !autoFailed) return null
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
