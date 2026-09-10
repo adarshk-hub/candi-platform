@@ -134,6 +134,24 @@ export default function Sidebar({
     return canAccessPage(user.role as Role, allowedPages, pageKey)
   }
 
+  // Assembled here rather than inline so the section can be hidden entirely
+  // when a login has access to none of it — an empty "Counsellor" heading
+  // sitting under a gap looks like something failed to load.
+  const counsellorSection = [
+    can('activity') && (
+      <NavItem key="activity" href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
+    ),
+    can('performance') && (
+      <NavItem key="performance" href="/performance" icon={BarChart3} label="Performance" active={pathname === '/performance'} collapsed={collapsed} />
+    ),
+    can('my_day') && (
+      <NavItem key="my-day" href="/my-day" icon={CalendarCheck} label="My Day" active={pathname === '/my-day'} collapsed={collapsed} />
+    ),
+    can('team_day') && (
+      <NavItem key="team-day" href="/team-day" icon={CalendarRange} label="Team Day" active={pathname === '/team-day'} collapsed={collapsed} />
+    ),
+  ].filter(Boolean)
+
   return (
     <aside
       className={clsx(
@@ -181,44 +199,48 @@ export default function Sidebar({
         {can('dashboard') && (
           <NavItem href="/dashboard" icon={LayoutDashboard} label="Dashboard" active={pathname === '/dashboard'} collapsed={collapsed} />
         )}
-        {can('activity') && (
-          <NavItem href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
+
+        {can('leads') && (
+          <div>
+            <NavItem href="/leads" icon={Users} label="All Leads" active={leadsActive && !tab} collapsed={collapsed} />
+            {leadsActive && !collapsed && showLeadStatusTabs && (
+              <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
+                <NavItem href="/leads?tab=warm" icon={ThermometerSun} label="Warm" active={tab === 'warm'} collapsed={false} />
+                <NavItem href="/leads?tab=hot" icon={Flame} label="Hot" active={tab === 'hot'} collapsed={false} />
+                <NavItem href="/leads?tab=cold" icon={Snowflake} label="Cold" active={tab === 'cold'} collapsed={false} />
+                <NavItem href="/leads?tab=enrolled" icon={CheckCircle2} label="Enrolled" active={tab === 'enrolled'} collapsed={false} />
+              </div>
+            )}
+          </div>
         )}
-        {can('my_day') && (
-          <NavItem href="/my-day" icon={CalendarCheck} label="My Day" active={pathname === '/my-day'} collapsed={collapsed} />
-        )}
-        {can('team_day') && (
-          <NavItem href="/team-day" icon={CalendarRange} label="Team Day" active={pathname === '/team-day'} collapsed={collapsed} />
-        )}
+
         {can('inbox') && (
           <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
         )}
         {can('follow_ups') && (
-          <NavItem href="/follow-ups" icon={CalendarClock} label="Next Actions" active={pathname === '/follow-ups'} collapsed={collapsed} />
+          <NavItem href="/follow-ups" icon={CalendarClock} label="Next Action" active={pathname === '/follow-ups'} collapsed={collapsed} />
         )}
         {can('calendar') && (
-          <NavItem href="/calendar" icon={CalendarDays} label="Calendar View" active={pathname === '/calendar'} collapsed={collapsed} />
+          <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
         )}
-        {can('performance') && (
-          <NavItem href="/performance" icon={BarChart3} label="Performance" active={pathname === '/performance'} collapsed={collapsed} />
-        )}
-
-        {can('leads') && (
-        <div className="pt-2">
-          <NavItem href="/leads" icon={Users} label="All Leads" active={leadsActive && !tab} collapsed={collapsed} />
-          {leadsActive && !collapsed && showLeadStatusTabs && (
-            <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
-              <NavItem href="/leads?tab=warm" icon={ThermometerSun} label="Warm" active={tab === 'warm'} collapsed={false} />
-              <NavItem href="/leads?tab=hot" icon={Flame} label="Hot" active={tab === 'hot'} collapsed={false} />
-              <NavItem href="/leads?tab=cold" icon={Snowflake} label="Cold" active={tab === 'cold'} collapsed={false} />
-              <NavItem href="/leads?tab=enrolled" icon={CheckCircle2} label="Enrolled" active={tab === 'enrolled'} collapsed={false} />
-            </div>
-          )}
-        </div>
-        )}
-
         {can('broadcasts') && (
-          <NavItem href="/broadcasts" icon={Radio} label="Broadcasts" active={pathname === '/broadcasts'} collapsed={collapsed} />
+          <NavItem href="/broadcasts" icon={Radio} label="Broadcast" active={pathname === '/broadcasts'} collapsed={collapsed} />
+        )}
+
+        {/* Counsellor section. Set apart by a gap and a heading rather than
+            put behind a disclosure: these are checked several times a day,
+            and a group that has to be opened first is a group people stop
+            opening. The gap is what stops them reading as more lead menus. */}
+        {counsellorSection.length > 0 && (
+          <div className="pt-6">
+            {!collapsed && (
+              <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-widest text-muted">
+                Counsellor
+              </p>
+            )}
+            {collapsed && <div className="mx-auto mb-2 h-px w-6 bg-border" />}
+            <div className="space-y-1">{counsellorSection}</div>
+          </div>
         )}
       </nav>
 
