@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { Check, RefreshCw, Send, MessageSquareText, Plus } from 'lucide-react'
+import { SEQUENCE_STEPS } from '@/lib/nurtureSequenceSteps'
+import { useStages } from '@/lib/StagesContext'
 import { NURTURE_TEMPLATE_DEFINITIONS } from '@/lib/nurtureTemplateDefinitions'
 import { OPERATIONAL_TEMPLATE_DEFINITIONS } from '@/lib/operationalTemplateDefinitions'
 import WhatsAppWalletPanel from './WhatsAppWalletPanel'
@@ -72,6 +74,10 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
   const [headerMediaData, setHeaderMediaData] = useState<string | null>(null)
   const [uploadingHeader, setUploadingHeader] = useState(false)
 
+  // Which stage each step is limited to: day_number -> stage key ('' = any)
+  const [stageByDay, setStageByDay] = useState<Record<number, string>>({})
+  const { stagesFor } = useStages()
+
   // Sequence-step template assignment state: day_number -> template_name
   const [assignments, setAssignments] = useState<Record<number, string>>({})
   const [assignmentsLoading, setAssignmentsLoading] = useState(true)
@@ -108,7 +114,10 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
     setAssignmentsLoading(true)
     fetch(`/api/clients/${clientId}/whatsapp-sequence-templates`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { day_number: number; template_name: string }[]) => {
+      .then((rows: { day_number: number; template_name: string; stage_key?: string | null }[]) => {
+        const stageMap: Record<number, string> = {}
+        for (const row of rows || []) stageMap[row.day_number] = row.stage_key || ''
+        setStageByDay(stageMap)
         const map: Record<number, string> = {}
         for (const row of rows || []) map[row.day_number] = row.template_name
         setAssignments(map)
@@ -380,7 +389,10 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
   // Reassigns which approved template fires on a given sequence day.
   // Saves immediately on dropdown change (no separate "Save" button per
   // row) since it's a single, low-risk field.
-  async function assignTemplate(dayNumber: number, templateName: string) {
+  // stageOverride is passed when the stage dropdown is what changed — the
+  // template is re-sent unchanged in that case, because the API stores both
+  // on one row and a partial write would blank the other.
+  async function assignTemplate(dayNumber: number, templateName: string, stageOverride?: string) {
     if (!templateName) return
     setSavingDay(dayNumber)
     setError('')
@@ -393,7 +405,12 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
       const res = await fetch(`/api/clients/${clientId}/whatsapp-sequence-templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dayNumber, templateName, languageCode: 'en' }),
+        body: JSON.stringify({
+          dayNumber,
+          templateName,
+          languageCode: 'en',
+          stageKey: stageOverride !== undefined ? stageOverride : stageByDay[dayNumber] || '',
+        }),
       })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -581,42 +598,71 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
         <div className="mt-5 border-t border-border pt-4">
           <h3 className="mb-1 text-sm font-semibold text-fg">Assign Templates to Sequence Steps</h3>
           <p className="mb-3 text-xs text-muted2">
-            Pick which approved template fires on each day of the nurture sequence. Only templates Meta has
-            approved for this client show up as options — submit and wait for approval first if a step shows
-            "No approved templates yet."
+            Pick which approved template fires on each day of the nurture sequence, and optionally limit a step
+            to one stage. Only templates Meta has approved for this client show up as options — submit and wait
+            for approval first if a step shows "No approved templates yet." Days 14 and 21 have no supplied
+            template; assign one of your own once it's approved.
           </p>
           {assignmentsLoading ? (
             <p className="text-sm text-muted">Loading…</p>
           ) : (
             <div className="space-y-2">
-              {NURTURE_TEMPLATE_DEFINITIONS.map((def, i) => {
+              {SEQUENCE_STEPS.map((def, i) => {
                 const approvedTemplates = templates.filter((t) => t.status === 'approved')
                 const current = assignments[def.day] || ''
+                const stage = stageByDay[def.day] || ''
                 return (
-                  <div key={def.day} className="flex items-center gap-3 rounded-md border border-border bg-card2 px-3 py-2">
-                    <span className="w-20 shrink-0 text-xs font-medium text-muted">
-                      Step {i + 1} · Day {def.day}
-                    </span>
-                    {approvedTemplates.length === 0 ? (
-                      <span className="text-xs text-muted">No approved templates yet</span>
-                    ) : (
+                  <div key={def.day} className="rounded-md border border-border bg-card2 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="w-28 shrink-0 text-xs font-medium text-muted">
+                        Step {i + 1} · Day {def.day}
+                        <span className="block text-[11px] font-normal text-muted2">{def.label}</span>
+                      </span>
+
+                      {approvedTemplates.length === 0 ? (
+                        <span className="text-xs text-muted">No approved templates yet</span>
+                      ) : (
+                        <select
+                          value={current}
+                          onChange={(e) => assignTemplate(def.day, e.target.value)}
+                          disabled={savingDay === def.day}
+                          className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-fg outline-none focus:border-blue-500 disabled:opacity-50"
+                        >
+                          <option value="" disabled>
+                            Select a template…
+                          </option>
+                          {approvedTemplates.map((t) => (
+                            <option key={t.id} value={t.name}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {/* Limits the step to leads sitting in one stage. Left
+                          on "Any stage" it behaves exactly as before, which
+                          is what every existing sequence does. */}
                       <select
-                        value={current}
-                        onChange={(e) => assignTemplate(def.day, e.target.value)}
-                        disabled={savingDay === def.day}
-                        className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-fg outline-none focus:border-blue-500 disabled:opacity-50"
+                        value={stage}
+                        onChange={(e) => {
+                          const next = e.target.value
+                          setStageByDay((prev) => ({ ...prev, [def.day]: next }))
+                          if (current) assignTemplate(def.day, current, next)
+                        }}
+                        disabled={savingDay === def.day || !current}
+                        title={current ? 'Only send this step to leads in this stage' : 'Pick a template first'}
+                        className="w-44 shrink-0 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-fg outline-none focus:border-blue-500 disabled:opacity-50"
                       >
-                        <option value="" disabled>
-                          Select a template…
-                        </option>
-                        {approvedTemplates.map((t) => (
-                          <option key={t.id} value={t.name}>
-                            {t.name}
+                        <option value="">Any stage</option>
+                        {stagesFor(clientId).map((st) => (
+                          <option key={st.key} value={st.key}>
+                            {st.label}
                           </option>
                         ))}
                       </select>
-                    )}
-                    {savingDay === def.day && <RefreshCw size={12} className="shrink-0 animate-spin text-muted" />}
+
+                      {savingDay === def.day && <RefreshCw size={12} className="shrink-0 animate-spin text-muted" />}
+                    </div>
                   </div>
                 )
               })}
