@@ -17,7 +17,7 @@ import NotificationBell from '@/components/NotificationBell'
 // created one, so a lead with nothing planned simply didn't appear. Here the
 // leads with no plan are the first thing shown — a lead nobody has decided
 // anything about is the most urgent row on the page, not an absent one.
-type State = 'overdue' | 'unplanned' | 'due_today' | 'upcoming' | 'done'
+type State = 'overdue' | 'unplanned' | 'awaiting_plan' | 'due_today' | 'upcoming' | 'done'
 
 interface Row {
   id: string
@@ -44,6 +44,7 @@ interface CounsellorCount {
 
 const STATE_LABEL: Record<State, string> = {
   unplanned: 'No action planned',
+  awaiting_plan: 'Waiting to be planned',
   overdue: 'Not executed',
   due_today: 'Due today',
   upcoming: 'Upcoming',
@@ -52,6 +53,9 @@ const STATE_LABEL: Record<State, string> = {
 
 const STATE_STYLE: Record<State, string> = {
   unplanned: 'bg-amber-500/15 text-amber-400',
+  // Deliberately not amber: a lead assigned an hour ago isn't a lapse yet,
+  // and colouring it like one trains people to ignore the amber rows.
+  awaiting_plan: 'bg-card2 text-muted2',
   overdue: 'bg-red-500/15 text-red-400',
   due_today: 'bg-blue-500/15 text-blue-300',
   upcoming: 'bg-card2 text-muted2',
@@ -115,7 +119,7 @@ export default function NextActionsPage() {
 
   const counts = rows.reduce(
     (acc, r) => ({ ...acc, [r.state]: (acc as any)[r.state] + 1 }),
-    { unplanned: 0, overdue: 0, due_today: 0, upcoming: 0, done: 0 } as Record<State, number>
+    { unplanned: 0, awaiting_plan: 0, overdue: 0, due_today: 0, upcoming: 0, done: 0 } as Record<State, number>
   )
 
   return (
@@ -142,9 +146,10 @@ export default function NextActionsPage() {
         <p className="mb-4 rounded-card border border-amber-500/40 bg-card p-4 text-sm text-amber-400">{notice}</p>
       )}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="No action planned" value={counts.unplanned} tone="warn" />
         <Stat label="Not executed" value={counts.overdue} tone="bad" />
+        <Stat label="Waiting to be planned" value={counts.awaiting_plan} />
         <Stat label="Due today" value={counts.due_today} />
         <Stat label="Upcoming" value={counts.upcoming} />
       </div>
@@ -253,9 +258,15 @@ export default function NextActionsPage() {
                 <td className="px-4 py-3 text-muted2">{r.counsellor_name || '—'}</td>
                 <td className="px-4 py-3 text-fg">
                   {r.next_action || (
-                    <span className="flex items-center gap-1.5 text-amber-400">
-                      <AlertTriangle size={13} /> Nothing planned since {shortDate(r.assigned_at)}
-                    </span>
+                    r.state === 'unplanned' ? (
+                      <span className="flex items-center gap-1.5 text-amber-400">
+                        <AlertTriangle size={13} /> Nothing planned since {shortDate(r.assigned_at)}
+                      </span>
+                    ) : (
+                      <span className="text-muted2">
+                        Assigned {shortDate(r.assigned_at)} — plan something
+                      </span>
+                    )
                   )}
                 </td>
                 <td className={clsx('px-4 py-3', r.state === 'overdue' ? 'text-red-400' : 'text-muted2')}>
