@@ -3,6 +3,19 @@
 import { useRef, useState } from 'react'
 import { X, Upload, CheckCircle2, AlertTriangle } from 'lucide-react'
 
+// 1 MB. A spreadsheet of leads is text — 1 MB is comfortably several
+// thousand rows — so anything larger is almost always the wrong file
+// (a photo, a PDF, an export with embedded images) rather than a genuinely
+// big import. Catching it here avoids uploading it only to fail at parse
+// time, and keeps a serverless function from holding a large body in memory.
+const MAX_IMPORT_BYTES = 1024 * 1024
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 interface ImportResult {
   imported: number
   skippedCount: number
@@ -18,8 +31,31 @@ export default function LeadImportModal({ onClose, onImported }: { onClose: () =
   const [error, setError] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
 
+  function chooseFile(picked: File | null) {
+    setError('')
+    if (!picked) {
+      setFile(null)
+      return
+    }
+    if (picked.size > MAX_IMPORT_BYTES) {
+      setError(
+        `That file is ${formatSize(picked.size)}. The limit is 1 MB — split it into smaller files, or save as .csv, which is far smaller than .xlsx for the same rows.`
+      )
+      setFile(null)
+      return
+    }
+    setFile(picked)
+  }
+
   async function upload() {
     if (!file) return
+    // Re-checked at the point of sending as well: the file could have been
+    // set before this guard existed in a stale tab, and the server enforces
+    // it independently anyway.
+    if (file.size > MAX_IMPORT_BYTES) {
+      setError('That file is over the 1 MB limit.')
+      return
+    }
     setUploading(true)
     setError('')
     try {
@@ -66,13 +102,16 @@ export default function LeadImportModal({ onClose, onImported }: { onClose: () =
             >
               <Upload size={24} className="text-muted2" />
               <p className="text-sm text-fg">{file ? file.name : 'Click to choose a file'}</p>
-              <p className="text-xs text-muted">.xlsx, .xls or .csv</p>
+              <p className="text-xs text-muted">
+                .xlsx, .xls or .csv · up to 1 MB
+                {file ? ` · ${formatSize(file.size)}` : ''}
+              </p>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={(e) => chooseFile(e.target.files?.[0] || null)}
               />
             </div>
 
