@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Snowflake } from 'lucide-react'
+import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Phone, Snowflake } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
@@ -17,13 +17,15 @@ import NextActionTab from './tabs/NextActionTab'
 import HistoryTab from './tabs/HistoryTab'
 import WhatsAppTab from './tabs/WhatsAppTab'
 import BookingsTab from './tabs/BookingsTab'
+import CallLogTab from './tabs/CallLogTab'
 import TagEditor from './TagEditor'
 
-type TabKey = 'info' | 'whatsapp' | 'bookings' | 'nextaction' | 'history'
+type TabKey = 'info' | 'whatsapp' | 'calls' | 'bookings' | 'nextaction' | 'history'
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'info', label: 'Info', icon: ClipboardList },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { key: 'calls', label: 'Call Log', icon: Phone },
   { key: 'bookings', label: 'Bookings', icon: MapPin },
   { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
   { key: 'history', label: 'History', icon: History },
@@ -196,6 +198,7 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
                   onLeadChanged={load}
                 />
               )}
+              {tab === 'calls' && <CallLogTab leadId={lead.id} />}
               {tab === 'bookings' && <BookingsTab leadId={lead.id} />}
               {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
               {tab === 'history' && <HistoryTab leadId={lead.id} />}
