@@ -2,6 +2,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, MessageCircle } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -138,10 +139,48 @@ const TD = 'truncate border-r border-border px-4 py-3 last:border-r-0'
 function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }) {
   const { stageLabel, stageColor, stagesFor } = useStages()
   const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [pendingCold, setPendingCold] = useState<{ key: string; label: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   const stages = stagesFor(lead.client_id)
+
+  // The menu is rendered into document.body rather than next to the pill.
+  // The leads table sits in an overflow-x-auto wrapper so it can scroll
+  // sideways, and any absolutely-positioned child of a scroll container is
+  // clipped at its edge — which is why the dropdown appeared cut off or
+  // invisible on the rightmost columns and lower rows.
+  //
+  // A portal escapes that, at the cost of having to position it by hand from
+  // the button's own rectangle.
+  function openMenu() {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const menuHeight = Math.min(stages.length * 38 + 8, 320)
+    // Flip above the pill when there isn't room below, so a row near the
+    // bottom of the window doesn't open a menu off-screen.
+    const below = window.innerHeight - rect.bottom
+    const top = below < menuHeight ? rect.top - menuHeight - 4 : rect.bottom + 4
+    setMenuPos({ top, left: rect.left })
+    setOpen(true)
+  }
+
+  // Position is captured once on open, so scrolling or resizing would leave
+  // the menu floating where the pill used to be. Closing is simpler and less
+  // surprising than chasing it.
+  useEffect(() => {
+    if (!open) return
+    function close() {
+      setOpen(false)
+    }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
 
   async function apply(next: string, coldReason?: ColdReasonValue) {
     setSaving(true)
@@ -165,23 +204,25 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
     }
   }
 
-  function pick(s: { key: string; label: string; status_group: string; is_cold_lane: boolean }) {
+  function pick(st: { key: string; label: string; status_group: string; is_cold_lane: boolean }) {
     setOpen(false)
-    if (s.key === lead.pipeline_stage) return
-    // Same rule as everywhere else: a move into a cold stage asks why
-    // first, so the cold breakdown on the Activity page stays meaningful.
-    if (s.status_group === 'cold' || s.is_cold_lane) setPendingCold({ key: s.key, label: s.label })
-    else apply(s.key)
+    if (st.key === lead.pipeline_stage) return
+    // Same rule as everywhere else: a move into a cold stage asks why first,
+    // so the cold breakdown on the Activity page stays meaningful.
+    if (st.status_group === 'cold' || st.is_cold_lane) setPendingCold({ key: st.key, label: st.label })
+    else apply(st.key)
   }
 
   return (
-    <span className="relative inline-block">
+    <>
       <button
+        ref={buttonRef}
         onClick={(e) => {
           // The row itself opens the lead — without this, changing a stage
-          // would also slide the lead panel open over the top.
+          // would also slide the lead panel open behind the menu.
           e.stopPropagation()
-          setOpen((o) => !o)
+          if (open) setOpen(false)
+          else openMenu()
         }}
         disabled={saving}
         className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-900 disabled:opacity-60"
@@ -191,26 +232,29 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
         <ChevronDown size={12} />
       </button>
 
-      {open && (
-        <>
-          <span className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setOpen(false) }} />
-          <span className="absolute left-0 z-30 mt-1 block w-52 rounded-card border border-border bg-card2 p-1 shadow-xl">
-            {stages.map((st) => (
-              <button
-                key={st.key}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  pick(st)
-                }}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card"
-              >
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: st.color }} />
-                {st.label}
-              </button>
-            ))}
-          </span>
-        </>
-      )}
+      {open &&
+        menuPos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
+            <div
+              className="fixed z-[71] max-h-80 w-52 overflow-y-auto rounded-card border border-border bg-card2 p-1 shadow-xl"
+              style={{ top: menuPos.top, left: menuPos.left }}
+            >
+              {stages.map((st) => (
+                <button
+                  key={st.key}
+                  onClick={() => pick(st)}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card"
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: st.color }} />
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body
+        )}
 
       {pendingCold && (
         <ColdReasonModal
@@ -224,7 +268,7 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
           }}
         />
       )}
-    </span>
+    </>
   )
 }
 
