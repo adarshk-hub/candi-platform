@@ -49,25 +49,38 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // client, so there's no one institute's preference to apply — default
   // to showing the tabs for them. A client-scoped user gets their own
   // institute's Settings > Customize > Display Preferences choice.
+  // Every query in this layout is wrapped, because the layout wraps every
+  // page: an exception thrown here doesn't degrade one panel, it replaces
+  // the whole app with "Application error: a server-side exception has
+  // occurred". A dropped connection, a pooler restart, or a cold start that
+  // times out is transient by nature — the right response is to render the
+  // app with defaults, not to take it down until the person hits reload.
+  //
+  // These three values are cosmetic (which tabs show, the institute's name,
+  // which sidebar links appear). None is worth failing a page load over.
   let showLeadStatusTabs = true
   let institutionName: string | null = null
-  if (session?.clientId) {
-    const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
-      'SELECT show_lead_status_tabs, name FROM clients WHERE id = $1',
-      [session.clientId]
-    )
-    if (rows[0]) {
-      showLeadStatusTabs = rows[0].show_lead_status_tabs
-      institutionName = rows[0].name
+  try {
+    if (session?.clientId) {
+      const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
+        'SELECT show_lead_status_tabs, name FROM clients WHERE id = $1',
+        [session.clientId]
+      )
+      if (rows[0]) {
+        showLeadStatusTabs = rows[0].show_lead_status_tabs
+        institutionName = rows[0].name
+      }
+    } else if (session) {
+      const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
+        'SELECT show_lead_status_tabs, name FROM clients'
+      )
+      if (rows.length === 1) {
+        showLeadStatusTabs = rows[0].show_lead_status_tabs
+        institutionName = rows[0].name
+      }
     }
-  } else if (session) {
-    const rows = await query<{ show_lead_status_tabs: boolean; name: string }>(
-      'SELECT show_lead_status_tabs, name FROM clients'
-    )
-    if (rows.length === 1) {
-      showLeadStatusTabs = rows[0].show_lead_status_tabs
-      institutionName = rows[0].name
-    }
+  } catch (err) {
+    console.error('[layout] could not load client display settings:', err)
   }
 
   // Read fresh from the users row rather than from the JWT: a login is
@@ -81,9 +94,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         [session.id]
       )
       allowedPages = rows[0]?.allowed_pages ?? null
-    } catch {
-      // Column missing (scripts/phase2-migration.sql not run yet) — treat
-      // as "no restrictions", which is exactly how the app behaved before.
+    } catch (err) {
+      // Column missing (scripts/phase2-migration.sql not run yet), or a
+      // transient connection failure. Either way, "no restrictions" is the
+      // behaviour the app had before this feature existed — and the real
+      // enforcement lives in each page and API route, so falling back here
+      // shows a fuller sidebar rather than opening anything up.
+      console.error('[layout] could not load module access:', err)
       allowedPages = null
     }
   }
