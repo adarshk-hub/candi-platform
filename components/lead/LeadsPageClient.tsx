@@ -475,8 +475,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
               <LayoutGrid size={14} /> Kanban
             </button>
           </div>
-          {view === 'list' && (
-            <div className="relative">
+          <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 value={search}
@@ -485,15 +484,18 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                 className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
               />
             </div>
-          )}
-          {view === 'list' && <LeadListFilters value={filters} onChange={setFilters} />}
-          {view === 'list' && (
-            <button onClick={() => setImporting(true)} className={TOOLBAR_BTN}>
-              <Upload size={16} /> Import
-            </button>
-          )}
-          {view === 'list' && (
-            <div className="relative" ref={exportMenuRef}>
+          {/* One filter control for both views — the board reads the same
+              stage/source/grade filters, so switching between List and
+              Kanban keeps whatever you had narrowed down. */}
+          <LeadListFilters value={filters} onChange={setFilters} />
+          {/* Import and Export are view-agnostic — they act on the leads
+              behind the screen, not on what the screen is drawing — so
+              hiding them on the board only meant switching to List and back
+              to do something the board had no opinion about. */}
+          <button onClick={() => setImporting(true)} className={TOOLBAR_BTN}>
+            <Upload size={16} /> Import
+          </button>
+          <div className="relative" ref={exportMenuRef}>
               <button onClick={() => setExportOpen((o) => !o)} className={TOOLBAR_BTN}>
                 <Download size={16} /> Export
                 <ChevronDown size={14} />
@@ -517,8 +519,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                   </button>
                 </div>
               )}
-            </div>
-          )}
+          </div>
           <button
             onClick={() => setAddingLead(true)}
             className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
@@ -530,7 +531,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
       </div>
 
       {view === 'kanban' ? (
-        <KanbanBoard />
+        <KanbanBoard search={search} filters={filters} />
       ) : (
         <>
           <div className="mb-3 flex items-center justify-between text-sm text-muted2">
