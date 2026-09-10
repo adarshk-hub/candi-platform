@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Check, MessageCircle, UserPlus } from 'lucide-react'
+import { Bell, Check, MessageCircle, UserPlus, Volume2, VolumeX } from 'lucide-react'
 import { clsx } from 'clsx'
 import { elapsedLabel } from '@/lib/format'
 import {
@@ -12,6 +12,12 @@ import {
   useNotifications,
   type NotificationItem,
 } from '@/lib/useNotifications'
+import {
+  isSoundEnabled,
+  playNotificationSound,
+  primeSound,
+  setSoundEnabled,
+} from '@/lib/notificationSound'
 
 function Row({
   item,
@@ -67,6 +73,34 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const { items, total } = useNotifications({ poll: true })
+  const [soundOn, setSoundOn] = useState(true)
+  // Compared against the live count to spot arrivals. Starts undefined so
+  // the first poll after a page load doesn't chime for a backlog that was
+  // already there before you opened the tab.
+  const previousTotal = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    setSoundOn(isSoundEnabled())
+
+    // Audio is blocked until the user interacts with the page, so the first
+    // click anywhere is used to unlock it. once:true — after that the
+    // context stays running for the life of the tab.
+    const unlock = () => primeSound()
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
+  useEffect(() => {
+    const before = previousTotal.current
+    previousTotal.current = total
+    // Only a rise counts. Dismissing notifications lowers the number, and
+    // chiming on the way down would make clearing the list noisy.
+    if (before !== undefined && total > before) playNotificationSound()
+  }, [total])
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -117,11 +151,30 @@ export default function NotificationBell() {
         <div className="absolute right-0 top-full z-40 mt-2 w-80 rounded-card border border-border bg-card shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <p className="text-sm font-semibold text-fg">Notifications</p>
-            {total > 0 && (
-              <button onClick={clearAll} className="text-xs text-muted2 hover:text-fg">
-                Mark all read
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  const next = !soundOn
+                  setSoundOn(next)
+                  setSoundEnabled(next)
+                  // Play on switching on, so it's obvious what was just
+                  // turned on and how loud it is.
+                  if (next) {
+                    primeSound()
+                    playNotificationSound()
+                  }
+                }}
+                title={soundOn ? 'Sound on — click to mute' : 'Muted — click to turn sound on'}
+                className="text-muted2 hover:text-fg"
+              >
+                {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
               </button>
-            )}
+              {total > 0 && (
+                <button onClick={clearAll} className="text-xs text-muted2 hover:text-fg">
+                  Mark all read
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-96 overflow-y-auto p-1">
