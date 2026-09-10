@@ -10,7 +10,6 @@ import { useStages } from '@/lib/StagesContext'
 import StagePill from './StagePill'
 import StageMessagePrompt from './StageMessagePrompt'
 import { ColdReasonValue } from './ColdReasonModal'
-import WelcomePrompt from './WelcomePrompt'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
 import InfoTab from './tabs/InfoTab'
@@ -99,9 +98,6 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
               />
             )}
 
-            {lead.welcome_message_status === 'pending' && (
-              <WelcomePrompt leadId={lead.id} leadName={lead.full_name} onAnswered={load} />
-            )}
 
             <div className="border-b border-border p-6">
               <div className="flex items-start justify-between">
