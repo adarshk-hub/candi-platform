@@ -235,16 +235,32 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
       {open &&
         menuPos &&
         createPortal(
+          // React events bubble through the component tree, not the DOM
+          // tree — so a click inside this menu still reaches the <tr>'s
+          // onClick and opens the lead panel, even though the menu is
+          // rendered into document.body. Both the backdrop and the menu
+          // stop propagation for that reason; moving the markup out of the
+          // row was not enough on its own.
           <>
-            <div className="fixed inset-0 z-[70]" onClick={() => setOpen(false)} />
+            <div
+              className="fixed inset-0 z-[70]"
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+              }}
+            />
             <div
               className="fixed z-[71] max-h-80 w-52 overflow-y-auto rounded-card border border-border bg-card2 p-1 shadow-xl"
               style={{ top: menuPos.top, left: menuPos.left }}
+              onClick={(e) => e.stopPropagation()}
             >
               {stages.map((st) => (
                 <button
                   key={st.key}
-                  onClick={() => pick(st)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    pick(st)
+                  }}
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card"
                 >
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: st.color }} />
@@ -256,7 +272,10 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
           document.body
         )}
 
+      {/* Same reason: the reason modal is a child of this cell, so clicks
+          inside it would otherwise open the lead behind it. */}
       {pendingCold && (
+        <div onClick={(e) => e.stopPropagation()}>
         <ColdReasonModal
           clientId={lead.client_id}
           stageLabel={pendingCold.label}
@@ -267,6 +286,7 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
             apply(target, value)
           }}
         />
+        </div>
       )}
     </>
   )
