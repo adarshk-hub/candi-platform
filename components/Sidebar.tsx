@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Radio,
   PhoneCall,
   BarChart3,
@@ -51,12 +52,18 @@ function NavItem({
   label,
   active,
   collapsed,
+  onClick,
+  trailing,
 }: {
   href: string
   icon: any
   label: string
   active: boolean
   collapsed: boolean
+  // Lets a row do something in addition to navigating — used by All Leads
+  // to open and close its own sub-list.
+  onClick?: () => void
+  trailing?: React.ReactNode
 }) {
   return (
     <Link
@@ -72,6 +79,7 @@ function NavItem({
       // contention, not just wasted work — turning it off means the
       // sidebar only ever fetches the one page actually being viewed.
       prefetch={false}
+      onClick={onClick}
       className={clsx(
         'flex items-center gap-3 rounded-md border-l-2 py-2 text-sm transition-colors',
         collapsed ? 'justify-center border-l-0 px-0' : 'px-3',
@@ -81,7 +89,8 @@ function NavItem({
       )}
     >
       <Icon size={18} />
-      {!collapsed && label}
+      {!collapsed && <span className="flex-1">{label}</span>}
+      {!collapsed && trailing}
     </Link>
   )
 }
@@ -126,6 +135,11 @@ export default function Sidebar({
   }
 
   const leadsActive = pathname.startsWith('/leads')
+
+  // Open by default when you're already on a leads page, so arriving there
+  // from elsewhere still shows the sub-tabs — but from then on it's yours to
+  // open and close, and it stays how you left it while you move around.
+  const [leadsOpen, setLeadsOpen] = useState(leadsActive)
 
   // One helper for every nav item, so a page can never be added to the
   // sidebar without also being added to the permission list.
@@ -202,8 +216,26 @@ export default function Sidebar({
 
         {can('leads') && (
           <div>
-            <NavItem href="/leads" icon={Users} label="All Leads" active={leadsActive && !tab} collapsed={collapsed} />
-            {leadsActive && !collapsed && showLeadStatusTabs && (
+            <NavItem
+              href="/leads"
+              icon={Users}
+              label="All Leads"
+              active={leadsActive && !tab}
+              collapsed={collapsed}
+              // Clicking still navigates to All Leads; the toggle rides
+              // along with it rather than replacing it, so the row does the
+              // obvious thing as well as opening the list.
+              onClick={() => setLeadsOpen((o) => !o)}
+              trailing={
+                showLeadStatusTabs ? (
+                  <ChevronDown
+                    size={14}
+                    className={clsx('transition-transform', !leadsOpen && '-rotate-90')}
+                  />
+                ) : null
+              }
+            />
+            {leadsOpen && !collapsed && showLeadStatusTabs && (
               <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
                 <NavItem href="/leads?tab=warm" icon={ThermometerSun} label="Warm" active={tab === 'warm'} collapsed={false} />
                 <NavItem href="/leads?tab=hot" icon={Flame} label="Hot" active={tab === 'hot'} collapsed={false} />
