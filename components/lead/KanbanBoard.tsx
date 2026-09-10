@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { tierFromScore, TIER_COLOR } from '@/lib/leadScore'
 import { useStages, StageRow } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
@@ -332,6 +333,31 @@ export default function KanbanBoard() {
               </div>
             )
           })}
+        </div>
+
+        {/* Sit below the columns rather than floating over them: an overlay
+            arrow covers the edge card, which is exactly the card you are
+            scrolling to reach. */}
+        {(canScrollLeft || canScrollRight) && (
+          <div className="mt-1 flex items-center justify-end gap-2">
+            <button
+              onClick={() => scrollBy(-1)}
+              disabled={!canScrollLeft}
+              aria-label="Scroll stages left"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted2 hover:text-fg disabled:opacity-30"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={() => scrollBy(1)}
+              disabled={!canScrollRight}
+              aria-label="Scroll stages right"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted2 hover:text-fg disabled:opacity-30"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
         </div>
       )}
 
