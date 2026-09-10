@@ -23,7 +23,6 @@ const MODES: { key: Mode; title: string; blurb: string }[] = [
 
 export default function LeadAssignmentPanel({ clientId }: { clientId: string }) {
   const [mode, setMode] = useState<Mode>('manual')
-  const [waWelcomeConfirm, setWaWelcomeConfirm] = useState(true)
   const [counsellorCount, setCounsellorCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -40,7 +39,6 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
       .then(([data, people]) => {
         if (data) {
           setMode(data.mode === 'round_robin' ? 'round_robin' : 'manual')
-          setWaWelcomeConfirm(data.waWelcomeConfirm !== false)
           setMigrationNeeded(!!data.migrationNeeded)
         }
         setCounsellorCount(Array.isArray(people) ? people.length : 0)
@@ -57,7 +55,7 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
       const res = await fetch('/api/lead-automation', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, mode, waWelcomeConfirm }),
+        body: JSON.stringify({ clientId, mode }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -79,28 +77,6 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
           This database is missing the assignment columns. Run scripts/phase2-migration.sql against it, then reload.
         </p>
       )}
-
-      <div className="rounded-card border border-border bg-card p-5">
-        <h2 className="text-lg font-bold text-fg">Automatic WhatsApp</h2>
-        <p className="mt-1 text-sm text-muted2">
-          Whether the welcome message goes out the moment a lead arrives, or waits for someone to say yes.
-        </p>
-        <label className="mt-4 flex items-start gap-3 text-sm text-fg">
-          <input
-            type="checkbox"
-            checked={waWelcomeConfirm}
-            onChange={(e) => setWaWelcomeConfirm(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-border"
-          />
-          <span>
-            Ask before sending
-            <span className="mt-0.5 block text-xs text-muted2">
-              A “Send the welcome message?” prompt appears on top of the lead. Nothing is sent until someone
-              answers it. Turn this off to go back to sending immediately.
-            </span>
-          </span>
-        </label>
-      </div>
 
       <div className="rounded-card border border-border bg-card p-5">
         <h2 className="text-lg font-bold text-fg">Lead assignment</h2>
