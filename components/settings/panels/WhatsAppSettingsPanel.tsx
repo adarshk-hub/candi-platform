@@ -76,6 +76,8 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
 
   // Which stage each step is limited to: day_number -> stage key ('' = any)
   const [stageByDay, setStageByDay] = useState<Record<number, string>>({})
+  // day_number -> whether this step asks before sending
+  const [confirmByDay, setConfirmByDay] = useState<Record<number, boolean>>({})
   const { stagesFor } = useStages()
 
   // Sequence-step template assignment state: day_number -> template_name
@@ -114,10 +116,23 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
     setAssignmentsLoading(true)
     fetch(`/api/clients/${clientId}/whatsapp-sequence-templates`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows: { day_number: number; template_name: string; stage_key?: string | null }[]) => {
+      .then(
+        (
+          rows: {
+            day_number: number
+            template_name: string
+            stage_key?: string | null
+            require_confirmation?: boolean
+          }[]
+        ) => {
         const stageMap: Record<number, string> = {}
-        for (const row of rows || []) stageMap[row.day_number] = row.stage_key || ''
+        const confirmMap: Record<number, boolean> = {}
+        for (const row of rows || []) {
+          stageMap[row.day_number] = row.stage_key || ''
+          confirmMap[row.day_number] = !!row.require_confirmation
+        }
         setStageByDay(stageMap)
+        setConfirmByDay(confirmMap)
         const map: Record<number, string> = {}
         for (const row of rows || []) map[row.day_number] = row.template_name
         setAssignments(map)
@@ -392,7 +407,12 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
   // stageOverride is passed when the stage dropdown is what changed — the
   // template is re-sent unchanged in that case, because the API stores both
   // on one row and a partial write would blank the other.
-  async function assignTemplate(dayNumber: number, templateName: string, stageOverride?: string) {
+  async function assignTemplate(
+    dayNumber: number,
+    templateName: string,
+    stageOverride?: string,
+    confirmOverride?: boolean
+  ) {
     if (!templateName) return
     setSavingDay(dayNumber)
     setError('')
@@ -410,6 +430,8 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
           templateName,
           languageCode: 'en',
           stageKey: stageOverride !== undefined ? stageOverride : stageByDay[dayNumber] || '',
+          requireConfirmation:
+            confirmOverride !== undefined ? confirmOverride : !!confirmByDay[dayNumber],
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -598,8 +620,9 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
         <div className="mt-5 border-t border-border pt-4">
           <h3 className="mb-1 text-sm font-semibold text-fg">Assign Templates to Sequence Steps</h3>
           <p className="mb-3 text-xs text-muted2">
-            Pick which approved template fires on each day of the nurture sequence, and optionally limit a step
-            to one stage. Only templates Meta has approved for this client show up as options — submit and wait
+            Pick which approved template fires on each step, and optionally limit a step to one stage. Tick
+            "Ask first" to be prompted before that message goes out on a stage change; leave it unticked and it
+            sends on its own. Only templates Meta has approved for this client show up as options — submit and wait
             for approval first if a step shows "No approved templates yet."
           </p>
           {assignmentsLoading ? (
@@ -656,6 +679,37 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                             </option>
                           ))}
                         </select>
+                      )}
+
+                      {/* Step 1 is the welcome message. It fires when the
+                          lead is created, not on a stage change, and has its
+                          own ask-first setting under Lead Assignment — a
+                          second switch here would be two controls over one
+                          message with no way to tell which won. */}
+                      {i === 0 ? (
+                        <span className="w-32 shrink-0 text-[11px] text-muted">Sends automatically</span>
+                      ) : (
+                        <label
+                          className="flex w-32 shrink-0 items-center gap-1.5 text-[11px] text-muted2"
+                          title={
+                            current
+                              ? 'Ask before this message is sent on a stage change'
+                              : 'Pick a template first'
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!confirmByDay[def.day]}
+                            disabled={savingDay === def.day || !current}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                              setConfirmByDay((prev) => ({ ...prev, [def.day]: next }))
+                              if (current) assignTemplate(def.day, current, undefined, next)
+                            }}
+                            className="h-3.5 w-3.5 rounded border-border disabled:opacity-50"
+                          />
+                          Ask first
+                        </label>
                       )}
 
                       {savingDay === def.day && <RefreshCw size={12} className="shrink-0 animate-spin text-muted" />}
