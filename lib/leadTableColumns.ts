@@ -1,3 +1,4 @@
+
 // path: lib/leadTableColumns.ts
 // The catalogue of columns the leads table can show, and which are on by
 // default. Shared by the settings picker and the table itself so the two
@@ -16,6 +17,7 @@ export type LeadColumnKey =
   | 'score'
   | 'created'
   | 'counsellor'
+  | 'next_action'
 
 export interface LeadColumnDef {
   key: LeadColumnKey
@@ -41,6 +43,12 @@ export const LEAD_COLUMNS: LeadColumnDef[] = [
   { key: 'score', label: 'Score', width: 110, hint: 'Lead score out of 10' },
   { key: 'created', label: 'Created', width: 150, hint: 'Full created date and time' },
   { key: 'counsellor', label: 'Counsellor', width: 170 },
+  {
+    key: 'next_action',
+    label: 'Next Action',
+    width: 240,
+    hint: 'What is planned next, and when it is due',
+  },
 ]
 
 // Exactly the columns the table showed before this setting existed, so an
