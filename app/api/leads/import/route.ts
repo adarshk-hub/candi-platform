@@ -1,3 +1,4 @@
+// path: app/api/leads/import/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
@@ -5,7 +6,12 @@ import { normalizePhone } from '@/lib/leadIntake'
 import { SOURCE_LABEL } from '@/lib/types'
 import { parseLeadsImportFile, IMPORT_MISSING_REQUIRED_MESSAGE } from '@/lib/leadImportExport'
 
-const MAX_BYTES = 10 * 1024 * 1024 // 10MB is comfortably more than any real lead sheet
+// 1 MB, matching the limit shown in the import dialog. A leads
+// spreadsheet is text — this is several thousand rows — so a larger file is
+// almost always the wrong file rather than a genuinely big import, and
+// letting one through means a serverless function holding it in memory
+// while it parses.
+const MAX_BYTES = 1024 * 1024
 const MAX_ROWS = 10000
 
 const VALID_TIMELINES = new Set(['this_year', 'next_year', 'exploring'])
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 })
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: 'File is too large (10MB max).' }, { status: 400 })
+    return NextResponse.json({ error: 'File is too large — the limit is 1 MB.' }, { status: 400 })
   }
 
   const clientId = AGENCY_ROLES.includes(session.role) ? String(form?.get('clientId') || '') : session.clientId
