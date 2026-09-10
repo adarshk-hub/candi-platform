@@ -15,6 +15,7 @@ import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import KanbanBoard from '@/components/lead/KanbanBoard'
 import ColdReasonModal, { ColdReasonValue } from '@/components/lead/ColdReasonModal'
+import StageMessagePrompt from '@/components/lead/StageMessagePrompt'
 import AddLeadModal from '@/components/lead/AddLeadModal'
 import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
 import LeadImportModal from '@/components/lead/LeadImportModal'
@@ -142,6 +143,10 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [pendingCold, setPendingCold] = useState<{ key: string; label: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // Set after a successful change so the WhatsApp prompt can check whether
+  // the new stage has a template attached. Same component the lead panel
+  // uses, so the question is identical wherever the stage was changed.
+  const [sentStage, setSentStage] = useState<string | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
   const stages = stagesFor(lead.client_id)
@@ -194,8 +199,10 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
           cold_reason_note: coldReason?.note,
         }),
       })
-      if (res.ok) onChanged()
-      else {
+      if (res.ok) {
+        setSentStage(next)
+        onChanged()
+      } else {
         const b = await res.json().catch(() => ({}))
         alert(b.error || 'Could not change the stage.')
       }
@@ -274,6 +281,19 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
 
       {/* Same reason: the reason modal is a child of this cell, so clicks
           inside it would otherwise open the lead behind it. */}
+      {sentStage && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <StageMessagePrompt
+            leadId={lead.id}
+            clientId={lead.client_id}
+            leadName={lead.full_name}
+            stageKey={sentStage}
+            stageLabel={stageLabel(sentStage, lead.client_id)}
+            onDone={() => setSentStage(null)}
+          />
+        </div>
+      )}
+
       {pendingCold && (
         <div onClick={(e) => e.stopPropagation()}>
         <ColdReasonModal
