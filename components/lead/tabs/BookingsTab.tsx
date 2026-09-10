@@ -59,7 +59,6 @@ function CallBookings({ leadId }: { leadId: string }) {
   const [calls, setCalls] = useState<CallBooking[]>([])
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
-  const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -83,7 +82,7 @@ function CallBookings({ leadId }: { leadId: string }) {
       const res = await fetch(`/api/leads/${leadId}/calls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventDate: date, eventTime: time || null, notes }),
+        body: JSON.stringify({ eventDate: date, eventTime: time || null }),
       })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -92,7 +91,6 @@ function CallBookings({ leadId }: { leadId: string }) {
       }
       setDate('')
       setTime('')
-      setNotes('')
       load()
     } finally {
       setSaving(false)
@@ -131,18 +129,6 @@ function CallBookings({ leadId }: { leadId: string }) {
               className="rounded-md border border-border bg-card px-3 py-2 text-sm text-fg outline-none focus:border-green-500"
             />
           </div>
-          {/* What the call is for. Without it a list of booked calls is just
-              a column of dates, and whoever picks the lead up next has no
-              idea what was promised. */}
-          <div className="min-w-[12rem] flex-1">
-            <label className="mb-1 block text-xs text-muted">Description</label>
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Discuss fee structure with father"
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-fg outline-none focus:border-green-500"
-            />
-          </div>
           <button
             onClick={book}
             disabled={saving}
@@ -167,7 +153,6 @@ function CallBookings({ leadId }: { leadId: string }) {
                 })}
                 {c.event_time ? ` at ${c.event_time.slice(0, 5)}` : ''}
               </p>
-              {c.notes && <p className="mt-0.5 text-sm text-muted2">{c.notes}</p>}
             </div>
             <span className={clsx('rounded-md px-2 py-0.5 text-xs', STATUS_PILL[c.status])}>
               {c.status.replace('_', ' ')}
