@@ -133,14 +133,6 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
                     <p className="text-xs text-muted">Email</p>
                     <p className="text-fg">{lead.email || '—'}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted">Calls</p>
-                    <p className="text-fg">
-                      {lead.first_called_at
-                        ? `${lead.call_attempt_count || 1} · last ${formatDateTime(lead.last_called_at || lead.first_called_at)}`
-                        : 'Never called'}
-                    </p>
-                  </div>
                 </div>
                 <div className="space-y-3 text-right">
                   <div className="flex items-center justify-end gap-2">
