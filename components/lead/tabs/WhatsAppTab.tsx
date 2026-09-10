@@ -4,7 +4,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Check, CheckCheck, Clock, AlertCircle, Link as LinkIcon, Lock } from 'lucide-react'
-import { NURTURE_STEPS } from '@/lib/nurtureSteps'
 
 interface WhatsAppMessage {
   id: string
@@ -266,8 +265,6 @@ export default function WhatsAppTab({
 
 
 
-  const currentIdx = nurtureDay === null ? -1 : NURTURE_STEPS.findIndex((s) => s.day === nurtureDay)
-  const isComplete = currentIdx === NURTURE_STEPS.length - 1
 
   // Derived, not fetched separately — same last-inbound-message logic the
   // server uses to enforce this (lib/waWindow.ts), computed here purely for
@@ -277,35 +274,11 @@ export default function WhatsAppTab({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-3 flex items-center justify-between rounded-card border border-border bg-card2 px-4 py-3">
-        <div className="flex items-center gap-2">
-          {NURTURE_STEPS.map((s, i) => (
-            <div key={s.day} className="flex items-center gap-2">
-              <span
-                className={clsx(
-                  'flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold',
-                  i <= currentIdx ? 'bg-blue-500 text-white' : 'bg-zinc-700 text-muted2'
-                )}
-                title={s.label}
-              >
-                {s.day}
-              </span>
-              {i < NURTURE_STEPS.length - 1 && (
-                <span className={clsx('h-0.5 w-4', i < currentIdx ? 'bg-blue-500' : 'bg-zinc-700')} />
-              )}
-            </div>
-          ))}
-          <span className="ml-2 text-xs text-muted2">
-            {nurtureDay === null ? 'Not started' : `Day ${nurtureDay}`}
-            {nurturePaused && <span className="ml-1.5 text-amber-400">· Paused</span>}
-          </span>
-        </div>
-        {/* Advance and Pause removed. Stepping the sequence by hand and
-            pausing it were two ways to override a schedule that now asks
-            before it sends anything anyway — see StageMessagePrompt — so
-            they added a second, invisible source of truth about what had
-            gone out. */}
-      </div>
+      {/* The Day 0/2/4/7/10 step dots are gone. They described a schedule
+          the counsellor no longer drives — messages now go out when a stage
+          changes and someone confirms — so the row showed a progression
+          that had little to do with what had actually been sent. The thread
+          below is the honest record. */}
 
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto rounded-card border border-border bg-bg/40 p-4">
         {loadError && (
