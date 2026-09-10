@@ -1,6 +1,8 @@
+// path: components/lead/tabs/HistoryTab.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
+import { clsx } from 'clsx'
 
 interface Activity {
   id: string
@@ -9,6 +11,20 @@ interface Activity {
   description: string | null
   actor_name: string | null
   created_at: string
+}
+
+// True when the entry was written today, in the reader's own timezone.
+// Used only to colour the timeline dot — a day's worth of activity stands
+// out from the rest of the history at a glance, which is the question
+// people actually ask of this tab ("what happened today?").
+function isToday(value: string): boolean {
+  const d = new Date(value)
+  const now = new Date()
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  )
 }
 
 export default function HistoryTab({ leadId }: { leadId: string }) {
@@ -92,7 +108,12 @@ export default function HistoryTab({ leadId }: { leadId: string }) {
       <ul className="relative mt-6 space-y-6 border-l border-border pl-6">
         {activities.map((a) => (
           <li key={a.id} className="relative">
-            <span className="absolute -left-[29px] top-1 h-2.5 w-2.5 rounded-full bg-zinc-500" />
+            <span
+              className={clsx(
+                'absolute -left-[29px] top-1 h-2.5 w-2.5 rounded-full',
+                isToday(a.created_at) ? 'bg-green-500' : 'bg-zinc-500'
+              )}
+            />
             <p className="font-bold text-fg">{a.title}</p>
             {a.description && <p className="mt-0.5 text-sm text-muted2">{a.description}</p>}
             <p className="mt-1 text-xs text-muted">
