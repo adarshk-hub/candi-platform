@@ -200,6 +200,9 @@ export default function WhatsAppTab({
   const [messages, setMessages] = useState<WhatsAppMessage[]>([])
   const [loadError, setLoadError] = useState('')
   const [text, setText] = useState('')
+  // Which composer is showing. Ignored while the 24-hour window is closed,
+  // where only templates can be sent at all.
+  const [composeMode, setComposeMode] = useState<'text' | 'template'>('text')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -294,7 +297,33 @@ export default function WhatsAppTab({
 
       {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
 
-      {windowOpen ? (
+      {/* Templates used to appear only once the 24-hour window had closed,
+          which meant the one way to send an approved message was to wait for
+          the conversation to go cold. They're now a mode you can pick at any
+          time; when the window is shut, the toggle is simply forced here. */}
+      <div className="mt-3 flex items-center gap-2">
+        {([
+          { key: 'text' as const, label: 'Message' },
+          { key: 'template' as const, label: 'Template' },
+        ]).map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setComposeMode(m.key)}
+            disabled={!windowOpen && m.key === 'text'}
+            title={!windowOpen && m.key === 'text' ? '24-hour reply window is closed' : undefined}
+            className={clsx(
+              'rounded-full px-3 py-1 text-xs font-medium',
+              (windowOpen ? composeMode : 'template') === m.key
+                ? 'bg-blue-500/20 text-blue-300'
+                : 'text-muted2 hover:text-fg disabled:opacity-40'
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {windowOpen && composeMode === 'text' ? (
         <div className="mt-3 flex items-end gap-2">
           <textarea
             value={text}
@@ -319,13 +348,15 @@ export default function WhatsAppTab({
         </div>
       ) : (
         <div className="mt-3">
-          <p className="flex items-center gap-1.5 text-xs text-amber-400">
-            <Lock size={12} />
-            {lastInbound
-              ? "24-hour reply window closed — this lead hasn't messaged in the last 24 hours."
-              : "This lead hasn't messaged in yet — free-form replies open once they do."}
-            {' '}Send a template to restart the conversation.
-          </p>
+          {!windowOpen && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-400">
+              <Lock size={12} />
+              {lastInbound
+                ? "24-hour reply window closed — this lead hasn't messaged in the last 24 hours."
+                : "This lead hasn't messaged in yet — free-form replies open once they do."}
+              {' '}Send a template to restart the conversation.
+            </p>
+          )}
           <TemplateRestartPanel leadId={leadId} leadName={leadName} onSent={load} />
         </div>
       )}
