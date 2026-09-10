@@ -9,7 +9,7 @@ import { useStages, StageRow } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { elapsedLabel } from '@/lib/format'
 import LeadSlideOver from './LeadSlideOver'
-import KanbanFilters, { KanbanFilterState } from './KanbanFilters'
+import { LeadListFilterState } from './LeadListFilters'
 import ColdReasonModal, { ColdReasonValue } from './ColdReasonModal'
 
 interface KanbanLead {
@@ -108,15 +108,27 @@ function LeadCard({
   )
 }
 
-export default function KanbanBoard() {
+// Search and filters are owned by the leads page toolbar and passed down,
+// so List and Kanban are two views of one filtered set rather than two
+// screens with separate controls that quietly disagree. The board's own
+// counsellor/program/date bar is gone for the same reason.
+export default function KanbanBoard({
+  search = '',
+  filters,
+}: {
+  search?: string
+  filters: LeadListFilterState
+}) {
   const { stagesFor } = useStages()
   const [leads, setLeads] = useState<KanbanLead[]>([])
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState<KanbanFilterState>({ counsellorId: '', program: '', clientId: '', from: '', to: '' })
   // Columns follow the Institution filter when set; otherwise fall back to
   // the primary institute's stage list (see StagesContext for why a single
   // unified column set can't represent every institute's stages at once).
-  const COLUMNS = stagesFor(filters.clientId || undefined)
+  // The board's stage columns. Previously scoped by a client picker in the
+  // board's own filter bar; that bar is gone, and the institute is already
+  // chosen in the sidebar, so the session's stages are the right set.
+  const COLUMNS = stagesFor(undefined)
   const [activeLead, setActiveLead] = useState<string | null>(null)
   const [dragLeadId, setDragLeadId] = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<string | null>(null)
@@ -137,13 +149,10 @@ export default function KanbanBoard() {
 
   function load() {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (filters.counsellorId) params.set('counsellorId', filters.counsellorId)
-    if (filters.program) params.set('program', filters.program)
-    if (filters.clientId) params.set('clientId', filters.clientId)
-    if (filters.from) params.set('from', filters.from)
-    if (filters.to) params.set('to', filters.to)
-    fetch(`/api/leads/kanban?${params.toString()}`)
+    // No filter params: the toolbar's filters are stage/source/grade, all
+    // of which are on the rows this endpoint already returns, so they are
+    // applied below rather than round-tripped.
+    fetch('/api/leads/kanban')
       .then((r) => (r.ok ? r.json() : { rows: [] }))
       .then((data) => {
         // Endpoint now returns { rows, limit, offset } instead of a bare
@@ -159,17 +168,40 @@ export default function KanbanBoard() {
       })
   }
 
-  useEffect(load, [filters])
+  useEffect(load, [])
+
+  // Filtered here rather than re-queried: the board already holds every
+  // lead it needs, and refetching on each keystroke would put a request per
+  // character against a connection pool this app has already had trouble
+  // with. Matching the same three fields the list search matches.
+  const term = search.trim().toLowerCase()
+  const visibleLeads = leads.filter((l) => {
+    if (term) {
+      const hit =
+        l.full_name?.toLowerCase().includes(term) ||
+        l.child_name?.toLowerCase().includes(term) ||
+        l.whatsapp_number?.includes(term)
+      if (!hit) return false
+    }
+    if (filters.source.length > 0 && !filters.source.includes(l.source)) return false
+    if (filters.grade.length > 0 && !filters.grade.includes(l.grade || '')) return false
+    return true
+  })
+
+  // A stage filter hides whole columns rather than emptying them: an empty
+  // column you deliberately filtered out is just noise taking up the width
+  // the remaining columns need.
+  const visibleColumns = filters.stage.length > 0 ? COLUMNS.filter((c) => filters.stage.includes(c.key)) : COLUMNS
 
   const byStage = useMemo(() => {
     const map: Record<string, KanbanLead[]> = {}
     for (const s of COLUMNS) map[s.key] = []
-    for (const l of leads) {
+    for (const l of visibleLeads) {
       if (!map[l.pipeline_stage]) map[l.pipeline_stage] = []
       map[l.pipeline_stage].push(l)
     }
     return map
-  }, [leads])
+  }, [visibleLeads])
 
   const draggingLead = dragLeadId ? leads.find((l) => l.id === dragLeadId) || null : null
 
@@ -324,8 +356,6 @@ export default function KanbanBoard() {
 
   return (
     <div>
-      <KanbanFilters value={filters} onChange={setFilters} />
-
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : (
@@ -335,7 +365,7 @@ export default function KanbanBoard() {
             onScroll={updateScrollButtons}
             className="flex select-none gap-4 overflow-x-auto pb-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
-          {COLUMNS.map((col) => {
+          {visibleColumns.map((col) => {
             const columnLeads = byStage[col.key] || []
             return (
               <div
