@@ -35,6 +35,21 @@ function monthMatrix(year: number, month: number) {
   return days
 }
 
+// Formats a Date as YYYY-MM-DD using its *local* parts.
+//
+// toISOString() was being used for this, and it converts to UTC first — so
+// in IST (+5:30) local midnight on the 23rd becomes 18:30 on the 22nd, and
+// every cell was keyed to the day before itself. Events then rendered one
+// square later than their real date, which is what made a call booked for
+// 23 Sept appear on the 24th.
+//
+// event_date comes back as a plain date string, so it is compared as text
+// and never parsed into a Date at all.
+function localKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export default function CalendarViewPage() {
   const today = new Date()
   const [viewMode, setViewMode] = useState<'month' | 'day'>('month')
@@ -88,13 +103,16 @@ export default function CalendarViewPage() {
   }
 
   const monthLabel = cursor.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-  const todayKey = today.toISOString().slice(0, 10)
-  const selectedDayKey = selectedDay.toISOString().slice(0, 10)
+  const todayKey = localKey(today)
+  const selectedDayKey = localKey(selectedDay)
   const dayLabel = selectedDay.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
   const daysVisits = useMemo(
     () =>
       events
-        .filter((e) => e.event_date.slice(0, 10) === selectedDayKey && e.event_type === 'session_booked')
+        // Calls were excluded here, so a day with three booked calls and no
+        // visits read as "nothing scheduled". Both belong on a day view of
+        // the diary.
+        .filter((e) => e.event_date.slice(0, 10) === selectedDayKey)
         .sort((a, b) => (a.event_time || '').localeCompare(b.event_time || '')),
     [events, selectedDayKey]
   )
@@ -247,7 +265,7 @@ export default function CalendarViewPage() {
       {viewMode === 'day' ? (
         <div className="overflow-hidden rounded-card border border-border bg-card">
           {daysVisits.length === 0 ? (
-            <p className="px-4 py-10 text-center text-muted">No campus visits scheduled for this day.</p>
+            <p className="px-4 py-10 text-center text-muted">Nothing scheduled for this day.</p>
           ) : (
             <ul className="divide-y divide-border">
               {daysVisits.map((v) => (
@@ -258,6 +276,16 @@ export default function CalendarViewPage() {
                   >
                     <div className="flex items-center gap-3">
                       <span className="w-16 text-sm font-semibold text-fg">{v.event_time?.slice(0, 5) || '—'}</span>
+                      <span
+                        className={clsx(
+                          'rounded-md px-2 py-0.5 text-[11px] font-medium',
+                          v.event_type === 'call_booked'
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-blue-500/20 text-blue-300'
+                        )}
+                      >
+                        {v.event_type === 'call_booked' ? 'Call' : 'Visit'}
+                      </span>
                       <span className="text-sm text-fg">{v.full_name}</span>
                       {v.counsellor_name && <span className="text-xs text-muted2">· {v.counsellor_name}</span>}
                     </div>
@@ -290,7 +318,7 @@ export default function CalendarViewPage() {
         </div>
         <div className="grid grid-cols-7">
           {days.map((d) => {
-            const key = d.toISOString().slice(0, 10)
+            const key = localKey(d)
             const inMonth = d.getMonth() === cursor.getMonth()
             const isToday = key === todayKey
             const dayEvents = eventsByDate[key] || []
@@ -313,7 +341,13 @@ export default function CalendarViewPage() {
                       onClick={() => setActiveLead(e.lead_id)}
                       className={clsx(
                         'block w-full truncate rounded px-1.5 py-0.5 text-left text-xs',
-                        e.event_type === 'call_booked' ? 'bg-blue-500/20 text-blue-300' : 'bg-green-500/20 text-green-300'
+                        // Call green, visit blue — matching the green Book
+                        // Call button and the blue Book Visit button on the
+                        // lead, so the colour means the same thing in both
+                        // places.
+                        e.event_type === 'call_booked'
+                          ? 'bg-green-500/20 text-green-300'
+                          : 'bg-blue-500/20 text-blue-300'
                       )}
                     >
                       {e.event_time?.slice(0, 5) || ''} {e.full_name}
