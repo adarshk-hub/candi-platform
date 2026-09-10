@@ -1,4 +1,3 @@
-
 // path: lib/leadTableColumns.ts
 // The catalogue of columns the leads table can show, and which are on by
 // default. Shared by the settings picker and the table itself so the two
@@ -32,7 +31,7 @@ export interface LeadColumnDef {
 
 export const LEAD_COLUMNS: LeadColumnDef[] = [
   { key: 'id', label: 'ID', width: 110, hint: 'Lead number and created date' },
-  { key: 'lead', label: 'Lead', width: 240, required: true, hint: "Parent's name" },
+  { key: 'lead', label: 'Parent Name', width: 240, required: true, hint: "Parent's name" },
   { key: 'child_name', label: 'Child', width: 160, hint: "Child's name as its own column" },
   { key: 'phone', label: 'Phone', width: 170 },
   { key: 'email', label: 'Email', width: 220 },
