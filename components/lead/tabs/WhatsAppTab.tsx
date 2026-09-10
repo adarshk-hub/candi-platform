@@ -305,7 +305,6 @@ export default function WhatsAppTab({
             before it sends anything anyway — see StageMessagePrompt — so
             they added a second, invisible source of truth about what had
             gone out. */}
-        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto rounded-card border border-border bg-bg/40 p-4">
