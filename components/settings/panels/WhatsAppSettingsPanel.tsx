@@ -600,8 +600,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
           <p className="mb-3 text-xs text-muted2">
             Pick which approved template fires on each day of the nurture sequence, and optionally limit a step
             to one stage. Only templates Meta has approved for this client show up as options — submit and wait
-            for approval first if a step shows "No approved templates yet." Days 14 and 21 have no supplied
-            template; assign one of your own once it's approved.
+            for approval first if a step shows "No approved templates yet."
           </p>
           {assignmentsLoading ? (
             <p className="text-sm text-muted">Loading…</p>
@@ -614,10 +613,30 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                 return (
                   <div key={def.day} className="rounded-md border border-border bg-card2 px-3 py-2">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="w-28 shrink-0 text-xs font-medium text-muted">
-                        Step {i + 1} · Day {def.day}
-                        <span className="block text-[11px] font-normal text-muted2">{def.label}</span>
-                      </span>
+                      <span className="w-16 shrink-0 text-xs font-medium text-muted">Step {i + 1}</span>
+
+                      {/* Stage first, template second: the stage is the
+                          condition and the template is what happens, so
+                          reading left to right gives "for this stage, send
+                          this". */}
+                      <select
+                        value={stage}
+                        onChange={(e) => {
+                          const next = e.target.value
+                          setStageByDay((prev) => ({ ...prev, [def.day]: next }))
+                          if (current) assignTemplate(def.day, current, next)
+                        }}
+                        disabled={savingDay === def.day || !current}
+                        title={current ? 'Only send this step to leads in this stage' : 'Pick a template first'}
+                        className="w-48 shrink-0 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-fg outline-none focus:border-blue-500 disabled:opacity-50"
+                      >
+                        <option value="">Any stage</option>
+                        {stagesFor(clientId).map((st) => (
+                          <option key={st.key} value={st.key}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </select>
 
                       {approvedTemplates.length === 0 ? (
                         <span className="text-xs text-muted">No approved templates yet</span>
@@ -638,28 +657,6 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                           ))}
                         </select>
                       )}
-
-                      {/* Limits the step to leads sitting in one stage. Left
-                          on "Any stage" it behaves exactly as before, which
-                          is what every existing sequence does. */}
-                      <select
-                        value={stage}
-                        onChange={(e) => {
-                          const next = e.target.value
-                          setStageByDay((prev) => ({ ...prev, [def.day]: next }))
-                          if (current) assignTemplate(def.day, current, next)
-                        }}
-                        disabled={savingDay === def.day || !current}
-                        title={current ? 'Only send this step to leads in this stage' : 'Pick a template first'}
-                        className="w-44 shrink-0 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-fg outline-none focus:border-blue-500 disabled:opacity-50"
-                      >
-                        <option value="">Any stage</option>
-                        {stagesFor(clientId).map((st) => (
-                          <option key={st.key} value={st.key}>
-                            {st.label}
-                          </option>
-                        ))}
-                      </select>
 
                       {savingDay === def.day && <RefreshCw size={12} className="shrink-0 animate-spin text-muted" />}
                     </div>
