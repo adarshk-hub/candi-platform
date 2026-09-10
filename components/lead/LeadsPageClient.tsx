@@ -13,6 +13,7 @@ import { useColumnWidths } from '@/lib/useColumnWidths'
 import ResizableTh from '@/components/ui/ResizableTh'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import KanbanBoard from '@/components/lead/KanbanBoard'
+import ColdReasonModal, { ColdReasonValue } from '@/components/lead/ColdReasonModal'
 import AddLeadModal from '@/components/lead/AddLeadModal'
 import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
 import LeadImportModal from '@/components/lead/LeadImportModal'
@@ -39,7 +40,13 @@ const COLUMN_LABELS: Record<string, string> = Object.fromEntries(
 
 // One cell renderer keyed by column, so the header list and the body can
 // never disagree about what's on screen — both walk the same array.
-function renderCell(key: LeadColumnKey, l: LeadRow, unread: number, childHasOwnColumn: boolean) {
+function renderCell(
+  key: LeadColumnKey,
+  l: LeadRow,
+  unread: number,
+  childHasOwnColumn: boolean,
+  onLeadChanged: () => void
+) {
   switch (key) {
     case 'id':
       return (
@@ -81,7 +88,7 @@ function renderCell(key: LeadColumnKey, l: LeadRow, unread: number, childHasOwnC
     case 'grade':
       return <span className="text-muted2">{l.grade || '—'}</span>
     case 'stage':
-      return <StagePillView stage={l.pipeline_stage} clientId={l.client_id} />
+      return <StageCell lead={l} onChanged={onLeadChanged} />
     case 'source':
       return <span className="text-muted2">{SOURCE_LABEL[l.source] || l.source}</span>
     case 'campaign':
@@ -100,6 +107,8 @@ function renderCell(key: LeadColumnKey, l: LeadRow, unread: number, childHasOwnC
           })}
         </span>
       )
+    case 'next_action':
+      return <NextActionCell lead={l} />
     case 'counsellor':
       return l.counsellor_name ? (
         <span
@@ -119,14 +128,123 @@ function renderCell(key: LeadColumnKey, l: LeadRow, unread: number, childHasOwnC
 const TOOLBAR_BTN = 'flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted2 hover:bg-card2 hover:text-fg'
 const TD = 'truncate border-r border-border px-4 py-3 last:border-r-0'
 
-function StagePillView({ stage, clientId }: { stage: string; clientId: string }) {
-  const { stageLabel, stageColor } = useStages()
+// Editable in place. Changing a stage was previously a two-step detour —
+// open the lead, change it, close it again — for what is the single most
+// frequent edit anyone makes on this screen.
+//
+// The whole cell is the control rather than a small chevron beside the
+// pill: the pill is already the thing people point at, and a separate hit
+// target next to it would be easy to miss on a dense row.
+function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }) {
+  const { stageLabel, stageColor, stagesFor } = useStages()
+  const [open, setOpen] = useState(false)
+  const [pendingCold, setPendingCold] = useState<{ key: string; label: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const stages = stagesFor(lead.client_id)
+
+  async function apply(next: string, coldReason?: ColdReasonValue) {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pipeline_stage: next,
+          cold_reason: coldReason?.reason,
+          cold_reason_note: coldReason?.note,
+        }),
+      })
+      if (res.ok) onChanged()
+      else {
+        const b = await res.json().catch(() => ({}))
+        alert(b.error || 'Could not change the stage.')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function pick(s: { key: string; label: string; status_group: string; is_cold_lane: boolean }) {
+    setOpen(false)
+    if (s.key === lead.pipeline_stage) return
+    // Same rule as everywhere else: a move into a cold stage asks why
+    // first, so the cold breakdown on the Activity page stays meaningful.
+    if (s.status_group === 'cold' || s.is_cold_lane) setPendingCold({ key: s.key, label: s.label })
+    else apply(s.key)
+  }
+
   return (
-    <span
-      className="inline-block rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-900"
-      style={{ backgroundColor: stageColor(stage, clientId) }}
-    >
-      {stageLabel(stage, clientId)}
+    <span className="relative inline-block">
+      <button
+        onClick={(e) => {
+          // The row itself opens the lead — without this, changing a stage
+          // would also slide the lead panel open over the top.
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+        disabled={saving}
+        className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-900 disabled:opacity-60"
+        style={{ backgroundColor: stageColor(lead.pipeline_stage, lead.client_id) }}
+      >
+        {stageLabel(lead.pipeline_stage, lead.client_id)}
+        <ChevronDown size={12} />
+      </button>
+
+      {open && (
+        <>
+          <span className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setOpen(false) }} />
+          <span className="absolute left-0 z-30 mt-1 block w-52 rounded-card border border-border bg-card2 p-1 shadow-xl">
+            {stages.map((st) => (
+              <button
+                key={st.key}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  pick(st)
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-card"
+              >
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: st.color }} />
+                {st.label}
+              </button>
+            ))}
+          </span>
+        </>
+      )}
+
+      {pendingCold && (
+        <ColdReasonModal
+          clientId={lead.client_id}
+          stageLabel={pendingCold.label}
+          onCancel={() => setPendingCold(null)}
+          onConfirm={(value) => {
+            const target = pendingCold.key
+            setPendingCold(null)
+            apply(target, value)
+          }}
+        />
+      )}
+    </span>
+  )
+}
+
+function NextActionCell({ lead }: { lead: LeadRow }) {
+  const action = (lead as any).next_action as string | null
+  const dueAt = (lead as any).next_action_at as string | null
+  const doneAt = (lead as any).next_action_done_at as string | null
+
+  if (!action) return <span className="text-amber-400">Nothing planned</span>
+  if (doneAt) return <span className="text-muted2">{action} · done</span>
+
+  const overdue = !!dueAt && new Date(dueAt) < new Date()
+  return (
+    <span className={overdue ? 'text-red-400' : 'text-muted2'}>
+      {action}
+      {dueAt && (
+        <span className="ml-1 text-xs">
+          · {new Date(dueAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+        </span>
+      )}
     </span>
   )
 }
@@ -363,7 +481,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, child name, phone..."
+                placeholder="Search"
                 className="w-64 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
               />
             </div>
@@ -516,7 +634,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                         style={{ width: widths[key] }}
                         className={clsx(TD, key === 'counsellor' && 'overflow-visible')}
                       >
-                        {renderCell(key, l, unreadByLead[l.id] || 0, showsChildColumn)}
+                        {renderCell(key, l, unreadByLead[l.id] || 0, showsChildColumn, load)}
                       </td>
                     ))}
                   </tr>
