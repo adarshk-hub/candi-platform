@@ -122,6 +122,12 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
   const leads = await query<LeadRow>(
     `SELECT l.id, l.lead_number, l.client_id, l.full_name, l.child_name, l.whatsapp_number, l.grade, l.pipeline_stage,
             l.source, l.lead_score, l.created_at, l.assigned_counsellor_id, l.email,
+            -- Fetched for the optional Next Action column. Always selected
+            -- rather than conditionally, because the column set is a display
+            -- preference read on the client — branching the SQL on it would
+            -- mean the query shape changes per institute for two small
+            -- fields already on the row.
+            l.next_action, l.next_action_at, l.next_action_done_at,
             u.full_name AS counsellor_name,
             c.display_name AS campaign_display_name
      FROM leads l
