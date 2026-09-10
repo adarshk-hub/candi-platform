@@ -1,8 +1,9 @@
+// path: components/lead/tabs/WhatsAppTab.tsx
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Check, CheckCheck, Clock, AlertCircle, Pause, Play, ChevronRight, Link as LinkIcon, Lock } from 'lucide-react'
+import { Check, CheckCheck, Clock, AlertCircle, Link as LinkIcon, Lock } from 'lucide-react'
 import { NURTURE_STEPS } from '@/lib/nurtureSteps'
 
 interface WhatsAppMessage {
@@ -201,7 +202,6 @@ export default function WhatsAppTab({
   const [loadError, setLoadError] = useState('')
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [advancing, setAdvancing] = useState(false)
   const [error, setError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -264,43 +264,7 @@ export default function WhatsAppTab({
     }
   }
 
-  async function togglePause() {
-    setError('')
-    try {
-      const res = await fetch(`/api/leads/${leadId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nurture_paused: !nurturePaused }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        setError(body.error || 'Failed to update sequence')
-        return
-      }
-      onLeadChanged()
-    } catch (err: any) {
-      setError(err?.message || 'Network error — could not reach the server')
-    }
-  }
 
-  async function advance() {
-    setAdvancing(true)
-    setError('')
-    try {
-      const res = await fetch(`/api/leads/${leadId}/whatsapp/advance`, { method: 'POST' })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        setError(body.error || 'Failed to advance sequence')
-        return
-      }
-      onLeadChanged()
-      load()
-    } catch (err: any) {
-      setError(err?.message || 'Network error — could not reach the server')
-    } finally {
-      setAdvancing(false)
-    }
-  }
 
   const currentIdx = nurtureDay === null ? -1 : NURTURE_STEPS.findIndex((s) => s.day === nurtureDay)
   const isComplete = currentIdx === NURTURE_STEPS.length - 1
@@ -336,24 +300,11 @@ export default function WhatsAppTab({
             {nurturePaused && <span className="ml-1.5 text-amber-400">· Paused</span>}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {!isComplete && (
-            <button
-              onClick={advance}
-              disabled={advancing || nurturePaused}
-              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-fg hover:bg-card disabled:opacity-40"
-              title={nurturePaused ? 'Resume the sequence to advance' : 'Send next step now'}
-            >
-              <ChevronRight size={13} /> {advancing ? 'Sending…' : 'Advance'}
-            </button>
-          )}
-          <button
-            onClick={togglePause}
-            className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-fg hover:bg-card"
-          >
-            {nurturePaused ? <Play size={13} /> : <Pause size={13} />}
-            {nurturePaused ? 'Resume' : 'Pause'}
-          </button>
+        {/* Advance and Pause removed. Stepping the sequence by hand and
+            pausing it were two ways to override a schedule that now asks
+            before it sends anything anyway — see StageMessagePrompt — so
+            they added a second, invisible source of truth about what had
+            gone out. */}
         </div>
       </div>
 
