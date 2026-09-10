@@ -2,12 +2,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Mail, Snowflake } from 'lucide-react'
+import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Snowflake } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
+import { useStages } from '@/lib/StagesContext'
 import StagePill from './StagePill'
-import LogCallButton from './LogCallButton'
+import StageMessagePrompt from './StageMessagePrompt'
 import { ColdReasonValue } from './ColdReasonModal'
 import WelcomePrompt from './WelcomePrompt'
 import ScoreAndSla from './ScoreAndSla'
@@ -16,25 +17,27 @@ import InfoTab from './tabs/InfoTab'
 import NextActionTab from './tabs/NextActionTab'
 import HistoryTab from './tabs/HistoryTab'
 import WhatsAppTab from './tabs/WhatsAppTab'
-import VisitTab from './tabs/VisitTab'
-import EmailTab from './tabs/EmailTab'
+import BookingsTab from './tabs/BookingsTab'
 import TagEditor from './TagEditor'
 
-type TabKey = 'info' | 'whatsapp' | 'email' | 'visit' | 'nextaction' | 'history'
+type TabKey = 'info' | 'whatsapp' | 'bookings' | 'nextaction' | 'history'
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'info', label: 'Info', icon: ClipboardList },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-  { key: 'email', label: 'Email', icon: Mail },
-  { key: 'visit', label: 'Visit', icon: MapPin },
+  { key: 'bookings', label: 'Bookings', icon: MapPin },
   { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
   { key: 'history', label: 'History', icon: History },
 ]
 
 export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+  const { stageLabel: stageLabelLookup } = useStages()
   const [lead, setLead] = useState<Lead | null>(null)
   const [tab, setTab] = useState<TabKey>('info')
   const [error, setError] = useState('')
+  // Set after a successful stage change so the WhatsApp prompt can look up
+  // whether that stage has a template attached.
+  const [sentStage, setSentStage] = useState<string | null>(null)
 
   function load() {
     fetch(`/api/leads/${leadId}`)
@@ -66,6 +69,8 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setError(body.error || 'Could not update the stage.')
+      } else {
+        setSentStage(next)
       }
     } finally {
       load() // reconcile with server truth whether the request succeeded or not
@@ -80,6 +85,20 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
           <div className="p-8 text-muted">Loading…</div>
         ) : (
           <>
+            {sentStage && (
+              <StageMessagePrompt
+                leadId={lead.id}
+                clientId={lead.client_id}
+                leadName={lead.full_name}
+                stageKey={sentStage}
+                stageLabel={stageLabelLookup(sentStage, lead.client_id)}
+                onDone={() => {
+                  setSentStage(null)
+                  load()
+                }}
+              />
+            )}
+
             {lead.welcome_message_status === 'pending' && (
               <WelcomePrompt leadId={lead.id} leadName={lead.full_name} onAnswered={load} />
             )}
@@ -125,7 +144,6 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
                 </div>
                 <div className="space-y-3 text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <LogCallButton leadId={lead.id} onLogged={load} />
                     <StagePill stage={lead.pipeline_stage} clientId={lead.client_id} onChange={changeStage} />
                   </div>
                   <div>
@@ -190,8 +208,7 @@ export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onC
                   onLeadChanged={load}
                 />
               )}
-              {tab === 'email' && <EmailTab lead={lead} />}
-              {tab === 'visit' && <VisitTab leadId={lead.id} />}
+              {tab === 'bookings' && <BookingsTab leadId={lead.id} />}
               {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
               {tab === 'history' && <HistoryTab leadId={lead.id} />}
             </div>
