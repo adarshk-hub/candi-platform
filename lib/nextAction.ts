@@ -109,7 +109,22 @@ export async function fetchNextActionBuckets(counsellorId?: string): Promise<Nex
   return { overdue, unplanned, dueToday }
 }
 
-export type NextActionState = 'overdue' | 'unplanned' | 'due_today' | 'upcoming' | 'done'
+// 'awaiting_plan' and 'unplanned' are both "no next action set". The
+// difference is the 24-hour grace period: a lead that arrived an hour ago is
+// simply new, while one sitting untouched since yesterday is a lapse.
+//
+// They were previously collapsed into one state on the list and excluded
+// from the summary until the grace expired, which meant the Next Actions
+// page said "no action planned" while Team Day said "all planned" about the
+// same lead. Same rule, two names, so the two screens can't contradict each
+// other again.
+export type NextActionState =
+  | 'overdue'
+  | 'unplanned'
+  | 'awaiting_plan'
+  | 'due_today'
+  | 'upcoming'
+  | 'done'
 
 export interface NextActionListRow extends NextActionRow {
   next_action_done_at: string | null
@@ -175,7 +190,9 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
     `SELECT ${SELECT_COLS}, l.next_action_done_at,
             CASE
               WHEN l.next_action_done_at IS NOT NULL THEN 'done'
-              WHEN l.next_action_at IS NULL THEN 'unplanned'
+              WHEN l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
+                THEN 'unplanned'
+              WHEN l.next_action_at IS NULL THEN 'awaiting_plan'
               WHEN l.next_action_at < now() THEN 'overdue'
               WHEN l.next_action_at::date = now()::date THEN 'due_today'
               ELSE 'upcoming'
@@ -198,7 +215,14 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
 
 // Per-counsellor counts for the admin view.
 export async function fetchNextActionSummary(): Promise<
-  { id: string; full_name: string; overdue: number; unplanned: number; dueToday: number }[]
+  {
+    id: string
+    full_name: string
+    overdue: number
+    unplanned: number
+    awaitingPlan: number
+    dueToday: number
+  }[]
 > {
   return query(
     `SELECT u.id, u.full_name,
@@ -208,6 +232,14 @@ export async function fetchNextActionSummary(): Promise<
             COUNT(*) FILTER (
               WHERE l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
             )::int AS unplanned,
+            -- Assigned recently and still within the grace period. Counted
+            -- separately so the team view can say "1 waiting to be planned"
+            -- rather than the flatly wrong "all planned".
+            COUNT(*) FILTER (
+              WHERE l.next_action_at IS NULL
+                AND l.next_action_done_at IS NULL
+                AND ${ASSIGNED_AT_SQL} >= now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
+            )::int AS "awaitingPlan",
             COUNT(*) FILTER (
               WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL
                 AND l.next_action_at >= now() AND l.next_action_at::date <= now()::date
