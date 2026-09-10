@@ -18,6 +18,32 @@ interface SourceOption {
   value: string
 }
 
+// Indian mobile numbers are 10 digits and never start 0–5. Checked before
+// the form is submitted because a wrong number is the single most costly
+// data-entry mistake here — every WhatsApp message and call afterwards goes
+// nowhere, and nobody finds out for days.
+function phoneProblem(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '')
+  // Tolerate a pasted +91 or leading 0 rather than rejecting it: people
+  // copy numbers from all sorts of places, and trimming a prefix is
+  // unambiguous.
+  const local = digits.length > 10 ? digits.slice(-10) : digits
+  if (!local) return 'Phone number is required.'
+  if (local.length !== 10) return 'Enter a 10-digit mobile number.'
+  if (!/^[6-9]/.test(local)) return 'Indian mobile numbers start with 6, 7, 8 or 9.'
+  return null
+}
+
+// Deliberately loose. Strict RFC-compliant validation rejects addresses that
+// genuinely work, and the only thing worth catching here is a typo obvious
+// enough to see — a missing @, a missing dot, a trailing space.
+function emailProblem(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null // optional
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return "That doesn't look like an email address."
+  return null
+}
+
 interface DuplicateLead {
   id: string
   lead_number: number
@@ -123,6 +149,16 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
       setError(`This number is already on lead #${duplicate.lead_number} — ${duplicate.full_name}.`)
       return
     }
+    const phoneIssue = phoneProblem(whatsappNumber)
+    if (phoneIssue) {
+      setError(phoneIssue)
+      return
+    }
+    const emailIssue = emailProblem(email)
+    if (emailIssue) {
+      setError(emailIssue)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -217,6 +253,9 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
                 )}
               />
               {checkingPhone && <p className="mt-1 text-xs text-muted">Checking…</p>}
+              {!checkingPhone && whatsappNumber.trim() && phoneProblem(whatsappNumber) && !duplicate && (
+                <p className="mt-1 text-xs text-amber-400">{phoneProblem(whatsappNumber)}</p>
+              )}
               {duplicate && (
                 <p className="mt-1 text-xs text-red-400">
                   Already on lead #{duplicate.lead_number} — {duplicate.full_name}
@@ -238,8 +277,12 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+                className={clsx(
+                  'w-full rounded-md border bg-card2 px-3 py-2 text-sm text-fg outline-none',
+                  emailProblem(email) ? 'border-amber-500 focus:border-amber-500' : 'border-border focus:border-blue-500'
+                )}
               />
+              {emailProblem(email) && <p className="mt-1 text-xs text-amber-400">{emailProblem(email)}</p>}
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">Source</label>
