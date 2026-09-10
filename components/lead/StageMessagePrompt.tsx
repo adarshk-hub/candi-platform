@@ -51,6 +51,11 @@ export default function StageMessagePrompt({
   const [checked, setChecked] = useState(false)
   const [sending, setSending] = useState(false)
   const [autoFailed, setAutoFailed] = useState(false)
+  // One input per {{n}} in the template body. The send endpoint rejects the
+  // whole request unless every one is filled — which is why stage messages
+  // were silently not going out: this filled only the first and left the
+  // rest blank.
+  const [values, setValues] = useState<string[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -94,12 +99,19 @@ export default function StageMessagePrompt({
         }
 
         setTemplate(found)
-        setNeedsPrompt(!!match.require_confirmation)
-        // "Ask first" unticked in Settings means send without a prompt. The
-        // send still happens here rather than server-side, so there is one
-        // path to a stage message whether or not it was confirmed — two
-        // paths would eventually disagree about what got sent.
-        if (!match.require_confirmation) sendTemplate(found)
+
+        // The first variable is the parent's name in every template this
+        // app ships; the rest start blank and have to be typed.
+        const initial = Array.from({ length: found.variableCount }, (_, i) => (i === 0 ? leadName : ''))
+        setValues(initial)
+
+        // A template with variables we can't fill has to be asked about even
+        // when "Ask first" is off — auto-sending it would fail validation
+        // and the message would simply never arrive.
+        const canAutoSend = initial.every((v) => v.trim())
+        setNeedsPrompt(!!match.require_confirmation || !canAutoSend)
+
+        if (!match.require_confirmation && canAutoSend) sendTemplate(found, initial)
       } catch {
         if (!cancelled) {
           setChecked(true)
@@ -116,10 +128,14 @@ export default function StageMessagePrompt({
 
   async function send() {
     if (!template) return
-    sendTemplate(template)
+    if (values.some((v) => !v.trim())) {
+      setError('Fill in every field before sending.')
+      return
+    }
+    sendTemplate(template, values)
   }
 
-  async function sendTemplate(t: WaTemplate) {
+  async function sendTemplate(t: WaTemplate, vars: string[]) {
     setSending(true)
     setError('')
     try {
@@ -128,10 +144,7 @@ export default function StageMessagePrompt({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           templateId: t.id,
-          // The first variable is the parent's name in every template this
-          // app ships; anything beyond that is left blank rather than
-          // guessed at.
-          variables: Array.from({ length: t.variableCount }, (_, i) => (i === 0 ? leadName : '')),
+          variables: vars,
         }),
       })
       const body = await res.json().catch(() => ({}))
@@ -174,7 +187,17 @@ export default function StageMessagePrompt({
         </div>
 
         <p className="mb-1 text-xs uppercase tracking-widest text-muted">{template.name}</p>
-        <p className="mb-4 rounded-md bg-card2 px-3 py-2 text-sm text-muted2">{template.bodyPreview}</p>
+        <p className="mb-3 rounded-md bg-card2 px-3 py-2 text-sm text-muted2">{template.bodyPreview}</p>
+
+        {values.map((v, i) => (
+          <input
+            key={i}
+            value={v}
+            onChange={(e) => setValues((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
+            placeholder={`Variable {{${i + 1}}}`}
+            className="mb-2 w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-green-500"
+          />
+        ))}
 
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
 
