@@ -19,7 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // scripts/phase5-migration.sql applied yet would otherwise 500 on a
   // settings page that worked fine the day before.
   const rows = await query(
-    `SELECT day_number, template_name, language_code, stage_key
+    `SELECT day_number, template_name, language_code, stage_key, require_confirmation
      FROM wa_sequence_templates WHERE client_id = $1 ORDER BY day_number`,
     [params.id]
   ).catch(async (err: any) => {
@@ -43,6 +43,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // Empty string from an unset dropdown means "every stage", stored as NULL
   // rather than as '' so the engine's IS NULL check is the only test needed.
   const stageKey = String(body.stageKey || '').trim() || null
+  // Unticked means send on stage change without asking, which is how a
+  // scheduled sequence has always behaved.
+  const requireConfirmation = body.requireConfirmation === true
 
   if (!Number.isInteger(dayNumber) || !templateName) {
     return NextResponse.json({ error: 'dayNumber and templateName are required' }, { status: 400 })
@@ -64,11 +67,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     try {
       await query(
-        `INSERT INTO wa_sequence_templates (client_id, day_number, template_name, language_code, stage_key)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO wa_sequence_templates
+           (client_id, day_number, template_name, language_code, stage_key, require_confirmation)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (client_id, day_number)
-         DO UPDATE SET template_name = $3, language_code = $4, stage_key = $5`,
-        [params.id, dayNumber, templateName, languageCode, stageKey]
+         DO UPDATE SET template_name = $3, language_code = $4, stage_key = $5, require_confirmation = $6`,
+        [params.id, dayNumber, templateName, languageCode, stageKey, requireConfirmation]
       )
     } catch (err: any) {
       if (err?.code !== '42703') throw err
