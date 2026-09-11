@@ -44,6 +44,41 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('UTILITY')
+  const [body, setBody] = useState('')
+
+  async function submitTemplate() {
+    setBusy('submit')
+    setNotice('')
+    setError('')
+    try {
+      const res = await fetch('/api/templates/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          name: name.trim(),
+          category,
+          language: 'en',
+          components: [{ type: 'BODY', text: body.trim() }],
+        }),
+      })
+      const b = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(b.error || 'Could not submit that template.')
+        return
+      }
+      setNotice(`Submitted "${name.trim()}" to Meta. Approval usually takes a few minutes.`)
+      setName('')
+      setBody('')
+      load()
+    } catch (err: any) {
+      setError(err?.message || 'Network error.')
+    } finally {
+      setBusy('')
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true)
@@ -92,21 +127,14 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
           approval usually takes minutes but can take a day.
         </p>
 
+        {/* The "submit starter templates" and "submit reminder templates"
+            buttons are gone. They generated names from the institute's name
+            — CANDID_day0_welcome — and Meta only accepts lower-case letters
+            and underscores, so every one came back rejected. A button whose
+            only outcome is a rejection is worse than no button: it looks
+            like the system is broken rather than like nothing was set up.
+            Write the templates you actually want below instead. */}
         <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => run('defaults', `/api/clients/${clientId}/whatsapp-templates/seed-defaults`)}
-            disabled={!!busy}
-            className="rounded-md border border-border bg-card2 px-4 py-2 text-sm text-fg hover:border-blue-500 disabled:opacity-50"
-          >
-            {busy === 'defaults' ? 'Submitting…' : 'Submit starter templates'}
-          </button>
-          <button
-            onClick={() => run('operational', `/api/clients/${clientId}/whatsapp-templates/seed-operational`)}
-            disabled={!!busy}
-            className="rounded-md border border-border bg-card2 px-4 py-2 text-sm text-fg hover:border-blue-500 disabled:opacity-50"
-          >
-            {busy === 'operational' ? 'Submitting…' : 'Submit reminder templates'}
-          </button>
           <button
             onClick={() => run('sync', `/api/templates/sync/${clientId}`)}
             disabled={!!busy}
@@ -123,6 +151,67 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
         <p className="mt-4 text-xs text-muted2">
           {counts.approved} approved · {counts.pending} awaiting Meta · {counts.rejected} rejected
         </p>
+      </div>
+
+      <div className="rounded-card border border-border bg-card p-5">
+        <h2 className="text-lg font-bold text-fg">New template</h2>
+        <p className="mt-1 text-sm text-muted2">
+          Meta requires the name to be lower-case letters, numbers and underscores only — it's corrected as you
+          type. Use <span className="font-mono text-fg">{'{{1}}'}</span> where the parent's name should go.
+        </p>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs text-muted">Template name</label>
+            <input
+              value={name}
+              // Corrected on the way in rather than validated on submit:
+              // the rule is Meta's, it is not negotiable, and a rejection
+              // takes minutes to come back.
+              onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+              placeholder="summer_offer_2026"
+              className="w-full rounded-md border border-border bg-card2 px-3 py-2 font-mono text-sm text-fg outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+            >
+              <option value="UTILITY">Utility — updates about something in progress</option>
+              <option value="MARKETING">Marketing — offers and promotion</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1 block text-xs text-muted">Message</label>
+          <textarea
+            value={body}
+            rows={4}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Hi {{1}}, admissions for the new session are now open..."
+            className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+          />
+          {/* Marketing templates cost roughly 7x what utility ones do
+              (₹1.09 vs ₹0.145), so the category is a pricing decision as
+              much as a compliance one. */}
+          {category === 'MARKETING' && (
+            <p className="mt-1 text-xs text-amber-500">
+              Marketing templates cost about 7× a utility one to send, and Meta rejects them more often.
+            </p>
+          )}
+        </div>
+
+        <button
+          onClick={submitTemplate}
+          disabled={!name.trim() || !body.trim() || !!busy}
+          className="mt-4 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
+        >
+          {busy === 'submit' ? 'Submitting…' : 'Submit for approval'}
+        </button>
       </div>
 
       <div className="overflow-hidden rounded-card border border-border bg-card">
