@@ -63,7 +63,20 @@ function shortDate(value: string | null): string {
 
 export default function NextActionsPage() {
   const [rows, setRows] = useState<Row[]>([])
-  const [counts, setCounts] = useState({ upcoming: 0, overdue: 0, unplanned: 0 })
+  const [counts, setCounts] = useState({
+    upcoming: 0,
+    overdue: 0,
+    unplanned: 0,
+    neverCalled: 0,
+    notCalledToday: 0,
+    unassigned: 0,
+    coldNoReason: 0,
+  })
+  // The lead-condition filters absorbed from the old Activity page.
+  const [bucket, setBucket] = useState<'' | 'never_called' | 'not_called_today' | 'unassigned' | 'cold_no_reason'>('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [assignTo, setAssignTo] = useState('')
+  const [canAssign, setCanAssign] = useState(false)
   const [counsellors, setCounsellors] = useState<CounsellorCount[]>([])
   const [counsellorId, setCounsellorId] = useState('')
   const [search, setSearch] = useState('')
@@ -91,6 +104,7 @@ export default function NextActionsPage() {
       unplanned: 'unplanned',
     }
     const params = new URLSearchParams({ view: 'list', status, states: statesFor[view] })
+    if (bucket) params.set('bucket', bucket)
     if (counsellorId) params.set('counsellorId', counsellorId)
     if (search) params.set('search', search)
     if (from) params.set('from', from)
@@ -100,15 +114,49 @@ export default function NextActionsPage() {
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
       .then(({ ok, body }) => {
         setRows(body?.rows || [])
-        setCounts(body?.counts || { upcoming: 0, overdue: 0, unplanned: 0 })
+        setCounts(
+          body?.counts || {
+            upcoming: 0,
+            overdue: 0,
+            unplanned: 0,
+            neverCalled: 0,
+            notCalledToday: 0,
+            unassigned: 0,
+            coldNoReason: 0,
+          }
+        )
         setCounsellors(body?.counsellors || [])
         setNotice(body?.error || (ok ? '' : 'Could not load next actions.'))
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [counsellorId, search, status, from, to, view])
+  }, [counsellorId, search, status, from, to, view, bucket])
 
   useEffect(load, [load])
+
+  // Changing what's on screen drops the selection with it — otherwise
+  // "assign 12 leads" could act on rows nobody can see any more.
+  useEffect(() => {
+    setSelected(new Set())
+  }, [bucket, view, counsellorId, search, status])
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => setCanAssign(!!me && ['agency_admin', 'agency_staff', 'client_admin'].includes(me.role)))
+      .catch(() => {})
+  }, [])
+
+  async function assignSelected() {
+    if (selected.size === 0 || !assignTo) return
+    await fetch('/api/activity/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: Array.from(selected), counsellorId: assignTo }),
+    }).catch(() => {})
+    setSelected(new Set())
+    load()
+  }
 
   async function complete(row: Row) {
     setBusy(true)
@@ -175,6 +223,61 @@ export default function NextActionsPage() {
           onClick={() => setView(view === 'unplanned' ? 'planned' : 'unplanned')}
         />
       </div>
+
+      {/* Lead condition, as opposed to plan state. A lead can be overdue
+          *and* never called, so these sit on their own row rather than
+          competing with the three figures above. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {([
+          { key: '' as const, label: 'All leads', n: null },
+          { key: 'never_called' as const, label: 'Never called', n: counts.neverCalled },
+          { key: 'not_called_today' as const, label: 'Not called today', n: counts.notCalledToday },
+          { key: 'unassigned' as const, label: 'Unassigned', n: counts.unassigned },
+          { key: 'cold_no_reason' as const, label: 'Cold, no reason', n: counts.coldNoReason },
+        ]).map((b) => (
+          <button
+            key={b.key || 'all'}
+            onClick={() => setBucket(b.key)}
+            className={clsx(
+              'rounded-full border px-3 py-1 text-xs',
+              bucket === b.key
+                ? 'border-blue-500 bg-blue-500/15 text-blue-300'
+                : 'border-border text-muted2 hover:text-fg'
+            )}
+          >
+            {b.label}
+            {b.n !== null && <span className="ml-1.5 text-muted">{b.n}</span>}
+          </button>
+        ))}
+      </div>
+
+      {canAssign && selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-card border border-border bg-card p-3">
+          <span className="text-sm text-muted2">{selected.size} selected</span>
+          <select
+            value={assignTo}
+            onChange={(e) => setAssignTo(e.target.value)}
+            className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+          >
+            <option value="">Assign to…</option>
+            {counsellors.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.full_name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={assignSelected}
+            disabled={!assignTo}
+            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          >
+            Assign
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-sm text-muted2 hover:text-fg">
+            Clear
+          </button>
+        </div>
+      )}
 
       {view !== 'planned' && (
         <p className="mb-3 flex items-center gap-3 text-sm text-muted2">
@@ -248,6 +351,18 @@ export default function NextActionsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-card2 text-left text-xs uppercase tracking-wide text-muted">
+              {canAssign && (
+                <th className="w-10 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())
+                    }
+                    className="h-4 w-4 rounded border-border"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3">Lead</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Stage</th>
@@ -268,6 +383,23 @@ export default function NextActionsPage() {
                   r.state === 'unplanned' && 'bg-amber-500/[0.05]'
                 )}
               >
+                {canAssign && (
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={() =>
+                        setSelected((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <button onClick={() => setActiveLead(r.id)} className="text-fg hover:underline">
                     {r.full_name}
@@ -326,7 +458,7 @@ export default function NextActionsPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-muted">
+                <td colSpan={canAssign ? 9 : 8} className="px-4 py-12 text-center text-muted">
                   {loading
                     ? 'Loading…'
                     : view === 'unplanned'
