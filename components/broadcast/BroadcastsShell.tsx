@@ -5,6 +5,7 @@ import { useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import { Radio, MessageCircle, Mail } from 'lucide-react'
 import BroadcastTemplatesPanel from './BroadcastTemplatesPanel'
+import EmailDesignsPanel from './EmailDesignsPanel'
 import BroadcastComposer from './BroadcastComposer'
 import BroadcastHistory from './BroadcastHistory'
 import EmailBroadcastComposer from './EmailBroadcastComposer'
@@ -41,10 +42,15 @@ export default function BroadcastsShell({
   // Audiences are the same set of groups whichever channel you're sending
   // through, so the WhatsApp/Email switch is hidden on that tab rather than
   // left showing a choice that changes nothing.
-  // Audiences and templates are the same whichever channel you send
-  // through, so the WhatsApp/Email switch is hidden on those tabs rather
-  // than left showing a choice that changes nothing.
-  const channelIrrelevant = tab === 'audience' || tab === 'templates'
+  // The WhatsApp/Email switch stays put on every tab. Hiding it on some of
+  // them made the row above the content appear and disappear as you moved
+  // between tabs, which is more disorienting than a switch that does
+  // nothing — and on Templates it does something anyway, since the two
+  // channels have entirely different template models.
+  //
+  // Audience is the one place it genuinely has no effect: a saved audience
+  // is the same set of people either way. It's left enabled rather than
+  // disabled, because the choice carries over to the tab you visit next.
 
   return (
     <div>
@@ -67,7 +73,7 @@ export default function BroadcastsShell({
         </p>
       )}
 
-      <div className={channelIrrelevant ? 'hidden' : 'mb-5 flex gap-2'}>
+      <div className="mb-5 flex gap-2">
         <button
           onClick={() => switchChannel('whatsapp')}
           className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
@@ -107,7 +113,11 @@ export default function BroadcastsShell({
       </div>
 
       {tab === 'templates' ? (
-        <BroadcastTemplatesPanel clientId={clientId} />
+        channel === 'email' ? (
+          <EmailDesignsPanel instituteName={institutes.find((i) => i.id === clientId)?.name || ''} />
+        ) : (
+          <BroadcastTemplatesPanel clientId={clientId} />
+        )
       ) : tab === 'audience' ? (
         <AudienceBoard clientId={clientId} embedded />
       ) : channel === 'whatsapp' ? (
