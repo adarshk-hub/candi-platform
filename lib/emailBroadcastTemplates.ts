@@ -39,6 +39,9 @@ export interface TemplateVars {
   // campus". Rendered as a bordered panel, which is where an invitation
   // stops being a wall of prose.
   details?: { label: string; value: string }[]
+  // Absolute URL to the institute's logo. Absolute because a relative path
+  // means nothing inside somebody's inbox.
+  logoUrl?: string | null
 }
 
 const SANS = "font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
@@ -73,9 +76,29 @@ function paragraphs(text: string, colour = BODY_INK): string {
     .join('')
 }
 
-// The institute's initials in a circle. A real logo would be better, but it
-// would have to be hosted, and a broken image in a school's email is worse
-// than no image — this always renders, including with images disabled.
+// The institute's logo when one has been uploaded, and its initials in a
+// circle when not.
+//
+// The logo sits on a white tile rather than directly on the coloured
+// masthead: most school logos are dark and would disappear against navy,
+// and a transparent PNG on a coloured background is the commonest way a
+// letterhead ends up illegible.
+//
+// The alt text carries the institute's name so the header still reads
+// correctly with images blocked, which many clients do by default.
+function brandmark(vars: TemplateVars, accent: string): string {
+  if (vars.logoUrl) {
+    return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+      <tr><td align="center" style="background-color:#FFFFFF;border-radius:8px;padding:10px 16px;">
+        <img src="${vars.logoUrl}" alt="${escapeHtml(vars.institute)}" width="150"
+             style="display:block;width:150px;max-width:150px;height:auto;border:0;outline:none;text-decoration:none;${SANS}font-size:15px;font-weight:bold;color:${accent};" />
+      </td></tr>
+    </table>`
+  }
+  return monogram(vars.institute, accent)
+}
+
 function monogram(institute: string, accent: string): string {
   const initials = institute
     .split(/\s+/)
@@ -94,11 +117,17 @@ function monogram(institute: string, accent: string): string {
 function masthead(vars: TemplateVars, accent: string, kicker: string): string {
   return `
     <tr><td align="center" style="background-color:${accent};padding:28px 28px 24px;border-radius:12px 12px 0 0;">
-      ${monogram(vars.institute, accent)}
-      <p style="margin:14px 0 0;${SANS}font-size:16px;font-weight:600;letter-spacing:0.3px;color:#FFFFFF;">${escapeHtml(
-        vars.institute
-      )}</p>
-      <p style="margin:4px 0 0;${SANS}font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.75);">${escapeHtml(
+      ${brandmark(vars, accent)}
+      ${
+        // With a logo the name is already in the image, so repeating it
+        // underneath just crowds the masthead.
+        vars.logoUrl
+          ? ''
+          : `<p style="margin:14px 0 0;${SANS}font-size:16px;font-weight:600;letter-spacing:0.3px;color:#FFFFFF;">${escapeHtml(
+              vars.institute
+            )}</p>`
+      }
+      <p style="margin:10px 0 0;${SANS}font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.75);">${escapeHtml(
         kicker
       )}</p>
     </td></tr>`
