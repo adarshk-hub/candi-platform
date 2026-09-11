@@ -24,10 +24,6 @@ export interface NextActionBuckets {
   dueToday: NextActionRow[]
 }
 
-// How long a counsellor has to decide what happens next after a lead lands
-// with them. A day is deliberate: leads arriving at 6pm shouldn't be counted
-// against anyone by 9am, and anything longer stops being a working rule.
-const PLANNING_GRACE_HOURS = 24
 
 // When the lead was handed to its current counsellor. Read from the activity
 // trail rather than a column, because assignment is already logged in three
@@ -89,7 +85,6 @@ export async function fetchNextActionBuckets(counsellorId?: string): Promise<Nex
   const unplanned = await query<NextActionRow>(
     `SELECT ${SELECT_COLS} ${base}
        AND l.next_action_at IS NULL
-       AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
      ORDER BY assigned_at ASC`,
     params
   )
@@ -109,22 +104,17 @@ export async function fetchNextActionBuckets(counsellorId?: string): Promise<Nex
   return { overdue, unplanned, dueToday }
 }
 
-// 'awaiting_plan' and 'unplanned' are both "no next action set". The
-// difference is the 24-hour grace period: a lead that arrived an hour ago is
-// simply new, while one sitting untouched since yesterday is a lapse.
+// Three live states, matching the three figures on the Next Actions page:
 //
-// They were previously collapsed into one state on the list and excluded
-// from the summary until the grace expired, which meant the Next Actions
-// page said "no action planned" while Team Day said "all planned" about the
-// same lead. Same rule, two names, so the two screens can't contradict each
-// other again.
-export type NextActionState =
-  | 'overdue'
-  | 'unplanned'
-  | 'awaiting_plan'
-  | 'due_today'
-  | 'upcoming'
-  | 'done'
+//   upcoming  — planned, its time hasn't come yet
+//   overdue   — planned, the time passed, nothing recorded
+//   unplanned — a counsellor owns this lead and hasn't planned anything
+//
+// The 24-hour grace period that used to sit between "new" and "unplanned" is
+// gone. It meant the same lead could read as unplanned on one screen and
+// fine on another depending on the hour, and the distinction was never
+// something anyone acted on differently.
+export type NextActionState = 'overdue' | 'unplanned' | 'upcoming' | 'done'
 
 export interface NextActionListRow extends NextActionRow {
   next_action_done_at: string | null
@@ -159,7 +149,7 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
   // Leads with no plan at all have no date to filter on, so a date range
   // would silently drop them — and they're the ones most worth seeing. They
   // are kept in regardless of the range, and sorted to the top.
-  const unplannedSql = `(l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours')`
+  const unplannedSql = `l.next_action_at IS NULL`
 
   const dateWhere: string[] = []
   if (params.from) {
@@ -190,11 +180,8 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
     `SELECT ${SELECT_COLS}, l.next_action_done_at,
             CASE
               WHEN l.next_action_done_at IS NOT NULL THEN 'done'
-              WHEN l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
-                THEN 'unplanned'
-              WHEN l.next_action_at IS NULL THEN 'awaiting_plan'
+              WHEN l.next_action_at IS NULL THEN 'unplanned'
               WHEN l.next_action_at < now() THEN 'overdue'
-              WHEN l.next_action_at::date = now()::date THEN 'due_today'
               ELSE 'upcoming'
             END AS state
      FROM leads l
@@ -202,11 +189,10 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
      WHERE ${where.join(' AND ')}
      ORDER BY
        CASE
-         WHEN l.next_action_done_at IS NOT NULL THEN 4
+         WHEN l.next_action_done_at IS NOT NULL THEN 3
          WHEN l.next_action_at IS NULL THEN 0
          WHEN l.next_action_at < now() THEN 1
-         WHEN l.next_action_at::date = now()::date THEN 2
-         ELSE 3
+         ELSE 2
        END,
        l.next_action_at ASC NULLS FIRST`,
     values
@@ -220,8 +206,7 @@ export async function fetchNextActionSummary(): Promise<
     full_name: string
     overdue: number
     unplanned: number
-    awaitingPlan: number
-    dueToday: number
+    upcoming: number
   }[]
 > {
   return query(
@@ -229,21 +214,11 @@ export async function fetchNextActionSummary(): Promise<
             COUNT(*) FILTER (
               WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL AND l.next_action_at < now()
             )::int AS overdue,
-            COUNT(*) FILTER (
-              WHERE l.next_action_at IS NULL AND ${ASSIGNED_AT_SQL} < now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
-            )::int AS unplanned,
-            -- Assigned recently and still within the grace period. Counted
-            -- separately so the team view can say "1 waiting to be planned"
-            -- rather than the flatly wrong "all planned".
-            COUNT(*) FILTER (
-              WHERE l.next_action_at IS NULL
-                AND l.next_action_done_at IS NULL
-                AND ${ASSIGNED_AT_SQL} >= now() - INTERVAL '${PLANNING_GRACE_HOURS} hours'
-            )::int AS "awaitingPlan",
+            COUNT(*) FILTER (WHERE l.next_action_at IS NULL)::int AS unplanned,
             COUNT(*) FILTER (
               WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL
-                AND l.next_action_at >= now() AND l.next_action_at::date <= now()::date
-            )::int AS "dueToday"
+                AND l.next_action_at >= now()
+            )::int AS "upcoming"
      FROM users u
      LEFT JOIN leads l
        ON l.assigned_counsellor_id = u.id
