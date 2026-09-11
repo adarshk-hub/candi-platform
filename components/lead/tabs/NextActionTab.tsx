@@ -180,7 +180,7 @@ export default function NextActionTab({ leadId, onChanged }: { leadId: string; o
         </div>
       ) : (
         <div className="rounded-card border border-amber-500/40 bg-amber-500/10 p-4">
-          <p className="text-sm text-amber-300">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
             {state?.next_action_done_at
               ? 'The last action was completed. Plan the next one so this lead doesn’t go quiet.'
               : 'No next action planned for this lead yet; this should be always filled.'}
@@ -190,7 +190,7 @@ export default function NextActionTab({ leadId, onChanged }: { leadId: string; o
               number that makes "nobody has touched this since Tuesday"
               obvious without opening History. */}
           {state?.next_action_done_at && (
-            <p className="mt-1 text-xs text-amber-300/80">
+            <p className="mt-1.5 text-sm font-medium text-amber-700 dark:text-amber-300">
               Nothing planned for {elapsed(state.next_action_done_at)} since the last action was completed.
             </p>
           )}
