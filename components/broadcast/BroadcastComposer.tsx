@@ -46,8 +46,6 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   const [selectedStages, setSelectedStages] = useState<string[]>([])
   const [createdFrom, setCreatedFrom] = useState('')
   const [createdTo, setCreatedTo] = useState('')
-  const [lastContactedFrom, setLastContactedFrom] = useState('')
-  const [lastContactedTo, setLastContactedTo] = useState('')
 
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewSample, setPreviewSample] = useState<AudienceLead[]>([])
@@ -122,8 +120,11 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
       stageKeys: selectedStages,
       createdFrom: createdFrom || null,
       createdTo: createdTo || null,
-      lastContactedFrom: lastContactedFrom || null,
-      lastContactedTo: lastContactedTo || null,
+      // Last-contacted filtering removed: it read from a field that is only
+      // updated by some channels, so the same lead could be included or
+      // excluded depending on how it happened to be contacted.
+      lastContactedFrom: null,
+      lastContactedTo: null,
       sourceKeys: [],
       groupId: null,
     }
@@ -398,30 +399,6 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
                 value={createdTo}
                 onChange={(e) => {
                   setCreatedTo(e.target.value)
-                  invalidatePreview()
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">Last Contacted Between</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={lastContactedFrom}
-                onChange={(e) => {
-                  setLastContactedFrom(e.target.value)
-                  invalidatePreview()
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-              <span className="text-xs text-muted2">to</span>
-              <input
-                type="date"
-                value={lastContactedTo}
-                onChange={(e) => {
-                  setLastContactedTo(e.target.value)
                   invalidatePreview()
                 }}
                 className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
