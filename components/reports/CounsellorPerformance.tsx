@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { BarChart3, Trophy } from 'lucide-react'
 import { clsx } from 'clsx'
 import NotificationBell from '@/components/NotificationBell'
+import TeamDayBoard from '@/components/myday/TeamDayBoard'
 
 interface Row {
   id: string
@@ -25,6 +26,11 @@ function firstOfMonth(): string {
 }
 
 export default function CounsellorPerformance() {
+  // Day and Range are the same people through two different windows, which
+  // is why Team Day is folded in here rather than living as its own page.
+  // Splitting by time period produced two screens that felt like the same
+  // screen twice.
+  const [mode, setMode] = useState<'range' | 'day'>('range')
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState('')
   const [rows, setRows] = useState<Row[]>([])
@@ -60,6 +66,30 @@ export default function CounsellorPerformance() {
         <NotificationBell />
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {([
+          { key: 'range' as const, label: 'Over a period' },
+          { key: 'day' as const, label: 'A single day' },
+        ]).map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setMode(m.key)}
+            className={clsx(
+              'rounded-md px-4 py-2 text-sm font-medium',
+              mode === m.key ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'day' ? (
+        // The former Team Day page: each counsellor's timeline and their own
+        // notes for one date, read-only.
+        <TeamDayBoard embedded />
+      ) : (
+      <>
       <div className="mb-4 flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-sm text-muted2">
           From:
@@ -143,6 +173,8 @@ export default function CounsellorPerformance() {
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   )
 }
