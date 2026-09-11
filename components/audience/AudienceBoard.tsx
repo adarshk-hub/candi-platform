@@ -1,4 +1,4 @@
-//Re
+// path: components/audience/AudienceBoard.tsx
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -275,6 +275,17 @@ function CreateAudience({
   const [kind, setKind] = useState<'filters' | 'manual'>('filters')
   const [sourceKeys, setSourceKeys] = useState<string[]>([])
   const [stageKeys, setStageKeys] = useState<string[]>([])
+  const [createdFrom, setCreatedFrom] = useState('')
+  const [createdTo, setCreatedTo] = useState('')
+  // How the audience is put together. Rules describe who belongs; picking
+  // is naming them. Both are legitimate — "everyone from Instagram" is a
+  // rule, "these eleven parents" is a decision — and the previous dialog
+  // could only express the first.
+  const [mode, setMode] = useState<'rules' | 'pick'>('rules')
+  const [matches, setMatches] = useState<{ id: string; full_name: string; whatsapp_number: string }[]>([])
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [leadSearch, setLeadSearch] = useState('')
+  const [loadingLeads, setLoadingLeads] = useState(false)
   const [sources, setSources] = useState<{ key: string; label: string }[]>([])
   const [stages, setStages] = useState<{ key: string; label: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -297,6 +308,27 @@ function CreateAudience({
       .catch(() => {})
   }, [clientId])
 
+  // Loads the leads to choose from. Deliberately reuses the same audience
+  // endpoint the rules use, so "pick from" starts as whatever the rules
+  // above would have matched — narrowing by hand from a sensible starting
+  // set beats scrolling the whole database.
+  useEffect(() => {
+    if (mode !== 'pick') return
+    setLoadingLeads(true)
+    fetch('/api/broadcasts/audience-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId,
+        filters: { sourceKeys, stageKeys, createdFrom: createdFrom || null, createdTo: createdTo || null },
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMatches(d?.leads || []))
+      .catch(() => {})
+      .finally(() => setLoadingLeads(false))
+  }, [mode, clientId, sourceKeys, stageKeys, createdFrom, createdTo])
+
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
   }
@@ -316,8 +348,16 @@ function CreateAudience({
           clientId,
           name,
           description,
-          kind,
-          filters: { sourceKeys, stageKeys },
+          // Picking by hand is always a fixed list — the whole point is that
+          // it's these people and not whoever matches later.
+          kind: mode === 'pick' ? 'manual' : kind,
+          filters: {
+            sourceKeys,
+            stageKeys,
+            createdFrom: createdFrom || null,
+            createdTo: createdTo || null,
+          },
+          leadIds: mode === 'pick' ? Array.from(picked) : undefined,
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -383,6 +423,47 @@ function CreateAudience({
           </div>
 
           <div>
+            <label className="mb-1.5 block text-xs text-muted">How do you want to choose?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: 'rules' as const, title: 'By rules', blurb: 'Source, stage, when they came in.' },
+                { key: 'pick' as const, title: 'Pick by hand', blurb: 'Choose named leads from a list.' },
+              ]).map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setMode(m.key)}
+                  className={clsx(
+                    'rounded-card border p-3 text-left',
+                    mode === m.key ? 'border-blue-500 bg-blue-500/10' : 'border-border bg-card2'
+                  )}
+                >
+                  <p className="text-sm font-semibold text-fg">{m.title}</p>
+                  <p className="mt-0.5 text-xs text-muted2">{m.blurb}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs text-muted">Came in between</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={createdFrom}
+                onChange={(e) => setCreatedFrom(e.target.value)}
+                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+              />
+              <span className="text-xs text-muted2">to</span>
+              <input
+                type="date"
+                value={createdTo}
+                onChange={(e) => setCreatedTo(e.target.value)}
+                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
             <label className="mb-1.5 block text-xs text-muted">Stages</label>
             <div className="flex flex-wrap gap-1.5">
               {stages.map((s) => (
@@ -403,6 +484,70 @@ function CreateAudience({
             <p className="mt-1 text-xs text-muted2">Leave both blank to include every lead.</p>
           </div>
 
+          {mode === 'pick' && (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-xs text-muted">
+                  Choose leads
+                  {picked.size > 0 && <span className="ml-1.5 text-blue-400">{picked.size} selected</span>}
+                </label>
+                <input
+                  value={leadSearch}
+                  onChange={(e) => setLeadSearch(e.target.value)}
+                  placeholder="Search"
+                  className="w-40 rounded-md border border-border bg-card2 px-2 py-1 text-xs text-fg outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded-card border border-border">
+                {matches
+                  .filter(
+                    (l) =>
+                      !leadSearch ||
+                      l.full_name?.toLowerCase().includes(leadSearch.toLowerCase()) ||
+                      l.whatsapp_number?.includes(leadSearch)
+                  )
+                  .map((l) => (
+                    <label
+                      key={l.id}
+                      className="flex cursor-pointer items-center gap-3 border-b border-border px-3 py-2 text-sm last:border-0 hover:bg-card2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={picked.has(l.id)}
+                        onChange={() =>
+                          setPicked((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(l.id)) next.delete(l.id)
+                            else next.add(l.id)
+                            return next
+                          })
+                        }
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-fg">{l.full_name}</span>
+                      <span className="shrink-0 text-xs text-muted2">{l.whatsapp_number}</span>
+                    </label>
+                  ))}
+                {matches.length === 0 && (
+                  <p className="px-3 py-6 text-center text-sm text-muted">
+                    {loadingLeads ? 'Loading…' : 'No leads match the filters above.'}
+                  </p>
+                )}
+              </div>
+              {matches.length > 0 && (
+                <button
+                  onClick={() =>
+                    setPicked(picked.size === matches.length ? new Set() : new Set(matches.map((l) => l.id)))
+                  }
+                  className="mt-1.5 text-xs text-blue-400 hover:underline"
+                >
+                  {picked.size === matches.length ? 'Clear all' : `Select all ${matches.length}`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {mode === 'rules' && (
           <div>
             <label className="mb-1.5 block text-xs text-muted">Keeps up to date?</label>
             <div className="grid grid-cols-2 gap-2">
@@ -424,6 +569,7 @@ function CreateAudience({
               ))}
             </div>
           </div>
+          )}
         </div>
 
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
@@ -434,10 +580,14 @@ function CreateAudience({
           </button>
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || (mode === 'pick' && picked.size === 0)}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Create audience'}
+            {saving
+              ? 'Saving…'
+              : mode === 'pick'
+              ? `Create with ${picked.size} lead${picked.size === 1 ? '' : 's'}`
+              : 'Create audience'}
           </button>
         </div>
       </div>
