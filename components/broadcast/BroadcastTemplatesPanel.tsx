@@ -56,6 +56,10 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   const [headerHandle, setHeaderHandle] = useState<string | null>(null)
   const [headerMediaData, setHeaderMediaData] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  // Rejected templates can never be sent, so they are noise in a list whose
+  // job is "what can I use". Kept rather than auto-deleted, because the
+  // rejection reason is the only way to learn what Meta objected to.
+  const [showRejected, setShowRejected] = useState(false)
 
   // Meta approves a template against a *sample* file, then wants the real
   // file re-uploaded on every send. So two things are kept: the handle Meta
@@ -160,6 +164,25 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
 
   useEffect(load, [load])
 
+  async function removeTemplate(id?: string) {
+    const url = id
+      ? `/api/templates/${clientId}?id=${id}`
+      : `/api/templates/${clientId}?all=rejected`
+    setBusy('delete')
+    setError('')
+    try {
+      const res = await fetch(url, { method: 'DELETE' })
+      const b = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(b.error || 'Could not remove that template.')
+        return
+      }
+      load()
+    } finally {
+      setBusy('')
+    }
+  }
+
   async function run(label: string, url: string) {
     setBusy(label)
     setNotice('')
@@ -179,6 +202,11 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
       setBusy('')
     }
   }
+
+  // Rejected ones are hidden unless asked for: the list exists to answer
+  // "which templates can I send", and six permanent failures crowd out the
+  // one that works.
+  const visible = showRejected ? templates : templates.filter((t) => t.status !== 'rejected')
 
   const counts = templates.reduce(
     (acc, t) => ({ ...acc, [t.status]: (acc as any)[t.status] + 1 }),
@@ -215,8 +243,24 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
         {notice && <p className="mt-3 text-sm text-green-400">{notice}</p>}
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
-        <p className="mt-4 text-xs text-muted2">
-          {counts.approved} approved · {counts.pending} awaiting Meta · {counts.rejected} rejected
+        <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted2">
+          <span>
+            {counts.approved} approved · {counts.pending} awaiting Meta · {counts.rejected} rejected
+          </span>
+          {counts.rejected > 0 && (
+            <>
+              <button onClick={() => setShowRejected((v) => !v)} className="text-blue-400 hover:underline">
+                {showRejected ? 'Hide rejected' : `Show ${counts.rejected} rejected`}
+              </button>
+              <button
+                onClick={() => removeTemplate()}
+                disabled={!!busy}
+                className="text-red-400 hover:underline disabled:opacity-50"
+              >
+                Delete all rejected
+              </button>
+            </>
+          )}
         </p>
       </div>
 
@@ -357,7 +401,7 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
       </div>
 
       <div className="overflow-hidden rounded-card border border-border bg-card">
-        {templates.map((t) => {
+        {visible.map((t) => {
           const Icon = STATUS_ICON[t.status] || Clock
           return (
             <div key={t.id} className="border-b border-border px-4 py-3 last:border-0">
@@ -378,16 +422,29 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
               {/* Meta's rejection text is the only actionable thing about a
                   rejected template, so it is shown in full rather than
                   hidden behind a hover. */}
-              {t.status === 'rejected' && t.rejection_reason && (
-                <p className="mt-1 text-xs text-red-400">{t.rejection_reason}</p>
+              {t.status === 'rejected' && (
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  {t.rejection_reason && <p className="text-xs text-red-400">{t.rejection_reason}</p>}
+                  <button
+                    onClick={() => removeTemplate(t.id)}
+                    disabled={!!busy}
+                    className="text-xs text-muted2 hover:text-red-400 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
               )}
               {t.bodyPreview && <p className="mt-1 text-xs text-muted2">{t.bodyPreview}</p>}
             </div>
           )
         })}
-        {templates.length === 0 && (
+        {visible.length === 0 && (
           <p className="px-4 py-10 text-center text-sm text-muted">
-            {loading ? 'Loading…' : 'No templates submitted yet.'}
+            {loading
+              ? 'Loading…'
+              : templates.length > 0
+              ? 'Nothing approved or pending — only rejected templates, hidden above.'
+              : 'No templates submitted yet.'}
           </p>
         )}
       </div>
