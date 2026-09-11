@@ -1,7 +1,13 @@
 // path: app/api/next-actions/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
-import { fetchNextActionBuckets, fetchNextActionList, fetchNextActionSummary } from '@/lib/nextAction'
+import {
+  fetchNextActionBuckets,
+  fetchNextActionCounts,
+  fetchNextActionList,
+  fetchNextActionSummary,
+  type NextActionState,
+} from '@/lib/nextAction'
 
 function isManager(role: string): boolean {
   return AGENCY_ROLES.includes(role as any) || role === 'client_admin'
@@ -25,17 +31,24 @@ export async function GET(req: NextRequest) {
 
   try {
     if (sp.get('view') === 'list') {
+      const requestedStates = (sp.get('states') || '')
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean) as NextActionState[]
+
       const rows = await fetchNextActionList({
         counsellorId,
         from: sp.get('from') || undefined,
         to: sp.get('to') || undefined,
         search: sp.get('search')?.trim() || undefined,
         status: (sp.get('status') as 'open' | 'all' | 'done') || 'open',
+        states: requestedStates,
       })
-      const counsellors = manager
-        ? await fetchNextActionSummary()
-        : []
-      return NextResponse.json({ rows, counsellors })
+      // Counted over everything in scope rather than over `rows`, so the
+      // figures stay true while the table shows a subset.
+      const counts = await fetchNextActionCounts(counsellorId)
+      const counsellors = manager ? await fetchNextActionSummary() : []
+      return NextResponse.json({ rows, counts, counsellors })
     }
 
     const buckets = await fetchNextActionBuckets(counsellorId)
