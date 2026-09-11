@@ -96,7 +96,9 @@ function toneFor(title: string): string {
   return 'bg-zinc-500'
 }
 
-export default function TeamDayBoard() {
+// embedded: rendered inside the Performance page, which already has a title
+// and a notification bell — repeating them would stack two headers.
+export default function TeamDayBoard({ embedded = false }: { embedded?: boolean }) {
   const [date, setDate] = useState(today())
   const [data, setData] = useState<TeamDay | null>(null)
   const [loading, setLoading] = useState(true)
@@ -148,12 +150,14 @@ export default function TeamDayBoard() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
-          <CalendarRange size={22} /> Team day
-        </h1>
-        <NotificationBell />
-      </div>
+      {!embedded && (
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
+            <CalendarRange size={22} /> Team day
+          </h1>
+          <NotificationBell />
+        </div>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <input
