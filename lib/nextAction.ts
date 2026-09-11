@@ -128,6 +128,51 @@ export interface NextActionListParams {
   search?: string
   // 'open' hides completed actions — the default, since this is a worklist.
   status?: 'open' | 'all' | 'done'
+  // Which states to list. Leaving this unset lists only leads that have a
+  // plan, because a lead with nothing planned is not a row of work — it's a
+  // gap, and putting it in the table means every new lead arrives as a line
+  // item nobody created. The count still includes them; clicking that figure
+  // is how you go and look.
+  states?: NextActionState[]
+}
+
+export interface NextActionCounts {
+  upcoming: number
+  overdue: number
+  unplanned: number
+}
+
+// Counted over everything in scope, independent of what the table is
+// currently listing — otherwise hiding unplanned leads from the list would
+// zero the figure that exists to tell you about them.
+export async function fetchNextActionCounts(counsellorId?: string): Promise<NextActionCounts> {
+  const values: any[] = []
+  const where: string[] = [`l.assigned_counsellor_id IS NOT NULL`, leadDateRangeSql('l'), OPEN_ONLY]
+
+  if (counsellorId) {
+    values.push(counsellorId)
+    where.push(`l.assigned_counsellor_id = $${values.length}`)
+  }
+
+  const [row] = await query<Record<string, number>>(
+    `SELECT
+       COUNT(*) FILTER (
+         WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL AND l.next_action_at >= now()
+       )::int AS upcoming,
+       COUNT(*) FILTER (
+         WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL AND l.next_action_at < now()
+       )::int AS overdue,
+       COUNT(*) FILTER (WHERE l.next_action_at IS NULL)::int AS unplanned
+     FROM leads l
+     WHERE ${where.join(' AND ')}`,
+    values
+  )
+
+  return {
+    upcoming: Number(row?.upcoming ?? 0),
+    overdue: Number(row?.overdue ?? 0),
+    unplanned: Number(row?.unplanned ?? 0),
+  }
 }
 
 // One flat, filterable list for the Next Actions page, as opposed to the
@@ -175,6 +220,12 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
   } else if (params.status !== 'all') {
     where.push(`(l.next_action_done_at IS NULL OR ${unplannedSql})`)
   }
+
+  // Default: only leads that actually have a plan. Unplanned leads are
+  // reachable by asking for them explicitly.
+  const states = params.states && params.states.length > 0 ? params.states : ['upcoming', 'overdue', 'done']
+  if (!states.includes('unplanned')) where.push('l.next_action_at IS NOT NULL')
+  if (states.length === 1 && states[0] === 'unplanned') where.push('l.next_action_at IS NULL')
 
   return query<NextActionListRow>(
     `SELECT ${SELECT_COLS}, l.next_action_done_at,
