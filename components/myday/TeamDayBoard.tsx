@@ -47,8 +47,7 @@ interface NextActionCounts {
   full_name: string
   overdue: number
   unplanned: number
-  awaitingPlan: number
-  dueToday: number
+  upcoming: number
 }
 
 interface NextActionRow {
@@ -280,15 +279,12 @@ export default function TeamDayBoard() {
                     // AND nothing is still waiting for a plan. Ignoring the
                     // second half is what made this column claim a lead was
                     // planned while the Next Actions page said otherwise.
-                    if (n.overdue === 0 && n.unplanned === 0 && n.awaitingPlan === 0)
+                    if (n.overdue === 0 && n.unplanned === 0)
                       return <span className="text-green-400">all planned</span>
                     return (
                       <span className="flex items-center justify-end gap-2">
                         {n.overdue > 0 && <span className="text-red-400">{n.overdue} overdue</span>}
                         {n.unplanned > 0 && <span className="text-amber-400">{n.unplanned} unplanned</span>}
-                        {n.awaitingPlan > 0 && (
-                          <span className="text-muted2">{n.awaitingPlan} to plan</span>
-                        )}
                       </span>
                     )
                   })()}
