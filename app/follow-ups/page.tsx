@@ -63,10 +63,16 @@ function shortDate(value: string | null): string {
 
 export default function NextActionsPage() {
   const [rows, setRows] = useState<Row[]>([])
+  const [counts, setCounts] = useState({ upcoming: 0, overdue: 0, unplanned: 0 })
   const [counsellors, setCounsellors] = useState<CounsellorCount[]>([])
   const [counsellorId, setCounsellorId] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'open' | 'all' | 'done'>('open')
+  // Which of the three figures is being looked at. 'planned' is the default
+  // view — upcoming and overdue — because those are rows of work. Leads with
+  // nothing planned are a gap rather than a task, so they're counted but not
+  // listed until you ask for them.
+  const [view, setView] = useState<'planned' | 'upcoming' | 'overdue' | 'unplanned'>('planned')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [loading, setLoading] = useState(true)
@@ -78,7 +84,13 @@ export default function NextActionsPage() {
 
   const load = useCallback(() => {
     setLoading(true)
-    const params = new URLSearchParams({ view: 'list', status })
+    const statesFor: Record<string, string> = {
+      planned: 'upcoming,overdue',
+      upcoming: 'upcoming',
+      overdue: 'overdue',
+      unplanned: 'unplanned',
+    }
+    const params = new URLSearchParams({ view: 'list', status, states: statesFor[view] })
     if (counsellorId) params.set('counsellorId', counsellorId)
     if (search) params.set('search', search)
     if (from) params.set('from', from)
@@ -88,12 +100,13 @@ export default function NextActionsPage() {
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
       .then(({ ok, body }) => {
         setRows(body?.rows || [])
+        setCounts(body?.counts || { upcoming: 0, overdue: 0, unplanned: 0 })
         setCounsellors(body?.counsellors || [])
         setNotice(body?.error || (ok ? '' : 'Could not load next actions.'))
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [counsellorId, search, status, from, to])
+  }, [counsellorId, search, status, from, to, view])
 
   useEffect(load, [load])
 
@@ -111,10 +124,6 @@ export default function NextActionsPage() {
     }
   }
 
-  const counts = rows.reduce(
-    (acc, r) => ({ ...acc, [r.state]: (acc as any)[r.state] + 1 }),
-    { upcoming: 0, overdue: 0, unplanned: 0, done: 0 } as Record<State, number>
-  )
 
   return (
     <div>
@@ -141,12 +150,40 @@ export default function NextActionsPage() {
       )}
 
       {/* Three, in the order they matter: what's coming, what was missed,
-          what was never planned at all. */}
+          what was never planned at all. Each one filters the table — which
+          is how leads with no plan are reached, since they aren't listed by
+          default. */}
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="Upcoming Action" value={counts.upcoming} />
-        <Stat label="Not Executed" value={counts.overdue} tone="bad" />
-        <Stat label="No Action Planned" value={counts.unplanned} tone="warn" />
+        <Stat
+          label="Upcoming Action"
+          value={counts.upcoming}
+          active={view === 'upcoming'}
+          onClick={() => setView(view === 'upcoming' ? 'planned' : 'upcoming')}
+        />
+        <Stat
+          label="Not Executed"
+          value={counts.overdue}
+          tone="bad"
+          active={view === 'overdue'}
+          onClick={() => setView(view === 'overdue' ? 'planned' : 'overdue')}
+        />
+        <Stat
+          label="No Action Planned"
+          value={counts.unplanned}
+          tone="warn"
+          active={view === 'unplanned'}
+          onClick={() => setView(view === 'unplanned' ? 'planned' : 'unplanned')}
+        />
       </div>
+
+      {view !== 'planned' && (
+        <p className="mb-3 flex items-center gap-3 text-sm text-muted2">
+          Showing {view === 'unplanned' ? 'leads with no action planned' : view === 'overdue' ? 'missed actions' : 'upcoming actions'} only
+          <button onClick={() => setView('planned')} className="text-blue-400 hover:underline">
+            Show all planned
+          </button>
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {counsellors.length > 0 && (
@@ -204,10 +241,7 @@ export default function NextActionsPage() {
             Clear dates
           </button>
         )}
-        {/* Leads with nothing planned have no due date to filter on, so they
-            stay visible whatever range is chosen — hiding them behind a date
-            filter would hide exactly the rows that need attention most. */}
-        <span className="text-xs text-muted2">Unplanned leads always show, whatever the dates.</span>
+
       </div>
 
       <div className="overflow-x-auto rounded-card border border-border bg-card">
@@ -293,7 +327,11 @@ export default function NextActionsPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-12 text-center text-muted">
-                  {loading ? 'Loading…' : 'Nothing outstanding — every assigned lead has a plan.'}
+                  {loading
+                    ? 'Loading…'
+                    : view === 'unplanned'
+                    ? 'Every assigned lead has a plan.'
+                    : 'Nothing outstanding.'}
                 </td>
               </tr>
             )}
@@ -315,9 +353,27 @@ export default function NextActionsPage() {
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'warn' | 'bad' }) {
+function Stat({
+  label,
+  value,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string
+  value: number
+  tone?: 'warn' | 'bad'
+  active?: boolean
+  onClick?: () => void
+}) {
   return (
-    <div className="rounded-card border border-border bg-card p-4">
+    <button
+      onClick={onClick}
+      className={clsx(
+        'rounded-card border p-4 text-left transition-colors',
+        active ? 'border-blue-500 bg-card2' : 'border-border bg-card hover:bg-card2'
+      )}
+    >
       <p
         className={clsx(
           'text-2xl font-bold',
@@ -327,6 +383,6 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'wa
         {value}
       </p>
       <p className="mt-1 text-xs uppercase tracking-widest text-muted">{label}</p>
-    </div>
+    </button>
   )
 }
