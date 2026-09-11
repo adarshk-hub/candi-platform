@@ -362,6 +362,9 @@ export default function EmailBroadcastComposer({
                     // A real-looking link so the footer renders at the right
                     // width; it points nowhere in the preview.
                     unsubscribeUrl: '#',
+                    // Same logo the real send uses, so the preview isn't a
+                    // different email from the one parents receive.
+                    logoUrl: `${window.location.origin}/api/clients/${clientId}/email-logo`,
                   })
                 )
               }}
