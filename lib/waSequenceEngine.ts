@@ -13,11 +13,39 @@ interface SequenceStep {
 // haven't configured their own templates yet fall back to the shared
 // NURTURE_STEPS defaults (nurture_day0 / nurture_day2 / ...), same names
 // the old Aisensy path used, so nothing breaks for clients mid-migration.
+// Steps this engine is allowed to send on a schedule.
+//
+// Anything ticked "Ask first" in Settings is excluded, and so is anything
+// pinned to a stage. Both of those are triggered by a lead moving stage (see
+// StageMessagePrompt), and a step that is both scheduled here and triggered
+// there goes out twice — which is exactly what was happening with Day 2:
+// ticked "Ask first", ignored by this query, sent anyway on time.
+//
+// The tick is a setting about *when* a message is sent, so the code that
+// sends on a timer has to read it too. It previously only governed the
+// stage-change path, which made the tick look broken rather than partial.
 async function getStepsForClient(clientId: string): Promise<SequenceStep[]> {
-  const rows = await query<{ day_number: number; template_name: string; language_code: string }>(
-    'SELECT day_number, template_name, language_code FROM wa_sequence_templates WHERE client_id = $1 ORDER BY day_number ASC',
-    [clientId]
-  )
+  let rows: { day_number: number; template_name: string; language_code: string }[] = []
+  try {
+    rows = await query(
+      `SELECT day_number, template_name, language_code
+       FROM wa_sequence_templates
+       WHERE client_id = $1
+         AND COALESCE(require_confirmation, false) = false
+         AND COALESCE(stage_key, '') = ''
+       ORDER BY day_number ASC`,
+      [clientId]
+    )
+  } catch (err: any) {
+    // Pre-migration database — neither column exists yet, so fall back to
+    // the old behaviour rather than sending nothing at all.
+    if (err?.code !== '42703') throw err
+    rows = await query(
+      'SELECT day_number, template_name, language_code FROM wa_sequence_templates WHERE client_id = $1 ORDER BY day_number ASC',
+      [clientId]
+    )
+  }
+
   if (rows.length > 0) {
     return rows.map((r) => ({ day: r.day_number, templateName: r.template_name, languageCode: r.language_code }))
   }
@@ -61,19 +89,20 @@ export async function startSequence(leadId: string): Promise<{ ok: boolean; sequ
     )
   }
 
-  // Day 0 and Day 2 both fire immediately, back to back, rather than
-  // waiting for their scheduled time (Day 2 would otherwise sit 'pending'
-  // for two real days before the cron/advanceDueMessages picks it up).
-  // Each send marks its own row 'sent' right away, so the later cron pass
-  // simply finds nothing pending for either and skips them — no risk of a
-  // duplicate send once the real Day 2 time rolls around. Day 4/7/10 are
-  // untouched and still follow the normal scheduled cadence from lead
-  // creation.
-  const day0AndDay2 = await query(
-    `SELECT * FROM wa_sequence_messages WHERE sequence_id = $1 AND day_number IN (0, 2) ORDER BY day_number ASC`,
+  // Day 0 only — the welcome message.
+  //
+  // Day 2 used to be sent immediately alongside it, on the reasoning that it
+  // would otherwise sit pending for two real days. That made sense while the
+  // whole sequence ran on a fixed schedule. It doesn't now: steps after the
+  // first fire when a lead's stage changes (see StageMessagePrompt), so
+  // sending Day 2 at creation meant a parent got two templates within a
+  // second of enquiring — before anyone had spoken to them — and then
+  // potentially the same message again when the stage actually moved.
+  const day0 = await query(
+    `SELECT * FROM wa_sequence_messages WHERE sequence_id = $1 AND day_number = 0`,
     [sequence.id]
   )
-  for (const msg of day0AndDay2) {
+  for (const msg of day0) {
     await sendDueMessage(msg)
   }
 
