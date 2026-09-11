@@ -1,16 +1,9 @@
 // path: app/team-day/page.tsx
 import { redirect } from 'next/navigation'
-import { getServerSession } from '@/lib/serverAuth'
-import TeamDayBoard from '@/components/myday/TeamDayBoard'
 
-// The management counterpart to /my-day. Admin-only, checked here as well as
-// in the sidebar and the API.
-export default function TeamDayPage() {
-  const session = getServerSession()
-  if (!session) redirect('/login')
-
-  const allowed = ['agency_admin', 'agency_staff', 'client_admin'].includes(session.role)
-  if (!allowed) redirect('/leads')
-
-  return <TeamDayBoard />
+// This page has been merged away. The redirect stays rather than the route
+// being deleted, because people bookmark these and a 404 reads as "the
+// feature is gone" rather than "it moved".
+export default function MovedPage() {
+  redirect('/performance')
 }
