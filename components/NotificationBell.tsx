@@ -74,9 +74,14 @@ export default function NotificationBell() {
   const menuRef = useRef<HTMLDivElement>(null)
   const { items, total } = useNotifications({ poll: true })
   const [soundOn, setSoundOn] = useState(true)
-  // Compared against the live count to spot arrivals. Starts undefined so
-  // the first poll after a page load doesn't chime for a backlog that was
-  // already there before you opened the tab.
+  // The count this tab has already chimed for, kept in sessionStorage.
+  //
+  // A ref alone wasn't enough: the bell is mounted inside the layout, so
+  // every navigation remounts it, the ref resets, and the first poll looked
+  // like 0 → 3 — a rise, and a chime. That's why it rang on every page.
+  // sessionStorage survives navigation but not a new tab, which is the
+  // right lifetime for "have I already heard about these".
+  const SEEN_KEY = 'cc-notified-total'
   const previousTotal = useRef<number | undefined>(undefined)
 
   useEffect(() => {
@@ -95,11 +100,23 @@ export default function NotificationBell() {
   }, [])
 
   useEffect(() => {
-    const before = previousTotal.current
+    // useNotifications returns 0 before its first fetch resolves, so the
+    // opening render is skipped rather than treated as "nothing unread".
+    // Without this, 0 → 3 on load counts as three arrivals.
+    if (previousTotal.current === undefined && total === 0) return
+
+    let before = previousTotal.current
+    if (before === undefined) {
+      const stored = sessionStorage.getItem(SEEN_KEY)
+      before = stored === null ? total : Number(stored)
+    }
+
     previousTotal.current = total
+    sessionStorage.setItem(SEEN_KEY, String(total))
+
     // Only a rise counts. Dismissing notifications lowers the number, and
     // chiming on the way down would make clearing the list noisy.
-    if (before !== undefined && total > before) playNotificationSound()
+    if (total > before) playNotificationSound()
   }, [total])
 
   useEffect(() => {
