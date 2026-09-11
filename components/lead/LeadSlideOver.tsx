@@ -31,10 +31,21 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'history', label: 'History', icon: History },
 ]
 
-export default function LeadSlideOver({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+export default function LeadSlideOver({
+  leadId,
+  onClose,
+  initialTab = 'info',
+}: {
+  leadId: string
+  onClose: () => void
+  // Lets a caller open straight onto the tab its link is about — the Next
+  // Actions page's "Change" column, for instance, where landing on Info
+  // meant a second click every time.
+  initialTab?: TabKey
+}) {
   const { stageLabel: stageLabelLookup } = useStages()
   const [lead, setLead] = useState<Lead | null>(null)
-  const [tab, setTab] = useState<TabKey>('info')
+  const [tab, setTab] = useState<TabKey>(initialTab)
   const [error, setError] = useState('')
   // Set after a successful stage change so the WhatsApp prompt can look up
   // whether that stage has a template attached.
