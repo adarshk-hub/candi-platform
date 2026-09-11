@@ -45,6 +45,14 @@ export default function EmailBroadcastComposer({
   const [ctaLabel, setCtaLabel] = useState('')
   const [ctaUrl, setCtaUrl] = useState('')
   const [previewHtml, setPreviewHtml] = useState('')
+  // Optional label/value rows shown as a bordered panel — "When", "Where",
+  // "Bring". Three is the practical maximum before the panel stops being
+  // scannable and becomes a table.
+  const [details, setDetails] = useState([
+    { label: '', value: '' },
+    { label: '', value: '' },
+    { label: '', value: '' },
+  ])
 
   // A saved or automatic audience, picked instead of building filters by
   // hand. Selecting one replaces the filter panel below — combining a saved
@@ -209,6 +217,7 @@ export default function EmailBroadcastComposer({
           presetKey,
           ctaLabel: ctaLabel.trim() || null,
           ctaUrl: ctaUrl.trim() || null,
+          details: details.filter((d) => d.label.trim() && d.value.trim()),
           filters: currentFilters(),
           // The server prefers this over `filters` when present, so an
           // unticked lead is genuinely excluded rather than being re-added
@@ -289,6 +298,33 @@ export default function EmailBroadcastComposer({
             </p>
           </div>
 
+          <div>
+            <label className="mb-1 block text-xs text-muted">Details (optional)</label>
+            <div className="space-y-2">
+              {details.map((d, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    value={d.label}
+                    onChange={(e) =>
+                      setDetails((prev) => prev.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))
+                    }
+                    placeholder={i === 0 ? 'When' : i === 1 ? 'Where' : 'Bring'}
+                    className="w-40 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+                  />
+                  <input
+                    value={d.value}
+                    onChange={(e) =>
+                      setDetails((prev) => prev.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))
+                    }
+                    placeholder={i === 0 ? 'Saturday 14 June, 10am' : i === 1 ? 'Main campus, Gate 2' : ''}
+                    className="flex-1 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-muted2">Blank rows are left out.</p>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-muted">Button label (optional)</label>
@@ -322,6 +358,7 @@ export default function EmailBroadcastComposer({
                     body: body || 'Your message will appear here.',
                     ctaLabel: ctaLabel || undefined,
                     ctaUrl: ctaUrl || undefined,
+                    details: details.filter((d) => d.label.trim() && d.value.trim()),
                     // A real-looking link so the footer renders at the right
                     // width; it points nowhere in the preview.
                     unsubscribeUrl: '#',
