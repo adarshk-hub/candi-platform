@@ -8,9 +8,7 @@ import {
   CheckCheck,
   Clock,
   Inbox,
-  Mail,
   MessageCircle,
-  RefreshCw,
   Search,
   Paperclip,
   Send,
@@ -27,21 +25,6 @@ import NotificationBell from '@/components/NotificationBell'
 // sending relay and more setup than it was worth; replies land in the
 // school's own mail client as they always did.
 type Channel = 'email' | 'whatsapp'
-
-interface EmailRow {
-  id: string
-  lead_id: string | null
-  subject: string
-  body: string
-  to_email: string
-  from_email: string | null
-  status: string
-  created_at: string
-  lead_name: string | null
-  lead_number: number | null
-  sent_by_name: string | null
-  attachments: { filename: string; size: number; contentType: string }[] | null
-}
 
 interface Conversation {
   lead_id: string
@@ -115,16 +98,16 @@ function StatusTicks({ status }: { status: string }) {
 }
 
 export default function InboxShell() {
-  const [channel, setChannel] = useState<Channel>('email')
+  // Email has been removed from the Inbox entirely — it is WhatsApp only.
+  // The channel constant is kept so the conditional rendering below reads
+  // the same as before rather than every branch being deleted by hand.
+  const channel: Channel = 'whatsapp'
   const [search, setSearch] = useState('')
-  const [emails, setEmails] = useState<EmailRow[]>([])
-  const [openEmail, setOpenEmail] = useState<EmailRow | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [openThread, setOpenThread] = useState<string | null>(null)
   const [threadLead, setThreadLead] = useState<any | null>(null)
   const [threadMessages, setThreadMessages] = useState<WaMessage[]>([])
   const [activeLead, setActiveLead] = useState<string | null>(null)
-  const [composing, setComposing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
 
@@ -143,16 +126,6 @@ export default function InboxShell() {
       return
     }
 
-    const params = new URLSearchParams()
-    if (search) params.set('search', search)
-    fetch(`/api/inbox/email?${params.toString()}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setEmails(data?.rows || [])
-        setNotice(data?.error || '')
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
   }, [channel, search])
 
   useEffect(load, [load])
@@ -190,32 +163,9 @@ export default function InboxShell() {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {([
-          { key: 'email' as Channel, label: 'Email', icon: Mail },
-          { key: 'whatsapp' as Channel, label: 'WhatsApp', icon: MessageCircle },
-        ]).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              setChannel(t.key)
-              setOpenEmail(null)
-              setOpenThread(null)
-            }}
-            className={clsx(
-              'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
-              channel === t.key ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
-            )}
-          >
-            <t.icon size={15} />
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {notice && <p className="mb-4 rounded-card border border-border bg-card p-3 text-sm text-muted2">{notice}</p>}
 
-      {channel === 'whatsapp' ? (
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[340px_1fr]">
           <div className="overflow-hidden rounded-card border border-border bg-card">
             {conversations.map((c) => (
@@ -303,89 +253,7 @@ export default function InboxShell() {
             )}
           </div>
         </div>
-      ) : (
-        <div className="overflow-hidden rounded-card border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border bg-card2 px-4 py-2.5">
-            <p className="text-sm font-semibold text-fg">
-              Sent mail
-              <span className="ml-2 text-xs font-normal text-muted2">
-                {emails.length} message{emails.length === 1 ? '' : 's'}
-              </span>
-            </p>
-            <button
-              onClick={() => setComposing(true)}
-              className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-            >
-              Compose
-            </button>
-          </div>
 
-          {emails.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => setOpenEmail(e)}
-              className="flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-card2"
-            >
-              <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card2 text-xs font-semibold text-muted2">
-                {e.to_email.slice(0, 2).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="truncate text-sm text-muted2">To {e.to_email}</span>
-                  {e.lead_name && (
-                    <span className="shrink-0 rounded-md bg-blue-500/15 px-1.5 text-[11px] text-blue-300">
-                      #{e.lead_number} {e.lead_name}
-                    </span>
-                  )}
-                  {e.status === 'failed' && (
-                    <span className="shrink-0 rounded-md bg-red-500/15 px-1.5 text-[11px] text-red-400">
-                      not delivered
-                    </span>
-                  )}
-                </span>
-                <span className="block truncate text-sm text-fg">{e.subject}</span>
-                <span className="flex items-center gap-1.5 text-xs text-muted2">
-                  {e.attachments && e.attachments.length > 0 && (
-                    <Paperclip size={12} className="shrink-0 text-muted" />
-                  )}
-                  <span className="truncate">{e.body.slice(0, 120)}</span>
-                </span>
-              </span>
-              <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">{when(e.created_at)}</span>
-            </button>
-          ))}
-          {emails.length === 0 && (
-            <p className="px-4 py-14 text-center text-sm text-muted">
-              {loading ? 'Loading…' : 'Nothing sent yet.'}
-            </p>
-          )}
-        </div>
-      )}
-
-      {openEmail && (
-        <EmailReader
-          email={openEmail}
-          onClose={() => setOpenEmail(null)}
-          onOpenLead={(id) => {
-            setOpenEmail(null)
-            setActiveLead(id)
-          }}
-          onReplied={() => {
-            setOpenEmail(null)
-            load()
-          }}
-        />
-      )}
-
-      {composing && (
-        <Composer
-          onClose={() => setComposing(false)}
-          onSent={() => {
-            setComposing(false)
-            load()
-          }}
-        />
-      )}
 
       {activeLead && <LeadSlideOver leadId={activeLead} onClose={() => setActiveLead(null)} />}
     </div>
@@ -656,291 +524,6 @@ function WhatsAppComposer({
           </button>
         </p>
       )}
-    </div>
-  )
-}
-
-function EmailReader({
-  email,
-  onClose,
-  onOpenLead,
-  onReplied,
-}: {
-  email: EmailRow
-  onClose: () => void
-  onOpenLead: (leadId: string) => void
-  onReplied: () => void
-}) {
-  const [replying, setReplying] = useState(false)
-
-  if (replying) {
-    return (
-      <Composer
-        onClose={() => setReplying(false)}
-        onSent={onReplied}
-        initialTo={email.to_email}
-        // "Re: Re: Re:" is what happens when a reply subject is built
-        // blindly, so an existing prefix is left alone.
-        initialSubject={email.subject.toLowerCase().startsWith('re:') ? email.subject : `Re: ${email.subject}`}
-        leadId={email.lead_id}
-      />
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-card border border-border bg-card p-6">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-fg">{email.subject}</h2>
-            <p className="mt-1 text-xs text-muted2">
-              To {email.to_email} · {when(email.created_at)}
-              {email.sent_by_name ? ` · sent by ${email.sent_by_name}` : ''}
-            </p>
-            {email.lead_id && (
-              <button onClick={() => onOpenLead(email.lead_id!)} className="mt-1 text-xs text-blue-400 hover:underline">
-                Open lead #{email.lead_number} — {email.lead_name}
-              </button>
-            )}
-          </div>
-          <button onClick={onClose} className="text-muted2 hover:text-fg">
-            <X size={20} />
-          </button>
-        </div>
-
-        <p className="whitespace-pre-wrap text-sm text-fg">{email.body}</p>
-
-        {email.attachments && email.attachments.length > 0 && (
-          <div className="mt-4 border-t border-border pt-3">
-            <p className="mb-2 text-xs uppercase tracking-widest text-muted">Attached</p>
-            {email.attachments.map((a, i) => (
-              <p key={i} className="flex items-center gap-2 text-sm text-muted2">
-                <Paperclip size={13} /> {a.filename}
-                <span className="text-xs text-muted">{formatSize(a.size)}</span>
-              </p>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg">
-            Close
-          </button>
-          <button
-            onClick={() => setReplying(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Reply
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-interface PickedFile {
-  filename: string
-  contentType: string
-  size: number
-  data: string
-}
-
-// Mirrors the server-side cap in app/api/inbox/email/route.ts. Duplicated on
-// purpose — the client copy is for fast feedback, the server copy is the one
-// that actually enforces it.
-const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function Composer({
-  onClose,
-  onSent,
-  initialTo = '',
-  initialSubject = '',
-  leadId = null,
-}: {
-  onClose: () => void
-  onSent: () => void
-  initialTo?: string
-  initialSubject?: string
-  leadId?: string | null
-}) {
-  const [to, setTo] = useState(initialTo)
-  const [subject, setSubject] = useState(initialSubject)
-  const [body, setBody] = useState('')
-  const [files, setFiles] = useState<PickedFile[]>([])
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-
-  const totalBytes = files.reduce((n, f) => n + f.size, 0)
-
-  async function addFiles(list: FileList | null) {
-    if (!list) return
-    setError('')
-    const picked: PickedFile[] = []
-    let running = totalBytes
-
-    for (const file of Array.from(list)) {
-      running += file.size
-      // Checked before reading rather than after: a rejected 30 MB video
-      // shouldn't be base64-encoded into memory first.
-      if (running > MAX_ATTACHMENT_BYTES) {
-        setError('Attachments have to come to 2 MB or less in total.')
-        return
-      }
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        // readAsDataURL gives "data:<type>;base64,<payload>" — the API wants
-        // just the payload.
-        reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
-        reader.onerror = () => reject(new Error('Could not read that file'))
-        reader.readAsDataURL(file)
-      }).catch(() => '')
-
-      if (!data) {
-        setError(`Could not read "${file.name}".`)
-        return
-      }
-      picked.push({
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        size: file.size,
-        data,
-      })
-    }
-    setFiles((prev) => [...prev, ...picked])
-  }
-
-  async function send() {
-    if (!to.trim() || !subject.trim() || !body.trim()) {
-      setError('Fill in the recipient, subject and message.')
-      return
-    }
-    setSending(true)
-    setError('')
-    try {
-      const res = await fetch('/api/inbox/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to,
-          subject,
-          body,
-          leadId,
-          attachments: files.map((f) => ({ filename: f.filename, contentType: f.contentType, data: f.data })),
-        }),
-      })
-      const b = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(b.error || 'Could not send.')
-        return
-      }
-      onSent()
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-card border border-border bg-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-fg">{initialSubject ? 'Reply' : 'New email'}</h2>
-          <button onClick={onClose} className="text-muted2 hover:text-fg">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs text-muted">To</label>
-            <input
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="parent@example.com"
-              className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">Subject</label>
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">Message</label>
-            <textarea
-              value={body}
-              rows={9}
-              onChange={(e) => setBody(e.target.value)}
-              className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg">
-              <Paperclip size={14} /> Attach files
-              <input
-                type="file"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                onChange={(e) => {
-                  addFiles(e.target.files)
-                  // Cleared so re-picking the same file still fires onChange.
-                  e.target.value = ''
-                }}
-                className="hidden"
-              />
-            </label>
-            <p className="mt-1 text-xs text-muted2">
-              PDF, images, Word, Excel, CSV or text. Up to 2 MB in total
-              {totalBytes > 0 ? ` — ${formatSize(totalBytes)} used` : ''}.
-            </p>
-
-            {files.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {files.map((f, i) => (
-                  <div
-                    key={`${f.filename}-${i}`}
-                    className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm"
-                  >
-                    <Paperclip size={13} className="shrink-0 text-muted" />
-                    <span className="min-w-0 flex-1 truncate text-fg">{f.filename}</span>
-                    <span className="shrink-0 text-xs text-muted2">{formatSize(f.size)}</span>
-                    <button
-                      onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
-                      className="shrink-0 text-muted2 hover:text-red-400"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-
-        <div className="mt-5 flex justify-end gap-2 border-t border-border pt-4">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg">
-            Cancel
-          </button>
-          <button
-            onClick={send}
-            disabled={sending}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            <Send size={15} /> {sending ? 'Sending…' : 'Send'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
