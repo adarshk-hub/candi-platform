@@ -6,6 +6,7 @@ import {
   fetchNextActionCounts,
   fetchNextActionList,
   fetchNextActionSummary,
+  type LeadBucket,
   type NextActionState,
 } from '@/lib/nextAction'
 
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
         search: sp.get('search')?.trim() || undefined,
         status: (sp.get('status') as 'open' | 'all' | 'done') || 'open',
         states: requestedStates,
+        bucket: (sp.get('bucket') as LeadBucket) || undefined,
       })
       // Counted over everything in scope rather than over `rows`, so the
       // figures stay true while the table shows a subset.
