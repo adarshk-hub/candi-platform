@@ -1,6 +1,9 @@
 // path: components/broadcast/BroadcastComposer.tsx
 'use client'
 
+import { clsx } from 'clsx'
+import { getRateForCategory } from '@/lib/waCreditRates'
+
 import { useEffect, useState } from 'react'
 import { Send, Users, RefreshCw, Tag as TagIcon, AlertTriangle } from 'lucide-react'
 
@@ -48,6 +51,10 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   const [createdTo, setCreatedTo] = useState('')
 
   const [previewCount, setPreviewCount] = useState<number | null>(null)
+  // WCC wallet balance, so the cost can be shown against what's actually
+  // available rather than as a number with no context.
+  const [balance, setBalance] = useState<number | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const [previewSample, setPreviewSample] = useState<AudienceLead[]>([])
   const [audienceTruncated, setAudienceTruncated] = useState(false)
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set())
@@ -83,6 +90,14 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   // current filters actually match.
   useEffect(() => {
     if (!clientId) return
+    fetch(`/api/clients/${clientId}/wallet`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setBalance(typeof d?.balance === 'number' ? d.balance : Number(d?.balance ?? 0)))
+      .catch(() => {})
+  }, [clientId])
+
+  useEffect(() => {
+    if (!clientId) return
     fetch(`/api/audience?clientId=${clientId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setGroups([...(d?.sources || []), ...(d?.saved || [])]))
@@ -95,6 +110,12 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
     setSelectedLeadIds(new Set())
     setAudienceTruncated(false)
   }
+
+  // Meta bills per template category, so the estimate follows whichever
+  // template is selected rather than assuming one rate.
+  const selectedCategory = templates.find((t) => t.name === templateName)?.category || 'UTILITY'
+  const rate = getRateForCategory(selectedCategory)
+  const estimatedCost = selectedLeadIds.size * rate
 
   function currentFilters() {
     // A group carries its own definition, so the hand-built filters are left
@@ -475,19 +496,108 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
+      {/* Cost before send, not after. A marketing template is ₹1.09 against
+          ₹0.145 for utility — a 7x difference — so a 900-lead broadcast is
+          either ₹130 or ₹981 depending on a dropdown three sections up.
+          Discovering that from the wallet ledger afterwards is too late. */}
+      {selectedLeadIds.size > 0 && (
+        <div className="rounded-card border border-border bg-card p-5">
+          <h2 className="mb-3 text-lg font-bold text-fg">Before you send</h2>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b border-border">
+                <td className="py-2 text-muted2">Recipients</td>
+                <td className="py-2 text-right text-fg">{selectedLeadIds.size.toLocaleString()}</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="py-2 text-muted2">
+                  Rate — {selectedCategory.toLowerCase()} template
+                </td>
+                <td className="py-2 text-right text-fg">₹{rate}</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="py-2 font-medium text-fg">Estimated cost</td>
+                <td className="py-2 text-right text-lg font-bold text-fg">₹{estimatedCost.toFixed(2)}</td>
+              </tr>
+              <tr className="border-b border-border">
+                <td className="py-2 text-muted2">Wallet balance</td>
+                <td className="py-2 text-right text-muted2">
+                  {balance === null ? '—' : `₹${balance.toFixed(2)}`}
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2 text-muted2">Balance after</td>
+                <td
+                  className={clsx(
+                    'py-2 text-right font-medium',
+                    balance !== null && balance - estimatedCost < 0 ? 'text-red-400' : 'text-fg'
+                  )}
+                >
+                  {balance === null ? '—' : `₹${(balance - estimatedCost).toFixed(2)}`}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {balance !== null && balance < estimatedCost && (
+            <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              Not enough credit. The broadcast would stop partway and mark the rest "insufficient credit" — top
+              up the wallet in Settings first.
+            </p>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
       <button
-        onClick={send}
-        disabled={sending || selectedLeadIds.size === 0}
+        onClick={() => (selectedLeadIds.size >= 200 ? setConfirming(true) : send())}
+        disabled={sending || selectedLeadIds.size === 0 || (balance !== null && balance < estimatedCost)}
         className="flex items-center gap-2 rounded-md bg-green-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
       >
         <Send size={16} />{' '}
-        {sending ? 'Queuing…' : `Send Broadcast${selectedLeadIds.size ? ` to ${selectedLeadIds.size.toLocaleString()} leads` : ''}`}
+        {sending
+          ? 'Queuing…'
+          : selectedLeadIds.size
+          ? `Send to ${selectedLeadIds.size.toLocaleString()} leads · ₹${estimatedCost.toFixed(2)}`
+          : 'Send Broadcast'}
       </button>
       <p className="text-xs text-muted2">
         Sends happen gradually in the background and draw from this institute's WCC wallet, same as any other
-        template message — a broadcast will stop partway and mark the rest "insufficient credit" if the wallet
-        runs out.
+        template message.
       </p>
+
+      {/* A second click for anything above 200 people. A broadcast can't be
+          recalled, and the cost of one unnecessary confirmation is a click. */}
+      {confirming && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-card border border-border bg-card p-6">
+            <h2 className="text-lg font-bold text-fg">
+              Send to {selectedLeadIds.size.toLocaleString()} people?
+            </h2>
+            <p className="mt-2 text-sm text-muted2">
+              This costs about ₹{estimatedCost.toFixed(2)} and can't be undone once it starts.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirming(false)}
+                className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setConfirming(false)
+                  send()
+                }}
+                className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
+              >
+                Yes, send it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
