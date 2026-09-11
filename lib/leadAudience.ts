@@ -75,6 +75,10 @@ function buildAudienceQuery(
   if (requireContactMethod === 'whatsapp_number') {
     where.push(`l.whatsapp_number IS NOT NULL AND l.whatsapp_number <> ''`)
   } else if (requireContactMethod === 'email') {
+    // Anyone who has opted out is excluded at the query level rather than
+    // filtered afterwards, so the preview, the count and the send all agree.
+    // A preview that includes people the send will skip is worse than none.
+    where.push('l.email_unsubscribed_at IS NULL')
     where.push(`l.email IS NOT NULL AND l.email <> ''`)
   }
 
