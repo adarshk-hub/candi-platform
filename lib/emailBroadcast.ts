@@ -220,9 +220,12 @@ export async function processClientBatch(
         smtp_port: number | null
         smtp_user: string | null
         smtp_pass: string | null
+        email_logo_data: string | null
+        email_logo_updated_at: string | null
       }>(
   clientId,
-`SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass
+`SELECT name, school_email, email_from_name, smtp_host, smtp_port, smtp_user, smtp_pass,
+                email_logo_data, email_logo_updated_at
          FROM clients WHERE id = $1`,
         [broadcast.client_id]
       )
@@ -253,6 +256,13 @@ export async function processClientBatch(
           ctaUrl: broadcast.cta_url || undefined,
           details: Array.isArray(broadcast.details) ? broadcast.details : [],
           unsubscribeUrl,
+          // Absolute, and cache-busted by the upload timestamp so a replaced
+          // logo isn't served from an inbox's cache for a week.
+          logoUrl: client?.email_logo_data
+            ? `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/clients/${broadcast.client_id}/email-logo?v=${
+                client.email_logo_updated_at ? new Date(client.email_logo_updated_at).getTime() : 0
+              }`
+            : null,
           contactLine: `Sent by ${client?.name || 'your school'}${
             client?.school_email ? ` · ${client.school_email}` : ''
           }.`,
