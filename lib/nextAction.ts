@@ -45,6 +45,16 @@ const SELECT_COLS = `l.id, l.lead_number, l.full_name, l.whatsapp_number, l.pipe
 // Leads in a won or lost stage are excluded everywhere below. Chasing a
 // parent who has already enrolled — or already said no — isn't work anyone
 // should be flagged for not doing.
+// A lead sitting in a stage the institute has marked cold — by status_group
+// or by being the dedicated cold lane, since an institute can configure
+// either. Defined here rather than imported from lib/activityQuery so this
+// file has no dependency on the page it absorbed.
+const COLD_SQL = `EXISTS (
+  SELECT 1 FROM pipeline_stages ps
+  WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage
+    AND (ps.status_group = 'cold' OR ps.is_cold_lane)
+)`
+
 const OPEN_ONLY = `NOT EXISTS (
   SELECT 1 FROM pipeline_stages ps
   WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage
@@ -159,6 +169,10 @@ export interface NextActionCounts {
 // *and* never called.
 export type LeadBucket = 'never_called' | 'not_called_today' | 'unassigned' | 'cold_no_reason'
 
+
+// Counted over everything in scope, independent of what the table is
+// currently listing — otherwise hiding unplanned leads from the list would
+// zero the figure that exists to tell you about them.
 const BUCKET_SQL: Record<LeadBucket, string> = {
   never_called: 'l.first_called_at IS NULL',
   not_called_today: `(l.last_called_at IS NULL OR l.last_called_at::date < now()::date)`,
@@ -166,9 +180,6 @@ const BUCKET_SQL: Record<LeadBucket, string> = {
   cold_no_reason: `${COLD_SQL} AND COALESCE(l.cold_reason, '') = ''`,
 }
 
-// Counted over everything in scope, independent of what the table is
-// currently listing — otherwise hiding unplanned leads from the list would
-// zero the figure that exists to tell you about them.
 export async function fetchNextActionCounts(counsellorId?: string): Promise<NextActionCounts> {
   const values: any[] = []
   // Unassigned leads have to be inside this scope, or the "unassigned" count
