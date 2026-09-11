@@ -1,8 +1,8 @@
 // path: components/lead/tabs/NextActionTab.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CalendarClock, Check } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, CalendarClock, Check, ChevronDown, ChevronRight, X as XIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface NextActionState {
@@ -10,10 +10,17 @@ interface NextActionState {
   next_action_at: string | null
   next_action_set_at: string | null
   next_action_done_at: string | null
+  assigned_counsellor_id: string | null
 }
 
-// Common enough to be worth one tap. Free text stays available for anything
-// that isn't one of these.
+interface HistoryEntry {
+  id: string
+  title: string
+  description: string | null
+  actor_name: string | null
+  created_at: string
+}
+
 const QUICK_ACTIONS = [
   'Call to introduce the school',
   'Follow up on the brochure',
@@ -23,24 +30,37 @@ const QUICK_ACTIONS = [
   'Call back after parent discussion',
 ]
 
-// Replaces the old Follow Up tab. A follow-up was optional, so a lead with
-// none looked the same as a lead needing nothing. A next action is expected
-// on every assigned lead, which is what makes its absence something the day
-// pages can report on.
-export default function NextActionTab({
-  leadId,
-  onChanged,
-}: {
-  leadId: string
-  onChanged?: () => void
-}) {
+// Titles written by the next-action endpoints. Filtering on these keeps the
+// history to decisions about what happens next, rather than repeating the
+// full activity trail that already has its own tab.
+const HISTORY_TITLES = ['Next Action Set', 'Next Action Done', 'Next Action Cancelled']
+
+// "3 hr 20 min", "45 min", "2 days 4 hr". Rounded units rather than a
+// timestamp because the question being asked is "how long has this lead been
+// sitting untouched", and a date makes you do that arithmetic yourself.
+function elapsed(since: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 60000))
+  if (mins < 60) return `${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) {
+    const rem = mins % 60
+    return rem ? `${hrs} hr ${rem} min` : `${hrs} hr`
+  }
+  const days = Math.floor(hrs / 24)
+  const remHrs = hrs % 24
+  return remHrs ? `${days} day${days === 1 ? '' : 's'} ${remHrs} hr` : `${days} day${days === 1 ? '' : 's'}`
+}
+
+export default function NextActionTab({ leadId, onChanged }: { leadId: string; onChanged?: () => void }) {
   const [state, setState] = useState<NextActionState | null>(null)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [showHistory, setShowHistory] = useState(false)
   const [action, setAction] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  function load() {
+  const load = useCallback(() => {
     fetch(`/api/leads/${leadId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((lead) => {
@@ -50,17 +70,30 @@ export default function NextActionTab({
           next_action_at: lead.next_action_at ?? null,
           next_action_set_at: lead.next_action_set_at ?? null,
           next_action_done_at: lead.next_action_done_at ?? null,
+          assigned_counsellor_id: lead.assigned_counsellor_id ?? null,
         })
       })
       .catch(() => {})
-  }
 
-  useEffect(load, [leadId])
+    fetch(`/api/leads/${leadId}/activity`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) =>
+        setHistory((Array.isArray(rows) ? rows : []).filter((a: HistoryEntry) => HISTORY_TITLES.includes(a.title)))
+      )
+      .catch(() => {})
+  }, [leadId])
+
+  useEffect(load, [load])
 
   const open = !!state?.next_action_at && !state?.next_action_done_at
   const overdue = open && !!state?.next_action_at && new Date(state.next_action_at) < new Date()
+  const hasCounsellor = !!state?.assigned_counsellor_id
 
   async function save() {
+    if (!hasCounsellor) {
+      setError('Assign a counsellor to this lead before planning a next action.')
+      return
+    }
     if (!action.trim() || !dueAt) {
       setError('Both the action and a date are needed.')
       return
@@ -87,18 +120,18 @@ export default function NextActionTab({
     }
   }
 
-  async function complete() {
+  async function resolve(method: 'POST' | 'DELETE') {
     setSaving(true)
     setError('')
     try {
       const res = await fetch(`/api/leads/${leadId}/next-action`, {
-        method: 'POST',
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: method === 'POST' ? JSON.stringify({}) : undefined,
       })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(b.error || 'Could not mark that done.')
+        setError(b.error || 'Could not update that action.')
         return
       }
       load()
@@ -125,13 +158,25 @@ export default function NextActionTab({
           <p className={clsx('mt-1 text-sm', overdue ? 'text-red-400' : 'text-muted2')}>
             Due {new Date(state!.next_action_at!).toLocaleString('en-IN')}
           </p>
-          <button
-            onClick={complete}
-            disabled={saving}
-            className="mt-3 flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-          >
-            <Check size={14} /> Mark done
-          </button>
+
+          {/* Mark done and Cancel, laid out like the call booking actions so
+              the same shape of decision looks the same everywhere. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => resolve('POST')}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50"
+            >
+              <Check size={13} /> Mark done
+            </button>
+            <button
+              onClick={() => resolve('DELETE')}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted2 hover:text-fg disabled:opacity-50"
+            >
+              <XIcon size={13} /> Cancel
+            </button>
+          </div>
         </div>
       ) : (
         <div className="rounded-card border border-amber-500/40 bg-amber-500/10 p-4">
@@ -140,10 +185,26 @@ export default function NextActionTab({
               ? 'The last action was completed. Plan the next one so this lead doesn’t go quiet.'
               : 'No next action planned for this lead yet; this should be always filled.'}
           </p>
+          {/* How long this lead has been without a plan. A lead with nothing
+              scheduled is invisible until someone notices — this is the
+              number that makes "nobody has touched this since Tuesday"
+              obvious without opening History. */}
+          {state?.next_action_done_at && (
+            <p className="mt-1 text-xs text-amber-300/80">
+              Nothing planned for {elapsed(state.next_action_done_at)} since the last action was completed.
+            </p>
+          )}
         </div>
       )}
 
-      <div>
+      {!hasCounsellor && (
+        <p className="rounded-card border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          This lead has no counsellor. A next action is somebody's commitment, so assign one first — use the
+          Counsellor dropdown at the top of this panel.
+        </p>
+      )}
+
+      <div className={clsx(!hasCounsellor && 'pointer-events-none opacity-40')}>
         <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted">
           {open ? 'Replace with a new action' : 'Plan the next action'}
         </p>
@@ -179,9 +240,6 @@ export default function NextActionTab({
             onChange={(e) => setDueAt(e.target.value)}
             className="rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
           />
-          {/* Most next actions are "tomorrow" or "in a few days" — typing a
-              full date and time for that is more friction than the decision
-              deserves. */}
           {[
             { label: 'Tomorrow', days: 1 },
             { label: 'In 3 days', days: 3 },
@@ -213,8 +271,42 @@ export default function NextActionTab({
             {saving ? 'Saving…' : 'Save next action'}
           </button>
         </div>
+      </div>
 
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {/* Collapsed by default: on most leads this is a short list nobody
+          needs, and it would otherwise push the planning form off screen. */}
+      <div className="border-t border-border pt-4">
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted hover:text-fg"
+        >
+          {showHistory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          Action history
+          {history.length > 0 && <span className="font-normal normal-case text-muted2">({history.length})</span>}
+        </button>
+
+        {showHistory && (
+          <div className="mt-3 space-y-2">
+            {history.map((h) => (
+              <div key={h.id} className="rounded-md border border-border bg-card2 px-3 py-2">
+                <p className="text-sm text-fg">{h.title.replace('Next Action ', '')}</p>
+                {h.description && <p className="mt-0.5 text-xs text-muted2">{h.description}</p>}
+                <p className="mt-1 text-[11px] text-muted">
+                  {new Date(h.created_at).toLocaleString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                  {h.actor_name ? ` · ${h.actor_name}` : ''}
+                </p>
+              </div>
+            ))}
+            {history.length === 0 && <p className="py-4 text-center text-sm text-muted">Nothing yet.</p>}
+          </div>
+        )}
       </div>
     </div>
   )
