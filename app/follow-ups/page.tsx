@@ -17,7 +17,7 @@ import NotificationBell from '@/components/NotificationBell'
 // created one, so a lead with nothing planned simply didn't appear. Here the
 // leads with no plan are the first thing shown — a lead nobody has decided
 // anything about is the most urgent row on the page, not an absent one.
-type State = 'overdue' | 'unplanned' | 'awaiting_plan' | 'due_today' | 'upcoming' | 'done'
+type State = 'overdue' | 'unplanned' | 'upcoming' | 'done'
 
 interface Row {
   id: string
@@ -43,22 +43,16 @@ interface CounsellorCount {
 }
 
 const STATE_LABEL: Record<State, string> = {
-  unplanned: 'No action planned',
-  awaiting_plan: 'Waiting to be planned',
+  upcoming: 'Upcoming action',
   overdue: 'Not executed',
-  due_today: 'Due today',
-  upcoming: 'Upcoming',
+  unplanned: 'No action planned',
   done: 'Done',
 }
 
 const STATE_STYLE: Record<State, string> = {
-  unplanned: 'bg-amber-500/15 text-amber-400',
-  // Deliberately not amber: a lead assigned an hour ago isn't a lapse yet,
-  // and colouring it like one trains people to ignore the amber rows.
-  awaiting_plan: 'bg-card2 text-muted2',
+  upcoming: 'bg-blue-500/15 text-blue-300',
   overdue: 'bg-red-500/15 text-red-400',
-  due_today: 'bg-blue-500/15 text-blue-300',
-  upcoming: 'bg-card2 text-muted2',
+  unplanned: 'bg-amber-500/15 text-amber-400',
   done: 'bg-green-500/15 text-green-400',
 }
 
@@ -119,7 +113,7 @@ export default function NextActionsPage() {
 
   const counts = rows.reduce(
     (acc, r) => ({ ...acc, [r.state]: (acc as any)[r.state] + 1 }),
-    { unplanned: 0, awaiting_plan: 0, overdue: 0, due_today: 0, upcoming: 0, done: 0 } as Record<State, number>
+    { upcoming: 0, overdue: 0, unplanned: 0, done: 0 } as Record<State, number>
   )
 
   return (
@@ -134,7 +128,7 @@ export default function NextActionsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, number or action…"
+              placeholder="Search"
               className="w-72 rounded-md border border-border bg-card2 py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
@@ -146,12 +140,12 @@ export default function NextActionsPage() {
         <p className="mb-4 rounded-card border border-amber-500/40 bg-card p-4 text-sm text-amber-400">{notice}</p>
       )}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="No action planned" value={counts.unplanned} tone="warn" />
-        <Stat label="Not executed" value={counts.overdue} tone="bad" />
-        <Stat label="Waiting to be planned" value={counts.awaiting_plan} />
-        <Stat label="Due today" value={counts.due_today} />
-        <Stat label="Upcoming" value={counts.upcoming} />
+      {/* Three, in the order they matter: what's coming, what was missed,
+          what was never planned at all. */}
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat label="Upcoming Action" value={counts.upcoming} />
+        <Stat label="Not Executed" value={counts.overdue} tone="bad" />
+        <Stat label="No Action Planned" value={counts.unplanned} tone="warn" />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -287,6 +281,9 @@ export default function NextActionsPage() {
                       <Check size={14} /> Done
                     </button>
                   )}
+                  {/* Opens straight onto the Next Action tab — this column
+                      exists to change the plan, and landing on Info meant a
+                      second click every time. */}
                   <button onClick={() => setActiveLead(r.id)} className="text-blue-400 hover:underline">
                     {r.next_action ? 'Change' : 'Plan'}
                   </button>
@@ -307,6 +304,7 @@ export default function NextActionsPage() {
       {activeLead && (
         <LeadSlideOver
           leadId={activeLead}
+          initialTab="nextaction"
           onClose={() => {
             setActiveLead(null)
             load()
