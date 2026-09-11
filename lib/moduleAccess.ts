@@ -12,9 +12,6 @@ export interface ModulePage {
 // lib/customizeAccess.ts) and is never something a counsellor can be given.
 export const MODULE_PAGES: ModulePage[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard' },
-  { key: 'activity', label: 'Activity', href: '/activity' },
-  { key: 'my_day', label: 'My Day', href: '/my-day' },
-  { key: 'team_day', label: 'Team Day', href: '/team-day' },
   { key: 'inbox', label: 'Inbox', href: '/inbox' },
   { key: 'follow_ups', label: 'Next Actions', href: '/follow-ups' },
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
@@ -26,20 +23,22 @@ export const MODULE_PAGES: ModulePage[] = [
 // What a counsellor gets when nobody has picked pages for them yet. Chosen
 // to match what counsellors could already reach before this feature existed,
 // so turning the migration on changes nothing until someone edits a login.
-export const DEFAULT_COUNSELLOR_PAGES = ['activity', 'my_day', 'inbox', 'follow_ups', 'calendar', 'leads']
+export const DEFAULT_COUNSELLOR_PAGES = ['inbox', 'follow_ups', 'calendar', 'leads']
 
 // Reporting on counsellors is management information, so it stays with
 // management no matter what boxes get ticked on a counsellor's login.
 // Dashboard is deliberately not in here: it's ordinary role-gated content
 // that an institute can choose to open up to a counsellor.
-const ADMIN_ONLY_PAGES = ['performance', 'team_day']
+const ADMIN_ONLY_PAGES = ['performance']
 
 // The mirror image: pages that only make sense for the people doing the
 // day-to-day work. My Day is a personal worklog — an admin has no leads of
 // their own to log against it, so for them it would only ever be an empty
 // screen. Managers who want to see how a counsellor's day went have the
 // Performance report instead.
-const COUNSELLOR_ONLY_PAGES = ['my_day']
+// Nothing is counsellor-only any more: My Day folded into Next Actions
+// (their own leads, scoped server-side) and Team Day into Performance.
+const COUNSELLOR_ONLY_PAGES: string[] = []
 
 const ADMIN_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin']
 
@@ -56,9 +55,6 @@ export function canAccessPage(role: Role, allowedPages: string[] | null, pageKey
 // parent route.
 export function pageKeyForPath(pathname: string): string | null {
   if (pathname.startsWith('/dashboard')) return 'dashboard'
-  if (pathname.startsWith('/activity')) return 'activity'
-  if (pathname.startsWith('/my-day')) return 'my_day'
-  if (pathname.startsWith('/team-day')) return 'team_day'
   if (pathname.startsWith('/inbox')) return 'inbox'
   if (pathname.startsWith('/follow-ups')) return 'follow_ups'
   if (pathname.startsWith('/calendar')) return 'calendar'
