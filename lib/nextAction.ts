@@ -134,12 +134,36 @@ export interface NextActionListParams {
   // item nobody created. The count still includes them; clicking that figure
   // is how you go and look.
   states?: NextActionState[]
+  // One of the lead-condition buckets above. Applied on top of everything
+  // else rather than instead of it.
+  bucket?: LeadBucket
 }
 
 export interface NextActionCounts {
   upcoming: number
   overdue: number
   unplanned: number
+  // Absorbed from the old Activity page. These describe the lead rather than
+  // its plan — "nobody has ever rung this person" is the same complaint as
+  // "nobody has planned anything", so they belong on one worklist instead of
+  // two pages that each show half the neglect.
+  neverCalled: number
+  notCalledToday: number
+  unassigned: number
+  coldNoReason: number
+}
+
+// Buckets that filter by the lead's own condition rather than by its next
+// action. Kept as a separate axis from `states` because they answer a
+// different question and can legitimately overlap — a lead can be overdue
+// *and* never called.
+export type LeadBucket = 'never_called' | 'not_called_today' | 'unassigned' | 'cold_no_reason'
+
+const BUCKET_SQL: Record<LeadBucket, string> = {
+  never_called: 'l.first_called_at IS NULL',
+  not_called_today: `(l.last_called_at IS NULL OR l.last_called_at::date < now()::date)`,
+  unassigned: 'l.assigned_counsellor_id IS NULL',
+  cold_no_reason: `${COLD_SQL} AND COALESCE(l.cold_reason, '') = ''`,
 }
 
 // Counted over everything in scope, independent of what the table is
@@ -147,7 +171,9 @@ export interface NextActionCounts {
 // zero the figure that exists to tell you about them.
 export async function fetchNextActionCounts(counsellorId?: string): Promise<NextActionCounts> {
   const values: any[] = []
-  const where: string[] = [`l.assigned_counsellor_id IS NOT NULL`, leadDateRangeSql('l'), OPEN_ONLY]
+  // Unassigned leads have to be inside this scope, or the "unassigned" count
+  // would always be zero — which is exactly the figure it exists to show.
+  const where: string[] = [leadDateRangeSql('l'), OPEN_ONLY]
 
   if (counsellorId) {
     values.push(counsellorId)
@@ -162,7 +188,15 @@ export async function fetchNextActionCounts(counsellorId?: string): Promise<Next
        COUNT(*) FILTER (
          WHERE l.next_action_at IS NOT NULL AND l.next_action_done_at IS NULL AND l.next_action_at < now()
        )::int AS overdue,
-       COUNT(*) FILTER (WHERE l.next_action_at IS NULL)::int AS unplanned
+       COUNT(*) FILTER (
+         WHERE l.next_action_at IS NULL AND l.assigned_counsellor_id IS NOT NULL
+       )::int AS unplanned,
+       COUNT(*) FILTER (WHERE l.first_called_at IS NULL)::int AS never_called,
+       COUNT(*) FILTER (
+         WHERE l.last_called_at IS NULL OR l.last_called_at::date < now()::date
+       )::int AS not_called_today,
+       COUNT(*) FILTER (WHERE l.assigned_counsellor_id IS NULL)::int AS unassigned,
+       COUNT(*) FILTER (WHERE ${COLD_SQL} AND COALESCE(l.cold_reason, '') = '')::int AS cold_no_reason
      FROM leads l
      WHERE ${where.join(' AND ')}`,
     values
@@ -172,6 +206,10 @@ export async function fetchNextActionCounts(counsellorId?: string): Promise<Next
     upcoming: Number(row?.upcoming ?? 0),
     overdue: Number(row?.overdue ?? 0),
     unplanned: Number(row?.unplanned ?? 0),
+    neverCalled: Number(row?.never_called ?? 0),
+    notCalledToday: Number(row?.not_called_today ?? 0),
+    unassigned: Number(row?.unassigned ?? 0),
+    coldNoReason: Number(row?.cold_no_reason ?? 0),
   }
 }
 
@@ -184,7 +222,10 @@ export async function fetchNextActionCounts(counsellorId?: string): Promise<Next
 // implementations of that comparison would eventually disagree.
 export async function fetchNextActionList(params: NextActionListParams): Promise<NextActionListRow[]> {
   const values: any[] = []
-  const where: string[] = [`l.assigned_counsellor_id IS NOT NULL`, leadDateRangeSql('l'), OPEN_ONLY]
+  const where: string[] = [leadDateRangeSql('l'), OPEN_ONLY]
+  // Normally only assigned leads are work; the unassigned bucket is the one
+  // case where the point is precisely that nobody owns them.
+  if (params.bucket !== 'unassigned') where.push('l.assigned_counsellor_id IS NOT NULL')
 
   if (params.counsellorId) {
     values.push(params.counsellorId)
@@ -226,6 +267,15 @@ export async function fetchNextActionList(params: NextActionListParams): Promise
   const states = params.states && params.states.length > 0 ? params.states : ['upcoming', 'overdue', 'done']
   if (!states.includes('unplanned')) where.push('l.next_action_at IS NOT NULL')
   if (states.length === 1 && states[0] === 'unplanned') where.push('l.next_action_at IS NULL')
+
+  // A lead bucket overrides the plan-state filter: asking for "never called"
+  // means every lead nobody has rung, whether or not somebody has since
+  // planned something.
+  if (params.bucket) {
+    const idx = where.findIndex((w) => w === 'l.next_action_at IS NOT NULL' || w === 'l.next_action_at IS NULL')
+    if (idx >= 0) where.splice(idx, 1)
+    where.push(BUCKET_SQL[params.bucket])
+  }
 
   return query<NextActionListRow>(
     `SELECT ${SELECT_COLS}, l.next_action_done_at,
