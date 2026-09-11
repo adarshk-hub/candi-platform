@@ -25,6 +25,7 @@ export interface CreateEmailBroadcastParams {
   presetKey?: string | null
   ctaLabel?: string | null
   ctaUrl?: string | null
+  details?: { label: string; value: string }[]
   filters: BroadcastFilters
   // Hand-picked recipients from the preview list. When present these win
   // over `filters` entirely — the same behaviour as WhatsApp broadcasts,
@@ -42,11 +43,11 @@ export async function createBroadcast(
   const broadcast = (
     await query<{ id: string }>(
       `INSERT INTO email_broadcasts
-         (client_id, name, subject, body, preset_key, cta_label, cta_url,
+         (client_id, name, subject, body, preset_key, cta_label, cta_url, details,
           filter_tags, filter_tags_mode, filter_stage_keys,
           filter_created_from, filter_created_to, filter_last_contacted_from, filter_last_contacted_to,
           created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING id`,
       [
         params.clientId,
@@ -56,6 +57,7 @@ export async function createBroadcast(
         params.presetKey || 'announcement',
         params.ctaLabel || null,
         params.ctaUrl || null,
+        JSON.stringify(params.details || []),
         params.filters.tags,
         params.filters.tagsMode,
         params.filters.stageKeys,
@@ -189,9 +191,10 @@ export async function processClientBatch(
         preset_key: string | null
         cta_label: string | null
         cta_url: string | null
+        details: any
       }>(
         clientId,
-        'SELECT subject, body, client_id, preset_key, cta_label, cta_url FROM email_broadcasts WHERE id = $1',
+        'SELECT subject, body, client_id, preset_key, cta_label, cta_url, details FROM email_broadcasts WHERE id = $1',
         [recipient.broadcast_id]
       )
     )[0]
@@ -248,6 +251,7 @@ export async function processClientBatch(
           body: broadcast.body,
           ctaLabel: broadcast.cta_label || undefined,
           ctaUrl: broadcast.cta_url || undefined,
+          details: Array.isArray(broadcast.details) ? broadcast.details : [],
           unsubscribeUrl,
           contactLine: `Sent by ${client?.name || 'your school'}${
             client?.school_email ? ` · ${client.school_email}` : ''
