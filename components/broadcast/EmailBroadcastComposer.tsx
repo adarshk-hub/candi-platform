@@ -2,6 +2,9 @@
 // path: components/broadcast/EmailBroadcastComposer.tsx
 'use client'
 
+import { clsx } from 'clsx'
+import { EMAIL_TEMPLATE_PRESETS, findPreset } from '@/lib/emailBroadcastTemplates'
+
 import { useEffect, useState } from 'react'
 import { Send, Users, RefreshCw, Tag as TagIcon, AlertTriangle } from 'lucide-react'
 
@@ -19,13 +22,29 @@ interface AudienceLead {
   pipeline_stage: string
 }
 
-export default function EmailBroadcastComposer({ clientId, onSent }: { clientId: string; onSent: () => void }) {
+export default function EmailBroadcastComposer({
+  clientId,
+  instituteName = '',
+  onSent,
+}: {
+  clientId: string
+  // Only used to fill the preview's letterhead. The real send reads the
+  // institute's name server-side, so a wrong or missing value here can't
+  // reach a recipient.
+  instituteName?: string
+  onSent: () => void
+}) {
   const [stages, setStages] = useState<StageRow[]>([])
   const [allTags, setAllTags] = useState<string[]>([])
 
   const [name, setName] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  // Which of the three HTML designs the message is rendered into.
+  const [presetKey, setPresetKey] = useState('announcement')
+  const [ctaLabel, setCtaLabel] = useState('')
+  const [ctaUrl, setCtaUrl] = useState('')
+  const [previewHtml, setPreviewHtml] = useState('')
 
   // A saved or automatic audience, picked instead of building filters by
   // hand. Selecting one replaces the filter panel below — combining a saved
@@ -38,8 +57,6 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
   const [selectedStages, setSelectedStages] = useState<string[]>([])
   const [createdFrom, setCreatedFrom] = useState('')
   const [createdTo, setCreatedTo] = useState('')
-  const [lastContactedFrom, setLastContactedFrom] = useState('')
-  const [lastContactedTo, setLastContactedTo] = useState('')
 
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewSample, setPreviewSample] = useState<AudienceLead[]>([])
@@ -96,8 +113,11 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
       stageKeys: selectedStages,
       createdFrom: createdFrom || null,
       createdTo: createdTo || null,
-      lastContactedFrom: lastContactedFrom || null,
-      lastContactedTo: lastContactedTo || null,
+      // Last-contacted filtering removed: it read from a field that is only
+      // updated by some channels, so the same lead could be included or
+      // excluded depending on how it happened to be contacted.
+      lastContactedFrom: null,
+      lastContactedTo: null,
       sourceKeys: [],
       groupId: null,
     }
@@ -183,6 +203,12 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
           name: name.trim(),
           subject: subject.trim(),
           body,
+          // The server rebuilds the HTML rather than trusting what the
+          // browser sends: the unsubscribe link has to be per-recipient, so
+          // it cannot be baked in here.
+          presetKey,
+          ctaLabel: ctaLabel.trim() || null,
+          ctaUrl: ctaUrl.trim() || null,
           filters: currentFilters(),
           // The server prefers this over `filters` when present, so an
           // unticked lead is genuinely excluded rather than being re-added
@@ -227,15 +253,107 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted">Body (basic HTML supported)</label>
+            <label className="mb-1 block text-xs text-muted">Design</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {EMAIL_TEMPLATE_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setPresetKey(p.key)}
+                  className={clsx(
+                    'rounded-card border p-3 text-left transition-colors',
+                    presetKey === p.key ? 'border-blue-500 bg-blue-500/10' : 'border-border bg-card2 hover:border-blue-500/50'
+                  )}
+                >
+                  <p className="text-sm font-semibold text-fg">{p.name}</p>
+                  <p className="mt-0.5 text-xs text-muted2">{p.description}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-muted">Message</label>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={8}
-              placeholder="Hi there,&#10;&#10;We'd love to see you at our Open House this Saturday..."
+              placeholder="Dear parent,&#10;&#10;We'd love to see you at our Open House this Saturday..."
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
+            {/* Typed text, not HTML. It is escaped and turned into
+                paragraphs when the template is built — letting raw markup
+                through means one stray angle bracket breaks the layout for
+                every recipient. */}
+            <p className="mt-1 text-xs text-muted2">
+              Plain text. Leave a blank line between paragraphs.
+            </p>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted">Button label (optional)</label>
+              <input
+                value={ctaLabel}
+                onChange={(e) => setCtaLabel(e.target.value)}
+                placeholder="Book a campus visit"
+                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted">Button link</label>
+              <input
+                value={ctaUrl}
+                onChange={(e) => setCtaUrl(e.target.value)}
+                placeholder="https://yourschool.edu/visit"
+                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                const preset = findPreset(presetKey)
+                if (!preset) return
+                setPreviewHtml(
+                  preset.build({
+                    institute: instituteName || 'Your school',
+                    parentName: 'Priya Sharma',
+                    body: body || 'Your message will appear here.',
+                    ctaLabel: ctaLabel || undefined,
+                    ctaUrl: ctaUrl || undefined,
+                    // A real-looking link so the footer renders at the right
+                    // width; it points nowhere in the preview.
+                    unsubscribeUrl: '#',
+                  })
+                )
+              }}
+              className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg"
+            >
+              Preview email
+            </button>
+            <span className="text-xs text-muted2">Shown with a sample parent name.</span>
+          </div>
+
+          {previewHtml && (
+            <div className="rounded-card border border-border bg-card2 p-2">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <p className="text-xs uppercase tracking-widest text-muted">Preview</p>
+                <button onClick={() => setPreviewHtml('')} className="text-xs text-muted2 hover:text-fg">
+                  Close
+                </button>
+              </div>
+              {/* An iframe, not dangerouslySetInnerHTML: the email carries
+                  its own full document with its own styles, and injecting it
+                  into this page would let those styles leak into the app. */}
+              <iframe
+                title="Email preview"
+                srcDoc={previewHtml}
+                sandbox=""
+                className="h-[420px] w-full rounded-md border border-border bg-white"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -243,9 +361,16 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
         <h2 className="mb-1 flex items-center gap-2 text-lg font-bold text-fg">
           <Users size={18} /> Audience
         </h2>
-        <p className="mb-4 text-sm text-muted2">
+        <p className="mb-2 text-sm text-muted2">
           Pick a saved audience, or build one with the filters below (they combine with AND). Only leads with an
           email on file are included either way.
+        </p>
+        {/* Stated where the recipient count is chosen rather than buried in
+            Settings — the moment somebody is about to select 4,000 people is
+            the moment the limit is worth knowing. */}
+        <p className="mb-4 rounded-md border border-border bg-card2 px-3 py-2 text-xs text-muted2">
+          The first <span className="font-semibold text-fg">5,000 emails each month</span> are free. The count
+          resets on the 1st.
         </p>
 
         <div className="mb-4">
@@ -365,30 +490,6 @@ export default function EmailBroadcastComposer({ clientId, onSent }: { clientId:
                 value={createdTo}
                 onChange={(e) => {
                   setCreatedTo(e.target.value)
-                  setPreviewCount(null)
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">Last Contacted Between</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={lastContactedFrom}
-                onChange={(e) => {
-                  setLastContactedFrom(e.target.value)
-                  setPreviewCount(null)
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-              <span className="text-xs text-muted2">to</span>
-              <input
-                type="date"
-                value={lastContactedTo}
-                onChange={(e) => {
-                  setLastContactedTo(e.target.value)
                   setPreviewCount(null)
                 }}
                 className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
