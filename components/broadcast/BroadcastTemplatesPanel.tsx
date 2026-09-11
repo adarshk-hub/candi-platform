@@ -2,7 +2,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Clock, RefreshCw, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Paperclip, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface Template {
@@ -47,8 +47,70 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   const [name, setName] = useState('')
   const [category, setCategory] = useState('UTILITY')
   const [body, setBody] = useState('')
+  // Optional media at the top of the message. Meta calls this the header,
+  // and an image or PDF there is what turns a fee list or an invitation
+  // into something a parent can actually open.
+  const [headerType, setHeaderType] = useState<'none' | 'text' | 'image' | 'document'>('none')
+  const [headerText, setHeaderText] = useState('')
+  const [headerFile, setHeaderFile] = useState<File | null>(null)
+  const [headerHandle, setHeaderHandle] = useState<string | null>(null)
+  const [headerMediaData, setHeaderMediaData] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  // Meta approves a template against a *sample* file, then wants the real
+  // file re-uploaded on every send. So two things are kept: the handle Meta
+  // returns for approval, and the bytes themselves for later sends.
+  async function uploadHeaderMedia(file: File) {
+    setHeaderFile(file)
+    setHeaderHandle(null)
+    setHeaderMediaData(null)
+    setUploading(true)
+    setError('')
+    try {
+      const [handle, base64] = await Promise.all([
+        (async () => {
+          const form = new FormData()
+          form.append('file', file)
+          const res = await fetch(`/api/clients/${clientId}/templates/upload-media`, {
+            method: 'POST',
+            body: form,
+          })
+          const b = await res.json().catch(() => ({}))
+          if (!res.ok || !b.ok) throw new Error(b.error || 'Meta rejected the sample file.')
+          return b.handle as string
+        })(),
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          // Strip the "data:<mime>;base64," prefix — only the payload is
+          // stored, with mime and filename kept separately.
+          reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+          reader.onerror = () => reject(new Error('Could not read that file.'))
+          reader.readAsDataURL(file)
+        }),
+      ])
+      setHeaderHandle(handle)
+      setHeaderMediaData(base64)
+    } catch (err: any) {
+      setError(err?.message || 'Could not upload that file.')
+      setHeaderFile(null)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   async function submitTemplate() {
+    const components: any[] = []
+    if (headerType === 'text' && headerText.trim()) {
+      components.push({ type: 'HEADER', format: 'TEXT', text: headerText.trim() })
+    } else if ((headerType === 'image' || headerType === 'document') && headerHandle) {
+      components.push({
+        type: 'HEADER',
+        format: headerType.toUpperCase(),
+        example: { header_handle: [headerHandle] },
+      })
+    }
+    components.push({ type: 'BODY', text: body.trim() })
+
     setBusy('submit')
     setNotice('')
     setError('')
@@ -61,7 +123,12 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
           name: name.trim(),
           category,
           language: 'en',
-          components: [{ type: 'BODY', text: body.trim() }],
+          components,
+          headerFormat: headerType === 'none' ? null : headerType.toUpperCase(),
+          headerText: headerType === 'text' ? headerText.trim() : null,
+          headerMediaData: headerType === 'image' || headerType === 'document' ? headerMediaData : null,
+          headerMediaMime: headerFile?.type || null,
+          headerMediaFilename: headerFile?.name || null,
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -205,9 +272,84 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
           )}
         </div>
 
+        <div className="mt-4">
+          <label className="mb-1 block text-xs text-muted">Attachment (optional)</label>
+          <div className="flex flex-wrap items-center gap-2">
+            {([
+              { key: 'none' as const, label: 'None' },
+              { key: 'text' as const, label: 'Heading' },
+              { key: 'image' as const, label: 'Image' },
+              { key: 'document' as const, label: 'PDF' },
+            ]).map((h) => (
+              <button
+                key={h.key}
+                onClick={() => {
+                  setHeaderType(h.key)
+                  setHeaderFile(null)
+                  setHeaderHandle(null)
+                  setHeaderMediaData(null)
+                }}
+                className={clsx(
+                  'rounded-full border px-3 py-1 text-xs',
+                  headerType === h.key
+                    ? 'border-blue-500 bg-blue-500/15 text-blue-300'
+                    : 'border-border text-muted2 hover:text-fg'
+                )}
+              >
+                {h.label}
+              </button>
+            ))}
+          </div>
+
+          {headerType === 'text' && (
+            <input
+              value={headerText}
+              onChange={(e) => setHeaderText(e.target.value)}
+              placeholder="Admissions now open"
+              className="mt-2 w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+            />
+          )}
+
+          {(headerType === 'image' || headerType === 'document') && (
+            <div className="mt-2">
+              <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg">
+                <Paperclip size={14} />
+                {headerFile ? 'Choose a different file' : headerType === 'image' ? 'Choose an image' : 'Choose a PDF'}
+                <input
+                  type="file"
+                  accept={headerType === 'image' ? 'image/jpeg,image/png' : 'application/pdf'}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) uploadHeaderMedia(f)
+                    e.target.value = ''
+                  }}
+                  className="hidden"
+                />
+              </label>
+              {uploading && <p className="mt-1 text-xs text-muted">Uploading sample to Meta…</p>}
+              {headerFile && headerHandle && (
+                <p className="mt-1 text-xs text-green-400">{headerFile.name} — ready</p>
+              )}
+              {/* Meta approves the template against this sample, and the
+                  real file is sent with each message. Parents see whatever
+                  is attached at send time, not this one. */}
+              <p className="mt-1 text-xs text-muted2">
+                {headerType === 'image' ? 'JPG or PNG.' : 'PDF.'} Meta approves the template against this sample
+                file.
+              </p>
+            </div>
+          )}
+        </div>
+
         <button
           onClick={submitTemplate}
-          disabled={!name.trim() || !body.trim() || !!busy}
+          disabled={
+            !name.trim() ||
+            !body.trim() ||
+            !!busy ||
+            uploading ||
+            ((headerType === 'image' || headerType === 'document') && !headerHandle)
+          }
           className="mt-4 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
         >
           {busy === 'submit' ? 'Submitting…' : 'Submit for approval'}
