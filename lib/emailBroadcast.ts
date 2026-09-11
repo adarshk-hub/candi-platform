@@ -1,6 +1,7 @@
 // path: lib/emailBroadcast.ts
 import { query, queryAsClient, centralQuery } from './db'
 import { sendEmail } from './email'
+import { findPreset } from './emailBroadcastTemplates'
 import { buildAudienceQuery, previewAudience as previewAudienceShared, BroadcastFilters, AudienceLead } from './leadAudience'
 import { leadDateRangeSql } from './leadDateRange'
 
@@ -20,7 +21,10 @@ export interface CreateEmailBroadcastParams {
   clientId: string
   name: string
   subject: string
-  body: string // HTML
+  body: string // plain text, rendered into the chosen preset per recipient
+  presetKey?: string | null
+  ctaLabel?: string | null
+  ctaUrl?: string | null
   filters: BroadcastFilters
   // Hand-picked recipients from the preview list. When present these win
   // over `filters` entirely — the same behaviour as WhatsApp broadcasts,
@@ -38,17 +42,20 @@ export async function createBroadcast(
   const broadcast = (
     await query<{ id: string }>(
       `INSERT INTO email_broadcasts
-         (client_id, name, subject, body,
+         (client_id, name, subject, body, preset_key, cta_label, cta_url,
           filter_tags, filter_tags_mode, filter_stage_keys,
           filter_created_from, filter_created_to, filter_last_contacted_from, filter_last_contacted_to,
           created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         params.clientId,
         params.name,
         params.subject,
         params.body,
+        params.presetKey || 'announcement',
+        params.ctaLabel || null,
+        params.ctaUrl || null,
         params.filters.tags,
         params.filters.tagsMode,
         params.filters.stageKeys,
@@ -175,9 +182,16 @@ export async function processClientBatch(
     result.processed++
 
     const broadcast = (
-      await queryAsClient<{ subject: string; body: string; client_id: string }>(
+      await queryAsClient<{
+        subject: string
+        body: string
+        client_id: string
+        preset_key: string | null
+        cta_label: string | null
+        cta_url: string | null
+      }>(
         clientId,
-        'SELECT subject, body, client_id FROM email_broadcasts WHERE id = $1',
+        'SELECT subject, body, client_id, preset_key, cta_label, cta_url FROM email_broadcasts WHERE id = $1',
         [recipient.broadcast_id]
       )
     )[0]
@@ -211,6 +225,36 @@ export async function processClientBatch(
       )
     )[0]
 
+    // The HTML is built here, per recipient, rather than stored ready-made
+    // on the broadcast. Two things have to differ for each person: their
+    // name, and their own unsubscribe link. A single pre-rendered body
+    // cannot carry either, and an unsubscribe link shared between
+    // recipients would let one parent opt another one out.
+    const lead = (
+      await queryAsClient<{ full_name: string; unsubscribe_token: string | null }>(
+        clientId,
+        'SELECT full_name, unsubscribe_token FROM leads WHERE id = $1',
+        [recipient.lead_id]
+      )
+    )[0]
+
+    const preset = findPreset(broadcast.preset_key || 'announcement')
+    const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/unsubscribe?t=${lead?.unsubscribe_token || ''}`
+
+    const html = preset
+      ? preset.build({
+          institute: client?.name || 'Your school',
+          parentName: lead?.full_name || 'there',
+          body: broadcast.body,
+          ctaLabel: broadcast.cta_label || undefined,
+          ctaUrl: broadcast.cta_url || undefined,
+          unsubscribeUrl,
+          contactLine: `Sent by ${client?.name || 'your school'}${
+            client?.school_email ? ` · ${client.school_email}` : ''
+          }.`,
+        })
+      : broadcast.body
+
     const sendResult = await sendEmail(
       {
         host: client?.smtp_host || null,
@@ -223,7 +267,7 @@ export async function processClientBatch(
       {
         to: recipient.to_email,
         subject: broadcast.subject,
-        body: broadcast.body,
+        body: html,
         html: true,
         failIfUnconfigured: true,
       }
