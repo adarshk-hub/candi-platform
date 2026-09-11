@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       presetKey: String(body?.presetKey || 'announcement'),
       ctaLabel: body?.ctaLabel || null,
       ctaUrl: body?.ctaUrl || null,
+      details: Array.isArray(body?.details) ? body.details : [],
       filters,
       explicitLeadIds: Array.isArray(body?.explicitLeadIds) ? body.explicitLeadIds : null,
       createdBy: session!.id,
