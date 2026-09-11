@@ -151,18 +151,30 @@ export default function Sidebar({
   // Assembled here rather than inline so the section can be hidden entirely
   // when a login has access to none of it — an empty "Counsellor" heading
   // sitting under a gap looks like something failed to load.
+  // Two pages, and only two: Next Action is the lead worklist (a counsellor
+  // sees only their own, scoped server-side), Performance is the manager
+  // view. Activity folded into the first and Team Day into the second —
+  // both were the same question asked twice.
   const counsellorSection = [
-    can('activity') && (
-      <NavItem key="activity" href="/activity" icon={PhoneCall} label="Activity" active={pathname === '/activity'} collapsed={collapsed} />
+    can('follow_ups') && (
+      <NavItem
+        key="next-action"
+        href="/follow-ups"
+        icon={CalendarClock}
+        label="Next Action"
+        active={pathname === '/follow-ups'}
+        collapsed={collapsed}
+      />
     ),
     can('performance') && (
-      <NavItem key="performance" href="/performance" icon={BarChart3} label="Performance" active={pathname === '/performance'} collapsed={collapsed} />
-    ),
-    can('my_day') && (
-      <NavItem key="my-day" href="/my-day" icon={CalendarCheck} label="My Day" active={pathname === '/my-day'} collapsed={collapsed} />
-    ),
-    can('team_day') && (
-      <NavItem key="team-day" href="/team-day" icon={CalendarRange} label="Team Day" active={pathname === '/team-day'} collapsed={collapsed} />
+      <NavItem
+        key="performance"
+        href="/performance"
+        icon={BarChart3}
+        label="Performance"
+        active={pathname === '/performance'}
+        collapsed={collapsed}
+      />
     ),
   ].filter(Boolean)
 
@@ -248,9 +260,6 @@ export default function Sidebar({
 
         {can('inbox') && (
           <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
-        )}
-        {can('follow_ups') && (
-          <NavItem href="/follow-ups" icon={CalendarClock} label="Next Action" active={pathname === '/follow-ups'} collapsed={collapsed} />
         )}
         {can('calendar') && (
           <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
