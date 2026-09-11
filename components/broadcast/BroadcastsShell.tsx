@@ -114,7 +114,7 @@ export default function BroadcastsShell({
 
       {tab === 'templates' ? (
         channel === 'email' ? (
-          <EmailDesignsPanel instituteName={institutes.find((i) => i.id === clientId)?.name || ''} />
+          <EmailDesignsPanel clientId={clientId} instituteName={institutes.find((i) => i.id === clientId)?.name || ''} />
         ) : (
           <BroadcastTemplatesPanel clientId={clientId} />
         )
