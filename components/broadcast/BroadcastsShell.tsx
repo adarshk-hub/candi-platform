@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import { Radio, MessageCircle, Mail } from 'lucide-react'
+import BroadcastTemplatesPanel from './BroadcastTemplatesPanel'
 import BroadcastComposer from './BroadcastComposer'
 import BroadcastHistory from './BroadcastHistory'
 import EmailBroadcastComposer from './EmailBroadcastComposer'
@@ -22,9 +23,10 @@ export default function BroadcastsShell({
   institutes: Institute[]
   lockedToClientId: string | null
 }) {
-  const [clientId, setClientId] = useState(lockedToClientId || institutes[0]?.id || '')
+  // Read-only now — whichever institute the sidebar has selected.
+  const clientId = lockedToClientId || institutes[0]?.id || ''
   const [channel, setChannel] = useState<'whatsapp' | 'email'>('whatsapp')
-  const [tab, setTab] = useState<'new' | 'history' | 'audience'>('new')
+  const [tab, setTab] = useState<'new' | 'audience' | 'templates' | 'history'>('new')
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   if (!clientId) {
@@ -39,7 +41,10 @@ export default function BroadcastsShell({
   // Audiences are the same set of groups whichever channel you're sending
   // through, so the WhatsApp/Email switch is hidden on that tab rather than
   // left showing a choice that changes nothing.
-  const onAudience = tab === 'audience'
+  // Audiences and templates are the same whichever channel you send
+  // through, so the WhatsApp/Email switch is hidden on those tabs rather
+  // than left showing a choice that changes nothing.
+  const channelIrrelevant = tab === 'audience' || tab === 'templates'
 
   return (
     <div>
@@ -51,24 +56,18 @@ export default function BroadcastsShell({
         </div>
       </div>
 
-      {!lockedToClientId && (
-        <div className="mb-5">
-          <label className="mb-1 block text-xs text-muted">Institute</label>
-          <select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="w-72 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-          >
-            {institutes.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* The institute picker has been removed. It duplicated the switcher
+          in the sidebar, and two controls over the same choice is how a
+          broadcast ends up going to the wrong school's parents — which is
+          not recoverable. The institute is shown, not chosen. */}
+      {institutes.length > 1 && (
+        <p className="mb-5 text-sm text-muted2">
+          Broadcasting as <span className="font-semibold text-fg">{institutes.find((i) => i.id === clientId)?.name || '—'}</span>
+          . Switch institute from the sidebar.
+        </p>
       )}
 
-      <div className={onAudience ? 'hidden' : 'mb-5 flex gap-2'}>
+      <div className={channelIrrelevant ? 'hidden' : 'mb-5 flex gap-2'}>
         <button
           onClick={() => switchChannel('whatsapp')}
           className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
@@ -88,7 +87,7 @@ export default function BroadcastsShell({
       </div>
 
       <div className="mb-5 flex gap-1 border-b border-border">
-        {(['new', 'history', 'audience'] as const).map((t) => (
+        {(['new', 'audience', 'templates', 'history'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -96,12 +95,20 @@ export default function BroadcastsShell({
               tab === t ? 'border-blue-500 text-fg' : 'border-transparent text-muted2 hover:text-fg'
             }`}
           >
-            {t === 'new' ? 'New Broadcast' : t === 'history' ? 'History' : 'Audience'}
+            {t === 'new'
+              ? 'Send Broadcast'
+              : t === 'audience'
+              ? 'Audience'
+              : t === 'templates'
+              ? 'Templates'
+              : 'History'}
           </button>
         ))}
       </div>
 
-      {tab === 'audience' ? (
+      {tab === 'templates' ? (
+        <BroadcastTemplatesPanel clientId={clientId} />
+      ) : tab === 'audience' ? (
         <AudienceBoard clientId={clientId} embedded />
       ) : channel === 'whatsapp' ? (
         tab === 'new' ? (
@@ -118,6 +125,7 @@ export default function BroadcastsShell({
       ) : tab === 'new' ? (
         <EmailBroadcastComposer
           clientId={clientId}
+          instituteName={institutes.find((i) => i.id === clientId)?.name || ''}
           onSent={() => {
             setTab('history')
             setHistoryRefreshKey((k) => k + 1)
