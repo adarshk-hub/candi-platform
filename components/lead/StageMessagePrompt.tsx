@@ -14,7 +14,6 @@ interface Assignment {
 interface WaTemplate {
   id: string
   name: string
-  status: string
   language: string
   bodyPreview: string
   variableCount: number
@@ -93,9 +92,11 @@ export default function StageMessagePrompt({
         const templates: WaTemplate[] = await fetch(`/api/leads/${leadId}/whatsapp/templates`).then((r) =>
           r.ok ? r.json() : []
         )
-        const found = (Array.isArray(templates) ? templates : []).find(
-          (t) => t.name === match.template_name && t.status === 'approved'
-        )
+        // This endpoint returns approved templates only and has no `status`
+        // field, so a name match is the approval check. Testing
+        // t.status === 'approved' was always false: every stage template
+        // was treated as unapproved and the prompt never appeared.
+        const found = (Array.isArray(templates) ? templates : []).find((t) => t.name === match.template_name)
 
         if (cancelled) return
         setChecked(true)
