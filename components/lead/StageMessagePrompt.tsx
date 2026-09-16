@@ -1,7 +1,7 @@
 // path: components/lead/StageMessagePrompt.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MessageCircle, X } from 'lucide-react'
 
 interface Assignment {
@@ -57,6 +57,16 @@ export default function StageMessagePrompt({
   // rest blank.
   const [values, setValues] = useState<string[]>([])
   const [error, setError] = useState('')
+  // Template name configured for this stage that Meta hasn't approved.
+  const [unapprovedName, setUnapprovedName] = useState('')
+
+  // onDone is an inline arrow in both callers, so it is a new function on
+  // every parent render. With it in the effect's dependency list, a parent
+  // re-render mid-send (LeadSlideOver calls load() right after the stage
+  // change) re-ran the lookup and could auto-send the template twice.
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
+  const done = () => onDoneRef.current()
 
   useEffect(() => {
     let cancelled = false
@@ -75,7 +85,7 @@ export default function StageMessagePrompt({
           // caller isn't left waiting on a prompt that will never appear.
           if (!cancelled) {
             setChecked(true)
-            onDone()
+            done()
           }
           return
         }
@@ -89,12 +99,13 @@ export default function StageMessagePrompt({
 
         if (cancelled) return
         setChecked(true)
-        // An assignment pointing at a template Meta hasn't approved (or has
-        // since revoked) is treated as no template rather than as an error:
-        // the stage change itself already succeeded, and a red box about
-        // template approval is not the counsellor's problem in that moment.
+        // An assignment pointing at a template Meta hasn't approved used to
+        // be skipped silently — which is exactly why no confirmation ever
+        // appeared for steps still set to the old CANDID_* templates. The
+        // stage change has still succeeded; this just says the message
+        // didn't go and where to fix it.
         if (!found) {
-          onDone()
+          setUnapprovedName(match.template_name)
           return
         }
 
@@ -115,7 +126,7 @@ export default function StageMessagePrompt({
       } catch {
         if (!cancelled) {
           setChecked(true)
-          onDone()
+          done()
         }
       }
     }
@@ -124,7 +135,8 @@ export default function StageMessagePrompt({
     return () => {
       cancelled = true
     }
-  }, [leadId, clientId, stageKey, onDone])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId, clientId, stageKey])
 
   async function send() {
     if (!template) return
@@ -156,7 +168,7 @@ export default function StageMessagePrompt({
         setAutoFailed(true)
         return
       }
-      onDone()
+      done()
     } finally {
       setSending(false)
     }
@@ -165,6 +177,32 @@ export default function StageMessagePrompt({
   // Nothing on screen while an unconfirmed message sends itself — the only
   // reason to show this dialog is to ask, or to report that an automatic
   // send failed.
+  if (checked && unapprovedName) {
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full max-w-md rounded-card border border-border bg-card p-6">
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-bold text-fg">
+            <MessageCircle size={18} className="text-amber-500" />
+            {stageLabel} message not sent
+          </h2>
+          <p className="mb-4 text-sm text-muted2">
+            The stage was updated, but the WhatsApp template set for this stage (
+            <span className="font-mono">{unapprovedName}</span>) is not approved by Meta, so nothing was sent. Choose
+            an approved template in Settings → WhatsApp.
+          </p>
+          <div className="flex justify-end border-t border-border pt-4">
+            <button
+              onClick={done}
+              className="rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!checked || !template) return null
   if (!needsPrompt && !autoFailed) return null
 
