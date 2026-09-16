@@ -1,5 +1,5 @@
 // path: lib/waSequenceEngine.ts
-import { query, queryAsClient, centralQuery } from './db'
+import { query, queryAsClient, centralQuery, runAsClient } from './db'
 import { sendTemplateMessage, getTemplateBodyVariableCount } from './metaWhatsapp'
 import { NURTURE_STEPS } from './nurtureSteps'
 
@@ -31,8 +31,15 @@ async function getStepsForClient(clientId: string): Promise<SequenceStep[]> {
       `SELECT day_number, template_name, language_code
        FROM wa_sequence_templates
        WHERE client_id = $1
-         AND COALESCE(require_confirmation, false) = false
-         AND COALESCE(stage_key, '') = ''
+         AND (
+           -- Day 0 is the welcome. It fires on lead creation, never on a
+           -- stage change (StageMessagePrompt skips day 0), and Settings
+           -- shows it as "Sends automatically" with no ask-first box. Its
+           -- stage dropdown (usually "New") must not filter it out here,
+           -- or the welcome is never scheduled by anything.
+           day_number = 0
+           OR (COALESCE(require_confirmation, false) = false AND COALESCE(stage_key, '') = '')
+         )
        ORDER BY day_number ASC`,
       [clientId]
     )
@@ -263,9 +270,11 @@ export async function advanceDueMessagesForClient(clientId: string): Promise<{ p
      RETURNING *`
   )
 
-  for (const msg of claimed) {
-    await sendDueMessage(msg, clientId)
-  }
+  await runAsClient(clientId, async () => {
+    for (const msg of claimed) {
+      await sendDueMessage(msg, clientId)
+    }
+  })
 
   return { processed: claimed.length }
 }
