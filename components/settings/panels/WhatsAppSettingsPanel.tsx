@@ -428,7 +428,9 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
         body: JSON.stringify({
           dayNumber,
           templateName,
-          languageCode: 'en',
+          // Meta matches name AND language exactly (#132001 otherwise), so
+          // save the language the template was actually approved in.
+          languageCode: templates.find((t) => t.name === templateName)?.language || 'en',
           stageKey: stageOverride !== undefined ? stageOverride : stageByDay[dayNumber] || '',
           requireConfirmation:
             confirmOverride !== undefined ? confirmOverride : !!confirmByDay[dayNumber],
@@ -673,6 +675,15 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                           <option value="" disabled>
                             Select a template…
                           </option>
+                          {/* A saved template that is no longer in the approved
+                              list (e.g. an old seeded CANDID_day0_welcome) must
+                              be shown as itself. Without this option the browser
+                              silently displays the first approved template
+                              instead, so Settings looks right while the engine
+                              keeps sending the old name. */}
+                          {current && !approvedTemplates.some((t) => t.name === current) && (
+                            <option value={current}>{current} (not approved — pick another)</option>
+                          )}
                           {approvedTemplates.map((t) => (
                             <option key={t.id} value={t.name}>
                               {t.name}
