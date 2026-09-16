@@ -1,5 +1,5 @@
 // path: lib/welcomeMessage.ts
-import { queryAsClient } from './db'
+import { queryAsClient, runAsClient } from './db'
 import { startSequence } from './waSequenceEngine'
 
 export type WelcomeStatus = 'pending' | 'sent' | 'skipped'
@@ -43,9 +43,17 @@ export async function startWelcomeOrAsk(
     return { started: false, pending: true }
   }
 
-  const result = await startSequence(leadId)
+  // runAsClient: this runs from webhooks (no session) and from waitUntil
+  // after the response — startSequence and everything it calls use query().
+  const result = await runAsClient(clientId, () => startSequence(leadId))
   if (!result.ok) {
     console.error(`[welcome] could not start sequence for lead ${leadId}: ${result.error}`)
+    await queryAsClient(
+      clientId,
+      `INSERT INTO activity_log (lead_id, activity_type, title, description)
+       VALUES ($1, 'system', 'Welcome Message Not Sent', $2)`,
+      [leadId, `WhatsApp welcome could not start: ${result.error}`]
+    ).catch(() => {})
   }
   await setStatus(clientId, leadId, 'sent')
   return { started: result.ok, pending: false }
