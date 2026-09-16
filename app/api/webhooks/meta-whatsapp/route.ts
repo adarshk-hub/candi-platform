@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
+import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 import { queryAsClient, centralQuery } from '@/lib/db'
 import { findOrCreateLead } from '@/lib/leadIntake'
 import { verifySignature } from '@/lib/metaLeadAds'
@@ -125,6 +127,16 @@ async function handleInboundMessage(clientId: string, msg: any) {
       type: 'wa_message',
       body: text,
     })
+  }
+
+  // A brand-new lead from a click-to-WhatsApp chat gets the same Day 0
+  // welcome as manual, Meta-form and landing-page leads.
+  if (created) {
+    waitUntil(
+      startWelcomeOrAsk(clientId, lead.id).catch((err) =>
+        console.error(`[meta-whatsapp webhook] welcome handling threw for lead ${lead.id}`, err)
+      )
+    )
   }
 
   return { leadId: lead.id, created, duplicate, wamid }
