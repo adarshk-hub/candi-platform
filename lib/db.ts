@@ -1,4 +1,17 @@
+import { AsyncLocalStorage } from 'async_hooks'
 import { getServerSession } from './serverAuth'
+
+// Explicit client scope for background work (webhooks, cron, waitUntil
+// callbacks). Code deep inside helpers (sequence engine, template send,
+// wallet debit) calls query(), which otherwise needs a login cookie — a
+// Meta/landing-page webhook has none, so every welcome send threw before
+// reaching Meta. Wrapping that work in runAsClient() makes query() use the
+// given client's database instead of the session.
+const clientScope = new AsyncLocalStorage<string>()
+
+export function runAsClient<T>(clientId: string, fn: () => Promise<T>): Promise<T> {
+  return clientScope.run(clientId, fn)
+}
 import { getClientPool, centralPool } from './clientRegistry'
 
 // query() now resolves the correct database automatically, from whoever is
@@ -17,7 +30,18 @@ import { getClientPool, centralPool } from './clientRegistry'
 //      (creating a new client, listing all clients to manage them) — this
 //      is registry data, not any one client's CRM data.
 export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
-  const session = getServerSession()
+  const scopedClientId = clientScope.getStore()
+  if (scopedClientId) {
+    const pool = await getClientPool(scopedClientId)
+    const result = await pool.query(text, params)
+    return result.rows
+  }
+  let session = null
+  try {
+    session = getServerSession()
+  } catch {
+    // cookies() throws outside a request scope (cron / background).
+  }
   if (!session || !session.clientId) {
     throw new Error(
       'query() requires a session scoped to one client. For webhook handlers or platform-admin operations, use centralQuery() from lib/db instead.'
