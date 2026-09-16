@@ -156,13 +156,29 @@ async function sendDueMessage(msg: any, clientId?: string): Promise<void> {
         ]
       : []
 
+  // Use the language the template is actually approved in. Rows saved by
+  // Settings always stored 'en', but Meta rejects the send (#132001) if the
+  // template exists only as e.g. en_US.
+  let languageCode: string = msg.language_code || 'en'
+  try {
+    const tpl = (
+      await q<{ language: string | null }>(
+        `SELECT language FROM wa_templates WHERE client_id = $1 AND name = $2 LIMIT 1`,
+        [sequence.client_id, msg.template_name]
+      )
+    )[0]
+    if (tpl?.language) languageCode = tpl.language
+  } catch {
+    // keep msg.language_code
+  }
+
   let result: { ok: boolean; wamid?: string; error?: string }
   try {
     result = await sendTemplateMessage({
       clientId: sequence.client_id,
       to: sequence.phone_number,
       templateName: msg.template_name,
-      languageCode: msg.language_code,
+      languageCode,
       components: bodyComponents,
     })
   } catch (err: any) {
