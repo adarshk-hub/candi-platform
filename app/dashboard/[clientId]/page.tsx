@@ -26,6 +26,20 @@ export default async function ClientDashboardPage({
     redirect('/dashboard')
   }
 
+  // Switching institutes swaps the session onto the target institute's own
+  // database and reloads the current URL — which, on this route, still
+  // carries the *previous* institute's id. That id doesn't exist in the
+  // institute now being queried, so the lookup below came back empty and
+  // rendered "Institution not found." until the person navigated away and
+  // back. Realign the URL with the session instead.
+  if (session.clientId && params.clientId !== session.clientId) {
+    const qs = new URLSearchParams()
+    if (searchParams.from) qs.set('from', searchParams.from)
+    if (searchParams.to) qs.set('to', searchParams.to)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    redirect(`/dashboard/${session.clientId}${suffix}`)
+  }
+
   const client = (await query<{ id: string; name: string }>('SELECT id, name FROM clients WHERE id = $1', [params.clientId]))[0]
   if (!client) {
     return <p className="text-muted2">Institution not found.</p>
