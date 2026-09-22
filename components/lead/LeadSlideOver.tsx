@@ -36,6 +36,7 @@ export default function LeadSlideOver({
   leadId,
   onClose,
   initialTab = 'info',
+  initialBookingSub = 'call',
 }: {
   leadId: string
   onClose: () => void
@@ -43,6 +44,8 @@ export default function LeadSlideOver({
   // Actions page's "Change" column, for instance, where landing on Info
   // meant a second click every time.
   initialTab?: TabKey
+  // Which Bookings sub-tab (Call / Visit) to open on.
+  initialBookingSub?: 'call' | 'visit'
 }) {
   const { stageLabel: stageLabelLookup } = useStages()
   const [lead, setLead] = useState<Lead | null>(null)
@@ -217,7 +220,7 @@ export default function LeadSlideOver({
                 />
               )}
               {tab === 'calls' && <CallLogTab leadId={lead.id} />}
-              {tab === 'bookings' && <BookingsTab leadId={lead.id} />}
+              {tab === 'bookings' && <BookingsTab leadId={lead.id} initialSub={initialBookingSub} />}
               {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
               {tab === 'history' && <HistoryTab leadId={lead.id} />}
             </div>
