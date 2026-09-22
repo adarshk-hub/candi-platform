@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
     where.push(`l.assigned_counsellor_id = $${params.length}`)
   }
 
+  // Cancelled bookings no longer belong on the diary.
+  where.push(`COALESCE(e.status, '') <> 'cancelled'`)
+
   // Global lead visibility window (Settings > Customize > Lead Date
   // Range). Applied last so it can never be widened by anything above.
   where.push(leadDateRangeSql('l'))
