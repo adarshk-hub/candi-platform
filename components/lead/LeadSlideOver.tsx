@@ -19,6 +19,7 @@ import WhatsAppTab from './tabs/WhatsAppTab'
 import BookingsTab from './tabs/BookingsTab'
 import CallLogTab from './tabs/CallLogTab'
 import TagEditor from './TagEditor'
+import { markLeadRead } from '@/lib/useNotifications'
 
 type TabKey = 'info' | 'whatsapp' | 'calls' | 'bookings' | 'nextaction' | 'history'
 
@@ -28,7 +29,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'calls', label: 'Call Log', icon: Phone },
   { key: 'bookings', label: 'Bookings', icon: MapPin },
   { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
-  { key: 'history', label: 'History', icon: History },
+  { key: 'history', label: 'Remarks', icon: History },
 ]
 
 export default function LeadSlideOver({
@@ -58,6 +59,12 @@ export default function LeadSlideOver({
   }
 
   useEffect(load, [leadId])
+
+  // Viewing the WhatsApp tab counts as checking the messages, so clear the
+  // lead's unread badge (and its bell entries) as soon as it's open.
+  useEffect(() => {
+    if (tab === 'whatsapp') markLeadRead(leadId)
+  }, [tab, leadId])
 
   // StagePill collects the cold reason before calling this, so by the time we
   // get here the move is already complete as far as the user is concerned.
