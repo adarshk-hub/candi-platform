@@ -61,6 +61,9 @@ export default function CalendarViewPage() {
   const [counsellorId, setCounsellorId] = useState('')
   const [typeMenuOpen, setTypeMenuOpen] = useState(false)
   const [activeLead, setActiveLead] = useState<string | null>(null)
+  // Bumped when the lead panel closes, so a booking cancelled from there
+  // drops off the calendar straight away.
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     fetch('/api/counsellors')
@@ -77,7 +80,7 @@ export default function CalendarViewPage() {
     fetch(`/api/events?${params.toString()}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setEvents(Array.isArray(data) ? data : []))
-  }, [cursor, selectedTypes, counsellorId])
+  }, [cursor, selectedTypes, counsellorId, reloadKey])
 
   const days = useMemo(() => monthMatrix(cursor.getFullYear(), cursor.getMonth()), [cursor])
 
@@ -361,7 +364,16 @@ export default function CalendarViewPage() {
       </div>
       )}
 
-      {activeLead && <LeadSlideOver leadId={activeLead} onClose={() => setActiveLead(null)} />}
+      {activeLead && (
+        <LeadSlideOver
+          leadId={activeLead}
+          initialTab="bookings"
+          onClose={() => {
+            setActiveLead(null)
+            setReloadKey((k) => k + 1)
+          }}
+        />
+      )}
     </div>
   )
 }
