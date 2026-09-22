@@ -18,6 +18,7 @@ import {
 import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
+import { markLeadRead } from '@/lib/useNotifications'
 
 // Two channels at the top level. Email here means mail this CRM has sent —
 // there is no incoming side. Reading a mailbox needs IMAP credentials for
@@ -142,6 +143,12 @@ export default function InboxShell() {
   }, [openThread])
 
   useEffect(loadThread, [loadThread])
+
+  // Opening a thread means its messages have been checked — clear the
+  // lead's unread WhatsApp badge.
+  useEffect(() => {
+    if (openThread) markLeadRead(openThread)
+  }, [openThread])
 
   return (
     <div>
