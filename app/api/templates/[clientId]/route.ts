@@ -8,12 +8,19 @@ export async function GET(req: NextRequest, { params }: { params: { clientId: st
   const session = getSession(req)
   if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const rows = await query(
-    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at
+  const rows = await query<any>(
+    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at, components
      FROM wa_templates WHERE client_id = $1 ORDER BY submitted_at DESC`,
     [params.clientId]
   )
-  return NextResponse.json(rows)
+  // Surface the template's body text so Settings can show what the
+  // message actually says, alongside its status notes.
+  const withBody = rows.map(({ components, ...row }: any) => {
+    const list = Array.isArray(components) ? components : []
+    const bodyComponent = list.find((c: any) => String(c?.type || '').toUpperCase() === 'BODY')
+    return { ...row, body_text: bodyComponent?.text || null }
+  })
+  return NextResponse.json(withBody)
 }
 
 // Deletes a template record.
