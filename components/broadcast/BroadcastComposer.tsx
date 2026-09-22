@@ -5,7 +5,7 @@ import { clsx } from 'clsx'
 import { getRateForCategory } from '@/lib/waCreditRates'
 
 import { useEffect, useState } from 'react'
-import { Send, Users, RefreshCw, Tag as TagIcon, AlertTriangle, CheckCircle2, SlidersHorizontal } from 'lucide-react'
+import { Send, Users, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 interface TemplateRow {
   id: string
@@ -153,6 +153,12 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   }
 
   async function runPreview() {
+    // Every broadcast goes to a chosen audience group — without one the
+    // empty filter set would match every lead.
+    if (!groupId) {
+      setError('Pick an audience group first.')
+      return
+    }
     setPreviewing(true)
     setError('')
     try {
@@ -207,6 +213,10 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
   async function send() {
     if (!name.trim() || !templateName) {
       setError('Broadcast name and template are required.')
+      return
+    }
+    if (!groupId) {
+      setError('Pick an audience group first.')
       return
     }
     if (!previewCount) {
@@ -331,34 +341,13 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
           <Users size={18} /> Audience
         </h2>
         <p className="mb-4 text-sm text-muted2">
-          Pick a saved audience, or build one with the filters below (they combine with AND — leave any blank to
-          not filter by it).
+          Pick who this broadcast goes to. To build a new audience with tags, stages or dates, create it on the
+          Audience page first.
         </p>
 
         <div className="mb-4">
           <label className="mb-1.5 block text-xs font-medium text-muted">Audience group</label>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <button
-              type="button"
-              onClick={() => {
-                setGroupId('')
-                invalidatePreview()
-              }}
-              className={clsx(
-                'flex flex-col rounded-md border p-3 text-left transition',
-                !groupId
-                  ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500'
-                  : 'border-border bg-card2 hover:border-blue-400'
-              )}
-            >
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-sm font-semibold text-fg">
-                  <SlidersHorizontal size={14} /> Build my own
-                </span>
-                {!groupId && <CheckCircle2 size={15} className="shrink-0 text-blue-500" />}
-              </div>
-              <span className="text-xs text-muted2">Use the tag, stage and date filters below</span>
-            </button>
             {groups.map((g) => {
               const active = groupId === g.id
               const kindLabel = g.kind === 'source' ? 'Automatic' : g.kind === 'manual' ? 'Fixed list' : 'Saved'
@@ -367,7 +356,7 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
                   key={g.id}
                   type="button"
                   onClick={() => {
-                    setGroupId(active ? '' : g.id)
+                    setGroupId(g.id)
                     invalidatePreview()
                   }}
                   className={clsx(
@@ -393,107 +382,22 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
               )
             })}
           </div>
-          {groupId && (
-            <p className="mt-1.5 text-xs text-muted2">
-              Using the <strong className="text-fg">{groups.find((g) => g.id === groupId)?.name}</strong> audience —
-              the filters below are ignored.
+          {groups.length === 0 && (
+            <p className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-amber-400">
+              No audiences yet — create one on the Audience page first.
             </p>
           )}
-        </div>
-
-        <div className={groupId ? 'pointer-events-none mb-4 opacity-40' : 'mb-4'}>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
-              <TagIcon size={13} /> Tags
-            </label>
-            {selectedTags.length > 1 && (
-              <div className="flex items-center gap-1 text-xs text-muted2">
-                Match
-                <select
-                  value={tagsMode}
-                  onChange={(e) => {
-                    setTagsMode(e.target.value as any)
-                    invalidatePreview()
-                  }}
-                  className="rounded border border-border bg-card2 px-1 py-0.5 text-xs text-fg"
-                >
-                  <option value="any">any</option>
-                  <option value="all">all</option>
-                </select>
-                selected tags
-              </div>
-            )}
-          </div>
-          {allTags.length === 0 ? (
-            <p className="text-xs text-muted">No tags used yet for this institute — add tags from a lead's card first.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {allTags.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => toggleTag(tag)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-                    selectedTags.includes(tag)
-                      ? 'border-blue-500 bg-blue-500/10 text-blue-400'
-                      : 'border-border bg-card2 text-muted2 hover:text-fg'
-                  }`}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
+          {groupId && (
+            <p className="mt-1.5 text-xs text-muted2">
+              Sending to the <strong className="text-fg">{groups.find((g) => g.id === groupId)?.name}</strong> audience.
+            </p>
           )}
-        </div>
-
-        <div className="mb-4">
-          <label className="mb-1.5 block text-xs font-medium text-muted">Pipeline Stage</label>
-          <div className="flex flex-wrap gap-1.5">
-            {stages.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => toggleStage(s.key)}
-                style={selectedStages.includes(s.key) ? { borderColor: s.color, color: s.color } : undefined}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-                  selectedStages.includes(s.key) ? 'bg-card2' : 'border-border bg-card2 text-muted2 hover:text-fg'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1 block text-xs text-muted">Lead Created Between</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={createdFrom}
-                onChange={(e) => {
-                  setCreatedFrom(e.target.value)
-                  invalidatePreview()
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-              <span className="text-xs text-muted2">to</span>
-              <input
-                type="date"
-                value={createdTo}
-                onChange={(e) => {
-                  setCreatedTo(e.target.value)
-                  invalidatePreview()
-                }}
-                className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
         </div>
 
         <div className="mt-5 flex items-center gap-3 border-t border-border pt-4">
           <button
             onClick={runPreview}
-            disabled={previewing}
+            disabled={previewing || !groupId}
             className="flex items-center gap-2 rounded-md border border-border bg-card2 px-4 py-2 text-sm font-medium text-fg hover:bg-card disabled:opacity-50"
           >
             <RefreshCw size={14} className={previewing ? 'animate-spin' : ''} /> {previewing ? 'Loading…' : 'Preview Audience'}
@@ -508,7 +412,7 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
 
         {previewCount !== null && previewCount === 0 && (
           <p className="mt-3 flex items-center gap-2 text-sm text-amber-400">
-            <AlertTriangle size={14} /> No leads match these filters — adjust the audience above.
+            <AlertTriangle size={14} /> No leads in this audience — pick a different one above.
           </p>
         )}
 
