@@ -14,6 +14,7 @@ interface Template {
   submitted_at: string | null
   rejection_reason: string | null
   bodyPreview?: string
+  body_text?: string | null
 }
 
 const STATUS_ICON: Record<string, any> = {
@@ -434,7 +435,18 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
                   </button>
                 </div>
               )}
-              {t.bodyPreview && <p className="mt-1 text-xs text-muted2">{t.bodyPreview}</p>}
+              {t.status !== 'rejected' && (
+                <p className="mt-2 text-xs text-muted2">
+                  <span className="font-medium text-muted">Notes: </span>
+                  {t.rejection_reason || (t.status === 'approved' ? 'Ready to send' : 'Waiting for Meta approval')}
+                </p>
+              )}
+              <div className="mt-1.5 text-xs">
+                <span className="font-medium text-muted">Message: </span>
+                <p className="mt-1 whitespace-pre-wrap break-words rounded-md bg-card2 px-3 py-2 text-fg">
+                  {t.body_text || t.bodyPreview || '—'}
+                </p>
+              </div>
             </div>
           )
         })}
