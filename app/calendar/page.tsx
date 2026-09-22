@@ -61,6 +61,7 @@ export default function CalendarViewPage() {
   const [counsellorId, setCounsellorId] = useState('')
   const [typeMenuOpen, setTypeMenuOpen] = useState(false)
   const [activeLead, setActiveLead] = useState<string | null>(null)
+  const [activeSub, setActiveSub] = useState<'call' | 'visit'>('call')
   // Bumped when the lead panel closes, so a booking cancelled from there
   // drops off the calendar straight away.
   const [reloadKey, setReloadKey] = useState(0)
@@ -274,7 +275,10 @@ export default function CalendarViewPage() {
               {daysVisits.map((v) => (
                 <li key={v.id}>
                   <button
-                    onClick={() => setActiveLead(v.lead_id)}
+                    onClick={() => {
+                      setActiveSub(v.event_type === 'call_booked' ? 'call' : 'visit')
+                      setActiveLead(v.lead_id)
+                    }}
                     className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-card2"
                   >
                     <div className="flex items-center gap-3">
@@ -341,7 +345,10 @@ export default function CalendarViewPage() {
                   {dayEvents.map((e) => (
                     <button
                       key={e.id}
-                      onClick={() => setActiveLead(e.lead_id)}
+                      onClick={() => {
+                        setActiveSub(e.event_type === 'call_booked' ? 'call' : 'visit')
+                        setActiveLead(e.lead_id)
+                      }}
                       className={clsx(
                         'block w-full truncate rounded px-1.5 py-0.5 text-left text-xs',
                         // Call green, visit blue — matching the green Book
@@ -368,6 +375,7 @@ export default function CalendarViewPage() {
         <LeadSlideOver
           leadId={activeLead}
           initialTab="bookings"
+          initialBookingSub={activeSub}
           onClose={() => {
             setActiveLead(null)
             setReloadKey((k) => k + 1)
