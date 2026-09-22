@@ -32,8 +32,14 @@ const STATUS_PILL: Record<string, string> = {
 // time, and an outcome — so they share one component. Only the endpoint,
 // the wording and the accent colour differ, which is what keeps the two
 // from drifting into subtly different behaviour.
-export default function BookingsTab({ leadId }: { leadId: string }) {
-  const [sub, setSub] = useState<'call' | 'visit'>('call')
+export default function BookingsTab({
+  leadId,
+  initialSub = 'call',
+}: {
+  leadId: string
+  initialSub?: 'call' | 'visit'
+}) {
+  const [sub, setSub] = useState<'call' | 'visit'>(initialSub)
 
   return (
     <div>
