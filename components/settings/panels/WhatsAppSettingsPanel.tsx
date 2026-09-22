@@ -17,6 +17,7 @@ interface TemplateRow {
   rejection_reason: string | null
   submitted_at: string
   approved_at: string | null
+  body_text?: string | null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -625,7 +626,8 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                 <th className="pb-2 font-medium">Category</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Submitted</th>
-                <th className="pb-2 font-medium">Notes</th>
+                <th className="pb-2 pr-2 font-medium">Notes</th>
+                <th className="pb-2 font-medium">Message</th>
               </tr>
             </thead>
             <tbody>
@@ -639,7 +641,8 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                   <td className="py-2 pr-2 text-xs text-muted2">
                     {t.submitted_at ? new Date(t.submitted_at).toLocaleDateString() : '—'}
                   </td>
-                  <td className="py-2 text-xs text-muted2">{t.rejection_reason || (t.status === 'approved' ? 'Ready to send' : '—')}</td>
+                  <td className="py-2 pr-2 text-xs text-muted2">{t.rejection_reason || (t.status === 'approved' ? 'Ready to send' : '—')}</td>
+                  <td className="max-w-md py-2 text-xs text-fg whitespace-pre-wrap break-words">{t.body_text || '—'}</td>
                 </tr>
               ))}
             </tbody>
