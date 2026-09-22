@@ -5,13 +5,14 @@ import { clsx } from 'clsx'
 import { getRateForCategory } from '@/lib/waCreditRates'
 
 import { useEffect, useState } from 'react'
-import { Send, Users, RefreshCw, Tag as TagIcon, AlertTriangle } from 'lucide-react'
+import { Send, Users, RefreshCw, Tag as TagIcon, AlertTriangle, CheckCircle2, SlidersHorizontal } from 'lucide-react'
 
 interface TemplateRow {
   id: string
   name: string
   category: string
   status: string
+  body_text?: string | null
 }
 
 interface StageRow {
@@ -262,22 +263,51 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">Template</label>
-            <select
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-            >
-              <option value="">Select an approved template…</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name} ({t.category})
-                </option>
-              ))}
-            </select>
-            {templates.length === 0 && (
-              <p className="mt-1 text-xs text-amber-400">No approved templates yet — submit one in WhatsApp settings first.</p>
+          <div className="col-span-2">
+            <label className="mb-1.5 block text-xs text-muted">
+              Template{' '}
+              <span className="text-muted2">
+                — {templates.length} approved template{templates.length === 1 ? '' : 's'} ready to send
+              </span>
+            </label>
+            {templates.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-amber-400">
+                No approved templates yet — submit one in WhatsApp settings first.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {templates.map((t) => {
+                  const active = templateName === t.name
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTemplateName(active ? '' : t.name)}
+                      className={clsx(
+                        'flex flex-col rounded-md border p-3 text-left transition',
+                        active
+                          ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500'
+                          : 'border-border bg-card2 hover:border-blue-400'
+                      )}
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-xs font-semibold text-fg">{t.name}</span>
+                        {active ? (
+                          <CheckCircle2 size={15} className="shrink-0 text-blue-500" />
+                        ) : (
+                          <span className="shrink-0 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
+                            approved
+                          </span>
+                        )}
+                      </div>
+                      <span className="mb-1.5 text-[10px] uppercase tracking-wide text-muted">{t.category}</span>
+                      <p className="line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted2">
+                        {t.body_text || 'No message text available.'}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
             )}
           </div>
           <div>
@@ -307,34 +337,66 @@ export default function BroadcastComposer({ clientId, onSent }: { clientId: stri
 
         <div className="mb-4">
           <label className="mb-1.5 block text-xs font-medium text-muted">Audience group</label>
-          <select
-            value={groupId}
-            onChange={(e) => {
-              setGroupId(e.target.value)
-              invalidatePreview()
-            }}
-            className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-          >
-            <option value="">Build my own with the filters below</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name} — {g.count.toLocaleString()} lead{g.count === 1 ? '' : 's'}
-                {g.kind === 'source' ? ' (automatic)' : g.kind === 'manual' ? ' (fixed)' : ''}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => {
+                setGroupId('')
+                invalidatePreview()
+              }}
+              className={clsx(
+                'flex flex-col rounded-md border p-3 text-left transition',
+                !groupId
+                  ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500'
+                  : 'border-border bg-card2 hover:border-blue-400'
+              )}
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+                  <SlidersHorizontal size={14} /> Build my own
+                </span>
+                {!groupId && <CheckCircle2 size={15} className="shrink-0 text-blue-500" />}
+              </div>
+              <span className="text-xs text-muted2">Use the tag, stage and date filters below</span>
+            </button>
+            {groups.map((g) => {
+              const active = groupId === g.id
+              const kindLabel = g.kind === 'source' ? 'Automatic' : g.kind === 'manual' ? 'Fixed list' : 'Saved'
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => {
+                    setGroupId(active ? '' : g.id)
+                    invalidatePreview()
+                  }}
+                  className={clsx(
+                    'flex flex-col rounded-md border p-3 text-left transition',
+                    active
+                      ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500'
+                      : 'border-border bg-card2 hover:border-blue-400'
+                  )}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-semibold text-fg">{g.name}</span>
+                    {active && <CheckCircle2 size={15} className="shrink-0 text-blue-500" />}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted2">
+                      {g.count.toLocaleString()} lead{g.count === 1 ? '' : 's'}
+                    </span>
+                    <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+                      {kindLabel}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
           {groupId && (
             <p className="mt-1.5 text-xs text-muted2">
-              Using this saved audience — the filters below are ignored.{' '}
-              <button
-                onClick={() => {
-                  setGroupId('')
-                  invalidatePreview()
-                }}
-                className="text-blue-400 hover:underline"
-              >
-                Clear
-              </button>
+              Using the <strong className="text-fg">{groups.find((g) => g.id === groupId)?.name}</strong> audience —
+              the filters below are ignored.
             </p>
           )}
         </div>
