@@ -5,6 +5,12 @@ import { canCustomize } from '@/lib/customizeAccess'
 import { decrypt } from '@/lib/waEncryption'
 import { submitTemplateToMeta } from '@/lib/metaWhatsapp'
 import { handleWriteError } from '@/lib/apiError'
+import {
+  normalizeVariableMap,
+  extractVariableTokens,
+  isNamedToken,
+  sampleValues,
+} from '@/lib/templateVariables'
 
 // Submits a template to Meta for approval (POST /{waba_id}/message_templates)
 // and records it in wa_templates with status='pending'. Approval itself
@@ -13,7 +19,7 @@ import { handleWriteError } from '@/lib/apiError'
 export async function POST(req: NextRequest) {
   const session = getSession(req)
   const body = await req.json().catch(() => null)
-  const { clientId, name, category, language, components, headerFormat, headerText, headerMediaData, headerMediaMime, headerMediaFilename } = body || {}
+  const { clientId, name, category, language, components, headerFormat, headerText, headerMediaData, headerMediaMime, headerMediaFilename, variableMap } = body || {}
 
   if (!clientId || !name || !components) {
     return NextResponse.json({ error: 'clientId, name, and components are required' }, { status: 400 })
@@ -27,6 +33,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No WhatsApp config saved for this client yet' }, { status: 400 })
   }
 
+  const map = normalizeVariableMap(variableMap)
+
+  // Meta reviews a template against example values, and refuses one whose
+  // variables have none — so the BODY component is sent with an example
+  // built from the admin's mapping, in whichever style (named or numbered)
+  // the body is written in.
+  const submitComponents = (Array.isArray(components) ? components : []).map((component: any) => {
+    if (String(component?.type).toUpperCase() !== 'BODY') return component
+    const tokens = extractVariableTokens(component?.text || '')
+    if (tokens.length === 0) return component
+    const samples = sampleValues(tokens, map)
+    const example = tokens.some(isNamedToken)
+      ? { body_text_named_params: tokens.map((token, i) => ({ param_name: token, example: samples[i] })) }
+      : { body_text: [samples] }
+    return { ...component, example }
+  })
+
+  const bodyText: string =
+    submitComponents.find((c: any) => String(c?.type).toUpperCase() === 'BODY')?.text || ''
+  const parameterFormat = extractVariableTokens(bodyText).some(isNamedToken) ? 'NAMED' : 'POSITIONAL'
+
   try {
     const accessToken = decrypt(config.access_token)
     const result = await submitTemplateToMeta({
@@ -35,16 +62,18 @@ export async function POST(req: NextRequest) {
       name,
       category,
       language,
-      components,
+      components: submitComponents,
+      parameterFormat,
     })
 
     const row = (
       await query(
         `INSERT INTO wa_templates (
            client_id, meta_template_id, name, category, language, status, rejection_reason, components,
-           header_format, header_text, header_media_data, header_media_mime, header_media_filename
+           header_format, header_text, header_media_data, header_media_mime, header_media_filename,
+           variable_map
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING *`,
         [
           clientId,
@@ -54,12 +83,14 @@ export async function POST(req: NextRequest) {
           language || 'en',
           result.status,
           result.rejectionReason || null,
-          JSON.stringify(components),
+          JSON.stringify(submitComponents),
           headerFormat || null,
           headerText || null,
           headerMediaData || null,
           headerMediaMime || null,
           headerMediaFilename || null,
+          // What each {{n}} in the body should be filled with at send time.
+          JSON.stringify(map),
         ]
       )
     )[0]
