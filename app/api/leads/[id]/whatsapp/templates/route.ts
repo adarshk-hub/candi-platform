@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { assertLeadAccess } from '@/lib/leadAccess'
-import { extractVariableTokens, hasVariableMapColumn, normalizeVariableMap, renderBody, resolveTemplateVariables } from '@/lib/templateVariables'
+import { extractVariableTokens, hasVariableMapColumn, renderBody, resolveTemplateVariables, variableMapFromRow } from '@/lib/templateVariables'
 
 // Lead-scoped (assertLeadAccess), not the settings-only canCustomize check
 // GET /api/templates/[clientId] uses — a counsellor who can open this lead's
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const bodyComponent = components.find((c: any) => String(c.type || '').toUpperCase() === 'BODY')
       const bodyText: string = bodyComponent?.text || ''
       const tokens = extractVariableTokens(bodyText)
-      const map = normalizeVariableMap(row.variable_map)
+      const map = variableMapFromRow(row)
       // When the admin has already said what every {{n}} stands for, the
       // counsellor is shown the finished message rather than a row of boxes
       // to retype — variableCount 0 means "nothing left to fill in".
