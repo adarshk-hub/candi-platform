@@ -16,7 +16,10 @@ interface Stage {
   sort_order: number
 }
 
-const STATUS_LABEL: Record<string, string> = { warm: 'Warm', hot: 'Hot', cold: 'Cold', won: 'Won' }
+// The stored values stay warm/hot/cold/won — only what people read
+// changes, to match the Lead / Visit / Enrolled / Cold names used
+// everywhere else.
+const STATUS_LABEL: Record<string, string> = { warm: 'Lead', hot: 'Visit', cold: 'Cold', won: 'Enrolled' }
 const STATUS_PILL: Record<string, string> = {
   warm: 'bg-blue-500/20 text-blue-300',
   hot: 'bg-amber-500/20 text-amber-300',
@@ -274,10 +277,10 @@ function EditRow({ stage, onCancel, onSaved }: { stage: Stage; onCancel: () => v
             onChange={(e) => setStatusGroup(e.target.value as Stage['status_group'])}
             className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
           >
-            <option value="warm">Warm</option>
-            <option value="hot">Hot</option>
+            <option value="warm">Lead</option>
+            <option value="hot">Visit</option>
             <option value="cold">Cold</option>
-            <option value="won">Won</option>
+            <option value="won">Enrolled</option>
           </select>
         </div>
         <div>
@@ -374,10 +377,10 @@ function NewStageRow({
               onChange={(e) => setStatusGroup(e.target.value as Stage['status_group'])}
               className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
             >
-              <option value="warm">Warm</option>
-              <option value="hot">Hot</option>
+              <option value="warm">Lead</option>
+              <option value="hot">Visit</option>
               <option value="cold">Cold</option>
-              <option value="won">Won</option>
+              <option value="won">Enrolled</option>
             </select>
           </div>
           <button
