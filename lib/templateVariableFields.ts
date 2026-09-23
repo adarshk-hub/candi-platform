@@ -1,151 +1,226 @@
-// path: lib/templateVariableFields.ts
-// A template's placeholders are approved by Meta as slots with no meaning
-// attached — Meta has no idea that {{1}} (or {{customer}}) is "the parent's
-// name". What each slot stands for is therefore a per-template decision the
-// admin makes once, here, instead of being hardcoded ("variable 1 is always
-// the parent's name") or re-typed by a counsellor on every single send.
-export type TemplateVariableSource =
-  | 'full_name'
-  | 'child_name'
-  | 'phone'
-  | 'grade'
-  | 'location'
-  | 'counsellor_name'
-  | 'institute_name'
-  | 'custom'
+// path: lib/templateVariables.ts
+import { query } from '@/lib/db'
+import {
+  TemplateVariableMapping,
+  buildBodyParameters,
+  extractVariableTokens,
+  normalizeVariableMap,
+} from '@/lib/templateVariableFields'
 
-export interface TemplateVariableMapping {
-  source: TemplateVariableSource
-  // Only used when source === 'custom': the fixed text to send, and also the
-  // fallback value when a lead has nothing stored for the chosen field.
-  value?: string
+// Field definitions and the pure helpers live in templateVariableFields so
+// that client components can import them without pulling the database
+// driver into the browser bundle; they are re-exported here for callers
+// that want everything from one place.
+export * from '@/lib/templateVariableFields'
+
+// Every client has its own database (see getClientPool in lib/db), so
+// scripts/wa-template-variable-map.sql has to be applied once per client
+// database, and a column present for one client can be missing for the
+// next. Rather than leave that to be remembered, the column is checked
+// against whichever database the current request is using and created on
+// demand if absent. The cache is keyed by database name for the same
+// reason — a single boolean would leak one client's answer to another.
+const variableMapColumnCache = new Map<string, boolean>()
+
+async function columnState(): Promise<{ db: string; present: boolean }> {
+  const row = (
+    await query<{ db: string; present: boolean }>(
+      `SELECT current_database() AS db,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'wa_templates' AND column_name = 'variable_map'
+              ) AS present`
+    )
+  )[0]
+  return { db: row?.db || 'unknown', present: !!row?.present }
 }
 
-// Meta offers exactly two placeholder styles per template and they cannot be
-// mixed: numbered ({{1}}, {{2}}) or named ({{customer}}). This is the same
-// "Type of variable — Name / Number" choice WhatsApp Manager asks for, and
-// it has to travel with the submission as parameter_format.
-export type VariableFormat = 'NUMBER' | 'NAME'
-
-export const VARIABLE_SOURCE_LABELS: Record<TemplateVariableSource, string> = {
-  full_name: "Parent's name",
-  child_name: "Child's name",
-  phone: 'Phone number',
-  grade: 'Grade',
-  location: 'Location',
-  counsellor_name: "Counsellor's name",
-  institute_name: 'Institute name',
-  custom: 'Fixed text (same for everyone)',
-}
-
-export const VARIABLE_SOURCES = Object.keys(VARIABLE_SOURCE_LABELS) as TemplateVariableSource[]
-
-// Meta reviews a template against example values rather than live customer
-// data, so every variable needs a sample. These stand in whenever the admin
-// mapped a slot to a lead field, which has no single fixed value.
-export const VARIABLE_SAMPLE_VALUES: Record<TemplateVariableSource, string> = {
-  full_name: 'Ramesh Kumar',
-  child_name: 'Aarav',
-  phone: '9876543210',
-  grade: 'Grade 5',
-  location: 'Bengaluru',
-  counsellor_name: 'Sneha',
-  institute_name: 'Our school',
-  custom: 'Sample text',
-}
-
-// A sensible variable name to suggest for each field, used when the template
-// is written in Meta's named style.
-export const VARIABLE_SUGGESTED_NAMES: Record<TemplateVariableSource, string> = {
-  full_name: 'customer_name',
-  child_name: 'child_name',
-  phone: 'phone',
-  grade: 'grade',
-  location: 'location',
-  counsellor_name: 'counsellor',
-  institute_name: 'school_name',
-  custom: 'custom_text',
-}
-
-// Meta's rule for a named variable: lower-case letters, digits and
-// underscores only.
-export function sanitizeVariableName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+/, '')
-}
-
-// Pulls the placeholders out of a body in order of first appearance,
-// de-duplicated — "{{1}} … {{2}} … {{1}}" is two variables, not three. The
-// token is whatever sits inside the braces: "1" when numbered, "customer"
-// when named.
-export function extractVariableTokens(bodyText: string): string[] {
-  const seen: string[] = []
-  for (const match of (bodyText || '').matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)) {
-    const token = match[1]
-    if (!seen.includes(token)) seen.push(token)
+export async function hasVariableMapColumn(): Promise<boolean> {
+  try {
+    const { db, present } = await columnState()
+    // Only a positive answer is cached: a column never disappears, but a
+    // missing one can be added at any moment by ensureVariableMapColumn.
+    if (present) variableMapColumnCache.set(db, true)
+    return present
+  } catch {
+    return false
   }
-  // A numbered template reads in numeric order regardless of where each
-  // placeholder happens to sit in the sentence.
-  if (seen.length > 0 && seen.every((t) => /^\d+$/.test(t))) {
-    return seen.sort((a, b) => Number(a) - Number(b))
+}
+
+// Adds the column to this client's database if it isn't there yet. Safe to
+// call repeatedly: ADD COLUMN IF NOT EXISTS is a no-op once it exists.
+export async function ensureVariableMapColumn(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { db, present } = await columnState()
+    if (variableMapColumnCache.get(db)) return { ok: true }
+    if (present) {
+      variableMapColumnCache.set(db, true)
+      return { ok: true }
+    }
+    await query(`ALTER TABLE wa_templates ADD COLUMN IF NOT EXISTS variable_map JSONB`)
+    variableMapColumnCache.set(db, true)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('[templateVariables] could not add wa_templates.variable_map:', err)
+    return { ok: false, error: err?.message || 'unknown database error' }
   }
-  return seen
 }
 
-export function isNamedToken(token: string): boolean {
-  return !/^\d+$/.test(token)
+// Where a mapping lives when the column can't be added — some client
+// databases are owned by a role that may write rows but not alter tables.
+// components is an existing JSONB column on the same row, and Meta never
+// sees this copy (it only ever receives the array built at submission
+// time), so an extra entry there is a safe place to keep it.
+const MAP_MARKER = 'CANDI_VARIABLE_MAP'
+
+export function variableMapFromRow(row: { variable_map?: any; components?: any }): Record<string, TemplateVariableMapping> {
+  const fromColumn = normalizeVariableMap(row?.variable_map)
+  if (Object.keys(fromColumn).length > 0) return fromColumn
+  const components = Array.isArray(row?.components) ? row.components : []
+  const marker = components.find((c: any) => c?.type === MAP_MARKER)
+  return normalizeVariableMap(marker?.map)
 }
 
-// Which style a body is written in. An empty body counts as numbered, the
-// default for a new template.
-export function detectVariableFormat(bodyText: string): VariableFormat {
-  return extractVariableTokens(bodyText).some(isNamedToken) ? 'NAME' : 'NUMBER'
-}
-
-// Accepts whatever shape came back from JSONB and normalises it into a
-// token-keyed map, so a hand-edited or half-saved row can't crash a send.
-export function normalizeVariableMap(raw: any): Record<string, TemplateVariableMapping> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const out: Record<string, TemplateVariableMapping> = {}
-  for (const [key, entry] of Object.entries(raw as Record<string, any>)) {
-    const source = entry?.source
-    if (!VARIABLE_SOURCES.includes(source)) continue
-    out[String(key)] = { source, value: typeof entry?.value === 'string' ? entry.value : undefined }
+// Saves a mapping for one template, using the column where it exists and
+// falling back to the components JSONB where it doesn't.
+export async function saveVariableMap(
+  clientId: string,
+  templateId: string,
+  map: Record<string, TemplateVariableMapping>
+): Promise<{ ok: boolean; error?: string }> {
+  const column = await ensureVariableMapColumn()
+  if (column.ok) {
+    const row = (
+      await query<{ id: string }>(
+        `UPDATE wa_templates SET variable_map = $1 WHERE id = $2 AND client_id = $3 RETURNING id`,
+        [JSON.stringify(map), templateId, clientId]
+      )
+    )[0]
+    return row ? { ok: true } : { ok: false, error: 'Template not found' }
   }
-  return out
-}
 
-// Fills the placeholders in a body with the given values, for previews and
-// for the copy of the message written into the chat thread.
-export function renderBody(bodyText: string, values: string[], tokens?: string[]): string {
-  const slots = tokens && tokens.length > 0 ? tokens : extractVariableTokens(bodyText)
-  let out = bodyText
-  slots.forEach((token, i) => {
-    out = out.replace(new RegExp(`\\{\\{\\s*${token}\\s*\\}\\}`, 'g'), values[i] ?? '')
-  })
-  return out
-}
+  const existing = (
+    await query<{ components: any }>(`SELECT components FROM wa_templates WHERE id = $1 AND client_id = $2`, [
+      templateId,
+      clientId,
+    ])
+  )[0]
+  if (!existing) return { ok: false, error: 'Template not found' }
 
-// The example values Meta reviews the template against, in slot order.
-export function sampleValues(tokens: string[], map: Record<string, TemplateVariableMapping>): string[] {
-  return tokens.map((token) => {
-    const mapping = map[token]
-    if (!mapping) return 'Sample'
-    const own = (mapping.value || '').trim()
-    if (mapping.source === 'custom') return own || VARIABLE_SAMPLE_VALUES.custom
-    return own || VARIABLE_SAMPLE_VALUES[mapping.source]
-  })
-}
-
-// Builds the body parameters for a send. Named templates need the variable
-// name on every parameter; numbered ones must not carry one.
-export function buildBodyParameters(tokens: string[], values: string[]): any[] {
-  return tokens.map((token, i) =>
-    isNamedToken(token)
-      ? { type: 'text', parameter_name: token, text: values[i] ?? '' }
-      : { type: 'text', text: values[i] ?? '' }
+  const components = (Array.isArray(existing.components) ? existing.components : []).filter(
+    (c: any) => c?.type !== MAP_MARKER
   )
+  components.push({ type: MAP_MARKER, map })
+  await query(`UPDATE wa_templates SET components = $1 WHERE id = $2 AND client_id = $3`, [
+    JSON.stringify(components),
+    templateId,
+    clientId,
+  ])
+  return { ok: true }
+}
+
+interface LeadForVariables {
+  full_name?: string | null
+  child_name?: string | null
+  whatsapp_number?: string | null
+  grade?: string | null
+  location?: string | null
+  counsellor_name?: string | null
+  institute_name?: string | null
+}
+
+// Meta rejects a send outright (#132000) when a body parameter is an empty
+// string, so every mapping falls back to something.
+function valueFor(mapping: TemplateVariableMapping, lead: LeadForVariables): string {
+  const fallback = (mapping.value || '').trim()
+  switch (mapping.source) {
+    case 'custom':
+      return fallback
+    case 'full_name':
+      return (lead.full_name || '').trim() || fallback
+    case 'child_name':
+      // A child's name is often blank early on, so the parent's name is a
+      // safer stand-in than sending an empty parameter.
+      return (lead.child_name || '').trim() || (lead.full_name || '').trim() || fallback
+    case 'phone':
+      return (lead.whatsapp_number || '').trim() || fallback
+    case 'grade':
+      return (lead.grade || '').trim() || fallback
+    case 'location':
+      return (lead.location || '').trim() || fallback
+    case 'counsellor_name':
+      return (lead.counsellor_name || '').trim() || fallback
+    case 'institute_name':
+      return (lead.institute_name || '').trim() || fallback
+    default:
+      return fallback
+  }
+}
+
+// Everything a mapping can refer to, fetched in one go.
+export async function loadLeadForVariables(leadId: string): Promise<LeadForVariables | null> {
+  const row = (
+    await query<LeadForVariables>(
+      `SELECT l.full_name, l.child_name, l.whatsapp_number, l.grade, l.location,
+              u.full_name AS counsellor_name, c.name AS institute_name
+       FROM leads l
+       LEFT JOIN users u ON u.id = l.assigned_counsellor_id
+       LEFT JOIN clients c ON c.id = l.client_id
+       WHERE l.id = $1`,
+      [leadId]
+    )
+  )[0]
+  return row || null
+}
+
+// Reads the stored map for one template. Returns null when the admin never
+// set one up, so callers can fall back to their old behaviour rather than
+// silently sending blanks.
+export async function getTemplateVariableMap(
+  clientId: string,
+  templateName: string
+): Promise<{ map: Record<string, TemplateVariableMapping>; tokens: string[] } | null> {
+  const hasColumn = await hasVariableMapColumn()
+  const row = (
+    await query<{ components: any; variable_map: any }>(
+      `SELECT components, ${hasColumn ? 'variable_map' : 'NULL AS variable_map'} FROM wa_templates
+       WHERE client_id = $1 AND name = $2 ORDER BY submitted_at DESC LIMIT 1`,
+      [clientId, templateName]
+    )
+  )[0]
+  if (!row) return null
+
+  const components = Array.isArray(row.components) ? row.components : []
+  const bodyText: string = components.find((c: any) => String(c?.type).toUpperCase() === 'BODY')?.text || ''
+  const tokens = extractVariableTokens(bodyText)
+  const map = variableMapFromRow(row)
+  if (tokens.length === 0) return { map: {}, tokens }
+  // A partly-mapped template is treated as unmapped — a half-filled body
+  // would be rejected by Meta anyway.
+  if (tokens.some((t) => !map[t])) return null
+  return { map, tokens }
+}
+
+// Resolves a template's variables for one lead. null means "this template
+// has no usable map" — the caller should fall back to asking, or to its own
+// default.
+export async function resolveTemplateVariables(
+  clientId: string,
+  templateName: string,
+  leadId: string
+): Promise<{ tokens: string[]; values: string[] } | null> {
+  const mapped = await getTemplateVariableMap(clientId, templateName)
+  if (!mapped) return null
+  if (mapped.tokens.length === 0) return { tokens: [], values: [] }
+
+  const lead = await loadLeadForVariables(leadId)
+  if (!lead) return null
+  return { tokens: mapped.tokens, values: mapped.tokens.map((t) => valueFor(mapped.map[t], lead)) }
+}
+
+// The components array for a send, or undefined for a template whose body
+// has no variables at all.
+export function bodyComponentFor(tokens: string[], values: string[]): any[] | undefined {
+  if (tokens.length === 0) return undefined
+  return [{ type: 'body', parameters: buildBodyParameters(tokens, values) }]
 }
