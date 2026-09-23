@@ -249,10 +249,13 @@ export default function Sidebar({
             />
             {leadsOpen && !collapsed && showLeadStatusTabs && (
               <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
-                <NavItem href="/leads?tab=warm" icon={ThermometerSun} label="Warm" active={tab === 'warm'} collapsed={false} />
-                <NavItem href="/leads?tab=hot" icon={Flame} label="Hot" active={tab === 'hot'} collapsed={false} />
-                <NavItem href="/leads?tab=cold" icon={Snowflake} label="Cold" active={tab === 'cold'} collapsed={false} />
+                {/* Lead / Visit / Enrolled / Cold, as defined once in
+                    lib/leadBuckets. warm/hot are the old names for the
+                    first two and still work in a saved link. */}
+                <NavItem href="/leads?tab=lead" icon={ThermometerSun} label="Lead" active={tab === 'lead' || tab === 'warm'} collapsed={false} />
+                <NavItem href="/leads?tab=visit" icon={Flame} label="Visit" active={tab === 'visit' || tab === 'hot'} collapsed={false} />
                 <NavItem href="/leads?tab=enrolled" icon={CheckCircle2} label="Enrolled" active={tab === 'enrolled'} collapsed={false} />
+                <NavItem href="/leads?tab=cold" icon={Snowflake} label="Cold" active={tab === 'cold'} collapsed={false} />
               </div>
             )}
           </div>
