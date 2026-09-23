@@ -7,6 +7,8 @@ import { useStages } from '@/lib/StagesContext'
 import { NURTURE_TEMPLATE_DEFINITIONS } from '@/lib/nurtureTemplateDefinitions'
 import { OPERATIONAL_TEMPLATE_DEFINITIONS } from '@/lib/operationalTemplateDefinitions'
 import WhatsAppWalletPanel from './WhatsAppWalletPanel'
+import TemplateVariableMapper from '@/components/whatsapp/TemplateVariableMapper'
+import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/lib/templateVariableFields'
 
 interface TemplateRow {
   id: string
@@ -18,6 +20,7 @@ interface TemplateRow {
   submitted_at: string
   approved_at: string | null
   body_text?: string | null
+  variable_map?: Record<string, TemplateVariableMapping> | null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -62,6 +65,12 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
   const [customName, setCustomName] = useState('')
   const [customCategory, setCustomCategory] = useState<'MARKETING' | 'UTILITY' | 'AUTHENTICATION'>('UTILITY')
   const [customBody, setCustomBody] = useState('')
+  // What each {{n}} in the new template's body should be filled with.
+  const [customVariableMap, setCustomVariableMap] = useState<Record<string, TemplateVariableMapping>>({})
+  // Editing the mapping of an already-submitted template (id -> draft).
+  const [editingVarsId, setEditingVarsId] = useState<string | null>(null)
+  const [varsDraft, setVarsDraft] = useState<Record<string, TemplateVariableMapping>>({})
+  const [savingVars, setSavingVars] = useState(false)
   const [submittingCustom, setSubmittingCustom] = useState(false)
 
   // Header is optional — 'none' (most templates), 'text' (a static title
@@ -338,6 +347,31 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
   // variables — via the generic POST /api/templates/submit endpoint, same
   // one the two default buttons above call under the hood, just with
   // user-supplied values instead of a fixed definition list.
+  // The variable mapping is ours, not Meta's — the approved body text is
+  // unchanged — so it can be corrected at any time without resubmitting.
+  async function saveVariableMap(templateId: string) {
+    setSavingVars(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/templates/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: templateId, variableMap: varsDraft }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setError(b.error || 'Could not save the variable mapping.')
+        return
+      }
+      setEditingVarsId(null)
+      loadTemplates()
+    } catch (err: any) {
+      setError(err?.message || 'Network error — could not reach the server')
+    } finally {
+      setSavingVars(false)
+    }
+  }
+
   async function submitCustomTemplate() {
     if (!customName.trim() || !customBody.trim()) {
       setError('Template name and body are required.')
@@ -384,6 +418,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
           headerMediaData: headerType !== 'none' && headerType !== 'text' ? headerMediaData : null,
           headerMediaMime: headerFile?.type || null,
           headerMediaFilename: headerFile?.name || null,
+          variableMap: customVariableMap,
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -394,6 +429,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
       setStatus(`Submitted "${customName.trim()}" (${customCategory}) to Meta for approval.`)
       setCustomName('')
       setCustomBody('')
+      setCustomVariableMap({})
       setHeaderType('none')
       setHeaderText('')
       setHeaderFile(null)
@@ -627,7 +663,8 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Submitted</th>
                 <th className="pb-2 pr-2 font-medium">Notes</th>
-                <th className="pb-2 font-medium">Message</th>
+                <th className="pb-2 pr-2 font-medium">Message</th>
+                <th className="pb-2 font-medium">Variables</th>
               </tr>
             </thead>
             <tbody>
@@ -642,7 +679,58 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
                     {t.submitted_at ? new Date(t.submitted_at).toLocaleDateString() : '—'}
                   </td>
                   <td className="py-2 pr-2 text-xs text-muted2">{t.rejection_reason || (t.status === 'approved' ? 'Ready to send' : '—')}</td>
-                  <td className="max-w-md py-2 text-xs text-fg whitespace-pre-wrap break-words">{t.body_text || '—'}</td>
+                  <td className="max-w-md py-2 pr-2 text-xs text-fg whitespace-pre-wrap break-words">{t.body_text || '—'}</td>
+                  <td className="py-2 align-top text-xs">
+                    {extractVariableTokens(t.body_text || '').length === 0 ? (
+                      <span className="text-muted2">None</span>
+                    ) : editingVarsId === t.id ? (
+                      <div className="min-w-[18rem]">
+                        <TemplateVariableMapper
+                          body={t.body_text || ''}
+                          value={varsDraft}
+                          onChange={setVarsDraft}
+                          disabled={savingVars}
+                        />
+                        <div className="mt-2 flex items-center gap-3">
+                          <button
+                            onClick={() => saveVariableMap(t.id)}
+                            disabled={savingVars}
+                            className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50"
+                          >
+                            {savingVars ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => setEditingVarsId(null)} className="text-xs text-muted2 hover:text-fg">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        {extractVariableTokens(t.body_text || '').map((token: string) => {
+                          const mapping = normalizeVariableMap(t.variable_map)[token]
+                          return (
+                            <p key={token} className="text-muted2">
+                              <span className="font-mono text-muted">{`{{${token}}}`}</span>{' '}
+                              {mapping
+                                ? mapping.source === 'custom'
+                                  ? `"${mapping.value || ''}"`
+                                  : VARIABLE_SOURCE_LABELS[mapping.source]
+                                : 'Not set'}
+                            </p>
+                          )
+                        })}
+                        <button
+                          onClick={() => {
+                            setVarsDraft(normalizeVariableMap(t.variable_map))
+                            setEditingVarsId(t.id)
+                          }}
+                          className="mt-1 text-xs text-blue-500 hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -873,6 +961,12 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
               rows={3}
               placeholder="Hi {{1}}, we have a special offer on {{2}} this month..."
               className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+            />
+            <TemplateVariableMapper
+              body={customBody}
+              value={customVariableMap}
+              onChange={setCustomVariableMap}
+              onInsert={(placeholder) => setCustomBody((prev) => `${prev}${prev.endsWith(' ') || !prev ? '' : ' '}${placeholder}`)}
             />
           </div>
           <button
