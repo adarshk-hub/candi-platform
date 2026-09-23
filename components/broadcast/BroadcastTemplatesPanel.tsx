@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, Paperclip, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import TemplateVariableMapper from '@/components/whatsapp/TemplateVariableMapper'
-import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/lib/templateVariableFields'
+import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/components/whatsapp/variableFields'
 
 interface Template {
   id: string
