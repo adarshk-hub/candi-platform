@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
-import { ensureVariableMapColumn, hasVariableMapColumn, normalizeVariableMap } from '@/lib/templateVariables'
+import { hasVariableMapColumn, normalizeVariableMap, saveVariableMap, variableMapFromRow } from '@/lib/templateVariables'
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
@@ -17,11 +17,13 @@ export async function GET(req: NextRequest, { params }: { params: { clientId: st
     [params.clientId]
   )
   // Surface the template's body text so Settings can show what the
-  // message actually says, alongside its status notes.
+  // message actually says, alongside its status notes. The mapping may live
+  // in the column or, where that column could not be added, inside
+  // components — variableMapFromRow reads whichever is there.
   const withBody = rows.map(({ components, ...row }: any) => {
     const list = Array.isArray(components) ? components : []
     const bodyComponent = list.find((c: any) => String(c?.type || '').toUpperCase() === 'BODY')
-    return { ...row, body_text: bodyComponent?.text || null }
+    return { ...row, body_text: bodyComponent?.text || null, variable_map: variableMapFromRow({ ...row, components: list }) }
   })
   return NextResponse.json(withBody)
 }
@@ -78,22 +80,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { clientId: 
   const id = body?.id
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
 
-  // Each client has its own database, so the column may simply not exist
-  // here yet — create it rather than making someone run a migration per
-  // client before a mapping can be saved.
-  if (!(await ensureVariableMapColumn())) {
+  const result = await saveVariableMap(params.clientId, id, normalizeVariableMap(body?.variableMap))
+  if (!result.ok) {
     return NextResponse.json(
-      { error: 'Could not add the variable_map column to this client database — check the database user\'s permissions.' },
-      { status: 500 }
+      { error: result.error || 'Could not save the variable mapping.' },
+      { status: result.error === 'Template not found' ? 404 : 500 }
     )
   }
-
-  const row = (
-    await query<any>(
-      `UPDATE wa_templates SET variable_map = $1 WHERE id = $2 AND client_id = $3 RETURNING id, variable_map`,
-      [JSON.stringify(normalizeVariableMap(body?.variableMap)), id, params.clientId]
-    )
-  )[0]
-  if (!row) return NextResponse.json({ error: 'Template not found' }, { status: 404 })
-  return NextResponse.json(row)
+  return NextResponse.json({ id, ok: true })
 }
