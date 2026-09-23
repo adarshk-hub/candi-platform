@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, Paperclip, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
+import TemplateVariableMapper from '@/components/whatsapp/TemplateVariableMapper'
+import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/lib/templateVariableFields'
 
 interface Template {
   id: string
@@ -15,6 +17,7 @@ interface Template {
   rejection_reason: string | null
   bodyPreview?: string
   body_text?: string | null
+  variable_map?: Record<string, TemplateVariableMapping> | null
 }
 
 const STATUS_ICON: Record<string, any> = {
@@ -48,6 +51,11 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   const [name, setName] = useState('')
   const [category, setCategory] = useState('UTILITY')
   const [body, setBody] = useState('')
+  // What each {{n}} in the new template's body is filled with when sent.
+  const [variableMap, setVariableMap] = useState<Record<string, TemplateVariableMapping>>({})
+  const [editingVarsId, setEditingVarsId] = useState<string | null>(null)
+  const [varsDraft, setVarsDraft] = useState<Record<string, TemplateVariableMapping>>({})
+  const [savingVars, setSavingVars] = useState(false)
   // Optional media at the top of the message. Meta calls this the header,
   // and an image or PDF there is what turns a fee list or an invitation
   // into something a parent can actually open.
@@ -134,6 +142,7 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
           headerMediaData: headerType === 'image' || headerType === 'document' ? headerMediaData : null,
           headerMediaMime: headerFile?.type || null,
           headerMediaFilename: headerFile?.name || null,
+          variableMap,
         }),
       })
       const b = await res.json().catch(() => ({}))
@@ -143,12 +152,38 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
       }
       setNotice(`Submitted "${name.trim()}" to Meta. Approval usually takes a few minutes.`)
       setName('')
+      setVariableMap({})
       setBody('')
       load()
     } catch (err: any) {
       setError(err?.message || 'Network error.')
     } finally {
       setBusy('')
+    }
+  }
+
+  // The mapping is stored on our side only — Meta approved the body text,
+  // not what the placeholders mean — so it stays editable after approval.
+  async function saveVariableMap(templateId: string) {
+    setSavingVars(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/templates/${clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: templateId, variableMap: varsDraft }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setError(b.error || 'Could not save the variable mapping.')
+        return
+      }
+      setEditingVarsId(null)
+      load()
+    } catch (err: any) {
+      setError(err?.message || 'Network error — could not reach the server')
+    } finally {
+      setSavingVars(false)
     }
   }
 
@@ -307,6 +342,12 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
             placeholder="Hi {{1}}, admissions for the new session are now open..."
             className="w-full rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
           />
+          <TemplateVariableMapper
+            body={body}
+            value={variableMap}
+            onChange={setVariableMap}
+            onInsert={(placeholder) => setBody((prev) => `${prev}${prev.endsWith(' ') || !prev ? '' : ' '}${placeholder}`)}
+          />
           {/* Marketing templates cost roughly 7x what utility ones do
               (₹1.09 vs ₹0.145), so the category is a pricing decision as
               much as a compliance one. */}
@@ -447,6 +488,58 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
                   {t.body_text || t.bodyPreview || '—'}
                 </p>
               </div>
+              {extractVariableTokens(t.body_text || t.bodyPreview || '').length > 0 && (
+                <div className="mt-2 text-xs">
+                  <span className="font-medium text-muted">Variables: </span>
+                  {editingVarsId === t.id ? (
+                    <>
+                      <TemplateVariableMapper
+                        body={t.body_text || t.bodyPreview || ''}
+                        value={varsDraft}
+                        onChange={setVarsDraft}
+                        disabled={savingVars}
+                      />
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          onClick={() => saveVariableMap(t.id)}
+                          disabled={savingVars}
+                          className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50"
+                        >
+                          {savingVars ? 'Saving…' : 'Save'}
+                        </button>
+                        <button onClick={() => setEditingVarsId(null)} className="text-xs text-muted2 hover:text-fg">
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {extractVariableTokens(t.body_text || t.bodyPreview || '').map((token: string) => {
+                        const mapping = normalizeVariableMap(t.variable_map)[token]
+                        return (
+                          <span key={token} className="mr-3 text-muted2">
+                            <span className="font-mono text-muted">{`{{${token}}}`}</span>{' '}
+                            {mapping
+                              ? mapping.source === 'custom'
+                                ? `"${mapping.value || ''}"`
+                                : VARIABLE_SOURCE_LABELS[mapping.source]
+                              : 'Not set'}
+                          </span>
+                        )
+                      })}
+                      <button
+                        onClick={() => {
+                          setVarsDraft(normalizeVariableMap(t.variable_map))
+                          setEditingVarsId(t.id)
+                        }}
+                        className="text-blue-500 hover:underline"
+                      >
+                        Edit
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
