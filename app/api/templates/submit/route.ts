@@ -8,6 +8,7 @@ import { handleWriteError } from '@/lib/apiError'
 import {
   ensureVariableMapColumn,
   normalizeVariableMap,
+  saveVariableMap,
   extractVariableTokens,
   isNamedToken,
   sampleValues,
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
     // Recording the template locally must not depend on the variable_map
     // migration having been run — a template that Meta has accepted but we
     // failed to store is invisible in the app while still existing at Meta.
-    const storeVariableMap = await ensureVariableMapColumn()
+    const storeVariableMap = (await ensureVariableMapColumn()).ok
     const row = (
       await query(
         `INSERT INTO wa_templates (
@@ -99,6 +100,13 @@ export async function POST(req: NextRequest) {
         ]
       )
     )[0]
+
+    // Without the column, the mapping still has to be kept somewhere, so it
+    // rides along inside components on the same row (Meta never sees this
+    // copy — it only received submitComponents above).
+    if (!storeVariableMap && Object.keys(map).length > 0) {
+      await saveVariableMap(clientId, row.id, map)
+    }
 
     return NextResponse.json(row)
   } catch (err: any) {
