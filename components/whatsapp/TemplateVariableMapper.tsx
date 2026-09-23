@@ -1,6 +1,8 @@
 // path: components/whatsapp/TemplateVariableMapper.tsx
 'use client'
 
+import { useEffect } from 'react'
+
 import {
   VARIABLE_SOURCES,
   VARIABLE_SOURCE_LABELS,
@@ -40,6 +42,19 @@ export default function TemplateVariableMapper({
   // Meta allows one style per template and won't take a mix, so the style
   // follows whatever the body already uses.
   const format: VariableFormat = detectVariableFormat(body || '')
+
+  // A dropdown showing "Parent's name" that was never touched still has to
+  // save as Parent's name — so any variable without a stored choice is
+  // seeded with the default the picker is already displaying. Without this,
+  // Save would write nothing for it and the row would read "Not set".
+  useEffect(() => {
+    const missing = tokens.filter((t) => !value[t])
+    if (missing.length === 0) return
+    const seeded = { ...value }
+    for (const token of missing) seeded[token] = { source: 'full_name' }
+    onChange(seeded)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokens.join('|'), value])
 
   function set(token: string, patch: Partial<TemplateVariableMapping>) {
     const current = value[token] || { source: 'full_name' as TemplateVariableSource }
