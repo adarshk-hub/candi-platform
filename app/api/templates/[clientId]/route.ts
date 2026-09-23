@@ -3,13 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
+import { normalizeVariableMap } from '@/lib/templateVariables'
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
   if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const rows = await query<any>(
-    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at, components
+    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at, components, variable_map
      FROM wa_templates WHERE client_id = $1 ORDER BY submitted_at DESC`,
     [params.clientId]
   )
@@ -61,4 +62,26 @@ export async function DELETE(req: NextRequest, { params }: { params: { clientId:
     )
   }
   return NextResponse.json({ deleted: 1 })
+}
+
+// Updates what each {{n}} variable in a template is filled with. The mapping
+// lives only on our side — Meta approved the body text, not the meaning of
+// its placeholders — so it can be changed at any time, including after
+// approval, without resubmitting anything.
+export async function PATCH(req: NextRequest, { params }: { params: { clientId: string } }) {
+  const session = getSession(req)
+  if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const body = await req.json().catch(() => null)
+  const id = body?.id
+  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
+
+  const row = (
+    await query<any>(
+      `UPDATE wa_templates SET variable_map = $1 WHERE id = $2 AND client_id = $3 RETURNING id, variable_map`,
+      [JSON.stringify(normalizeVariableMap(body?.variableMap)), id, params.clientId]
+    )
+  )[0]
+  if (!row) return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+  return NextResponse.json(row)
 }
