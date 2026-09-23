@@ -10,6 +10,14 @@ import { ClientDashboardMetrics, CampaignRow } from '@/lib/clientDashboardMetric
 
 type Tab = 'overall' | 'leads' | 'visited' | 'enrolled'
 
+// Lead / Visit / Enrolled, matching the leads list and lib/leadBuckets.
+const TAB_LABELS: Record<Tab, string> = {
+  overall: 'Overall Pipeline',
+  leads: 'Lead',
+  visited: 'Visit',
+  enrolled: 'Enrolled',
+}
+
 const PLATFORM_COLOR: Record<string, string> = {
   meta: '#3b82f6', // blue-500
   google: '#22c55e', // green-500
@@ -210,8 +218,8 @@ function CampaignTable({
             <tr>
               <th className="w-8 px-3 py-2.5"></th>
               <th className="px-3 py-2.5">Campaign</th>
-              <th className="px-3 py-2.5 text-right">Leads</th>
-              <th className="px-3 py-2.5 text-right">Visited</th>
+              <th className="px-3 py-2.5 text-right">Lead</th>
+              <th className="px-3 py-2.5 text-right">Visit</th>
               <th className="px-3 py-2.5 text-right">Enrolled</th>
               <th className="px-3 py-2.5 text-right">Spend</th>
               <th className="px-3 py-2.5 text-right">CPL</th>
@@ -295,11 +303,11 @@ function PlatformCard({
       </p>
       <dl className="space-y-1 text-sm">
         <div className="flex justify-between">
-          <dt className="text-muted2">Leads</dt>
+          <dt className="text-muted2">Lead</dt>
           <dd className="text-fg">{bucket.leads}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-muted2">Visited</dt>
+          <dt className="text-muted2">Visit</dt>
           <dd className="text-fg">
             {bucket.visits} {bucket.leads > 0 && <span className="text-muted">({fmtPct(ratio(bucket.visits, bucket.leads) && ratio(bucket.visits, bucket.leads)! * 100)})</span>}
           </dd>
@@ -536,7 +544,7 @@ export default function PipelineDashboard({
               tab === t ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
             )}
           >
-            {t === 'overall' ? 'Overall Pipeline' : t[0].toUpperCase() + t.slice(1)}
+            {TAB_LABELS[t]}
           </button>
         ))}
         <label className="ml-auto flex items-center gap-2 pr-2 text-sm text-muted2">
@@ -553,11 +561,11 @@ export default function PipelineDashboard({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-card border border-border bg-card p-6 text-center">
           <p className="text-4xl font-bold text-fg">{totals.leads}</p>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Leads</p>
+          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Lead</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
           <p className="text-4xl font-bold text-fg">{totals.visits}</p>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Visited</p>
+          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Visit</p>
           <p className="mt-1 text-xs text-muted2">{fmtPct(leadToVisit !== null ? leadToVisit * 100 : null)} of leads</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
@@ -622,7 +630,7 @@ export default function PipelineDashboard({
               Meta
             </p>
             <p className="text-xs text-muted2">
-              {buckets.meta.leads} leads · {buckets.meta.visits} visited · {buckets.meta.enrolled} enrolled ·{' '}
+              {buckets.meta.leads} lead · {buckets.meta.visits} visit · {buckets.meta.enrolled} enrolled ·{' '}
               {formatLakh(buckets.meta.spend)} spent
             </p>
           </div>
