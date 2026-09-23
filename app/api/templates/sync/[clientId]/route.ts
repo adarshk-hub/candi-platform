@@ -97,7 +97,50 @@ export async function POST(req: NextRequest, { params }: { params: { clientId: s
       updated.push({ id: tmpl.id, name: tmpl.name, status: newStatus, category: newCategory, metaStatusRaw: match.status })
     }
 
-    return NextResponse.json({ ok: true, updated, errors })
+    // A template can exist at Meta without a row here — submitted from
+    // WhatsApp Manager directly, or submitted from this app in a run where
+    // the local insert failed after Meta had already accepted it. Either
+    // way it is real and sendable, so this pulls those in rather than
+    // leaving the list saying "no templates submitted yet".
+    const imported: any[] = []
+    try {
+      const proof = appSecretProof(accessToken)
+      const listRes = await fetch(
+        `${GRAPH_API_URL}/${config.waba_id}/message_templates?limit=200${proof ? `&appsecret_proof=${proof}` : ''}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      )
+      const listData = await listRes.json().catch(() => ({}))
+      if (listRes.ok && Array.isArray(listData?.data)) {
+        const known = new Set(allTemplates.map((t: any) => t.name))
+        for (const remote of listData.data) {
+          if (!remote?.name || known.has(remote.name)) continue
+          const status = String(remote.status || 'pending').toLowerCase()
+          const row = (
+            await query(
+              `INSERT INTO wa_templates (client_id, meta_template_id, name, category, language, status, rejection_reason, components, approved_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $6::varchar = 'approved' THEN now() ELSE NULL END)
+               ON CONFLICT (client_id, name) DO NOTHING
+               RETURNING id, name, status`,
+              [
+                params.clientId,
+                remote.id || null,
+                remote.name,
+                remote.category ? String(remote.category).toUpperCase() : 'UTILITY',
+                remote.language || 'en',
+                ['approved', 'pending', 'rejected'].includes(status) ? status : 'pending',
+                remote.rejected_reason || null,
+                JSON.stringify(remote.components || []),
+              ]
+            )
+          )[0]
+          if (row) imported.push(row)
+        }
+      }
+    } catch (err: any) {
+      errors.push({ reason: `Could not list templates from Meta: ${err?.message || 'unknown error'}` })
+    }
+
+    return NextResponse.json({ ok: true, updated, imported, errors })
   } catch (err: any) {
     // Whatever broke (decrypt failure from a corrupted/mismatched
     // encryption key, a DB error, a thrown network error, etc.) — return
