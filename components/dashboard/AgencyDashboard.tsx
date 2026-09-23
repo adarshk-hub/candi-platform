@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { getPrimaryClientStages } from '@/lib/stagesServer'
 import { SOURCE_LABEL } from '@/lib/types'
 import { pieSlicePaths, PALETTE } from '@/lib/pie'
+import { leadBucketSql } from '@/lib/leadBuckets'
 import NotificationBell from '@/components/NotificationBell'
 
 export default async function AgencyDashboard({
@@ -28,20 +29,24 @@ export default async function AgencyDashboard({
     `SELECT COUNT(*)::int AS all_leads FROM leads WHERE true ${dateWhere}`,
     params
   )
-  const [{ warm }] = await query<{ warm: string }>(
-    `SELECT COUNT(*)::int AS warm FROM leads WHERE pipeline_stage != 'enrolled' AND lead_score >= 3 AND lead_score < 6 ${dateWhere}`,
+  // Lead / Visit / Enrolled / Cold, from the pipeline stage each lead is
+  // actually sitting in (lib/leadBuckets) — the same definition the leads
+  // list and the client dashboard use. These used to be lead_score bands,
+  // which is why the counts never matched anything else in the app.
+  const [{ lead_count }] = await query<{ lead_count: string }>(
+    `SELECT COUNT(*)::int AS lead_count FROM leads l WHERE ${leadBucketSql('lead')} ${dateWhere.replace(/created_at/g, 'l.created_at')}`,
     params
   )
-  const [{ hot }] = await query<{ hot: string }>(
-    `SELECT COUNT(*)::int AS hot FROM leads WHERE pipeline_stage != 'enrolled' AND lead_score >= 6 ${dateWhere}`,
+  const [{ visit }] = await query<{ visit: string }>(
+    `SELECT COUNT(*)::int AS visit FROM leads l WHERE ${leadBucketSql('visit')} ${dateWhere.replace(/created_at/g, 'l.created_at')}`,
     params
   )
   const [{ cold }] = await query<{ cold: string }>(
-    `SELECT COUNT(*)::int AS cold FROM leads WHERE pipeline_stage != 'enrolled' AND lead_score < 3 ${dateWhere}`,
+    `SELECT COUNT(*)::int AS cold FROM leads l WHERE ${leadBucketSql('cold')} ${dateWhere.replace(/created_at/g, 'l.created_at')}`,
     params
   )
   const [{ enrolled }] = await query<{ enrolled: string }>(
-    `SELECT COUNT(*)::int AS enrolled FROM leads WHERE pipeline_stage = 'enrolled' ${dateWhere}`,
+    `SELECT COUNT(*)::int AS enrolled FROM leads l WHERE ${leadBucketSql('enrolled')} ${dateWhere.replace(/created_at/g, 'l.created_at')}`,
     params
   )
 
@@ -114,12 +119,12 @@ export default async function AgencyDashboard({
           <p className="mt-2 text-3xl font-bold text-fg">{all_leads}</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
-          <p className="text-sm text-muted2">Warm</p>
-          <p className="mt-2 text-3xl font-bold text-amber-400">{warm}</p>
+          <p className="text-sm text-muted2">Lead</p>
+          <p className="mt-2 text-3xl font-bold text-amber-400">{lead_count}</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
-          <p className="text-sm text-muted2">Hot</p>
-          <p className="mt-2 text-3xl font-bold text-red-400">{hot}</p>
+          <p className="text-sm text-muted2">Visit</p>
+          <p className="mt-2 text-3xl font-bold text-red-400">{visit}</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
           <p className="text-sm text-muted2">Cold</p>
