@@ -56,6 +56,9 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   const [editingVarsId, setEditingVarsId] = useState<string | null>(null)
   const [varsDraft, setVarsDraft] = useState<Record<string, TemplateVariableMapping>>({})
   const [savingVars, setSavingVars] = useState(false)
+  // Shown right next to the Save button — the page-level error line sits far
+  // above this table, where a failed save would go unnoticed.
+  const [varsError, setVarsError] = useState('')
   // Optional media at the top of the message. Meta calls this the header,
   // and an image or PDF there is what turns a fee list or an invitation
   // into something a parent can actually open.
@@ -166,6 +169,7 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   // not what the placeholders mean — so it stays editable after approval.
   async function saveVariableMap(templateId: string) {
     setSavingVars(true)
+    setVarsError('')
     setError('')
     try {
       const res = await fetch(`/api/templates/${clientId}`, {
@@ -175,13 +179,13 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
       })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
-        setError(b.error || 'Could not save the variable mapping.')
+        setVarsError(b.error || 'Could not save the variable mapping.')
         return
       }
       setEditingVarsId(null)
       load()
     } catch (err: any) {
-      setError(err?.message || 'Network error — could not reach the server')
+      setVarsError(err?.message || 'Network error — could not reach the server')
     } finally {
       setSavingVars(false)
     }
@@ -510,6 +514,7 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
                         <button onClick={() => setEditingVarsId(null)} className="text-xs text-muted2 hover:text-fg">
                           Cancel
                         </button>
+                        {varsError && <span className="text-xs text-red-400">{varsError}</span>}
                       </div>
                     </>
                   ) : (
