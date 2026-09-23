@@ -5,13 +5,14 @@ import {
   buildBodyParameters,
   extractVariableTokens,
   normalizeVariableMap,
-} from '@/lib/templateVariableFields'
+} from '@/components/whatsapp/variableFields'
 
-// Field definitions and the pure helpers live in templateVariableFields so
-// that client components can import them without pulling the database
-// driver into the browser bundle; they are re-exported here for callers
-// that want everything from one place.
-export * from '@/lib/templateVariableFields'
+// The field definitions and pure helpers live next to the component that
+// uses them, in components/whatsapp/variableFields.ts, and import nothing —
+// that keeps the database driver (and next/headers, via lib/db) out of the
+// browser bundle no matter which client component needs a label. They are
+// re-exported here for server code that wants everything from one place.
+export * from '@/components/whatsapp/variableFields'
 
 // Every client has its own database (see getClientPool in lib/db), so
 // scripts/wa-template-variable-map.sql has to be applied once per client
@@ -49,21 +50,74 @@ export async function hasVariableMapColumn(): Promise<boolean> {
 
 // Adds the column to this client's database if it isn't there yet. Safe to
 // call repeatedly: ADD COLUMN IF NOT EXISTS is a no-op once it exists.
-export async function ensureVariableMapColumn(): Promise<boolean> {
+export async function ensureVariableMapColumn(): Promise<{ ok: boolean; error?: string }> {
   try {
     const { db, present } = await columnState()
-    if (variableMapColumnCache.get(db)) return true
+    if (variableMapColumnCache.get(db)) return { ok: true }
     if (present) {
       variableMapColumnCache.set(db, true)
-      return true
+      return { ok: true }
     }
     await query(`ALTER TABLE wa_templates ADD COLUMN IF NOT EXISTS variable_map JSONB`)
     variableMapColumnCache.set(db, true)
-    return true
-  } catch (err) {
+    return { ok: true }
+  } catch (err: any) {
     console.error('[templateVariables] could not add wa_templates.variable_map:', err)
-    return false
+    return { ok: false, error: err?.message || 'unknown database error' }
   }
+}
+
+// Where a mapping lives when the column can't be added — some client
+// databases are owned by a role that may write rows but not alter tables.
+// components is an existing JSONB column on the same row, and Meta never
+// sees this copy (it only ever receives the array built at submission
+// time), so an extra entry there is a safe place to keep it.
+const MAP_MARKER = 'CANDI_VARIABLE_MAP'
+
+export function variableMapFromRow(row: { variable_map?: any; components?: any }): Record<string, TemplateVariableMapping> {
+  const fromColumn = normalizeVariableMap(row?.variable_map)
+  if (Object.keys(fromColumn).length > 0) return fromColumn
+  const components = Array.isArray(row?.components) ? row.components : []
+  const marker = components.find((c: any) => c?.type === MAP_MARKER)
+  return normalizeVariableMap(marker?.map)
+}
+
+// Saves a mapping for one template, using the column where it exists and
+// falling back to the components JSONB where it doesn't.
+export async function saveVariableMap(
+  clientId: string,
+  templateId: string,
+  map: Record<string, TemplateVariableMapping>
+): Promise<{ ok: boolean; error?: string }> {
+  const column = await ensureVariableMapColumn()
+  if (column.ok) {
+    const row = (
+      await query<{ id: string }>(
+        `UPDATE wa_templates SET variable_map = $1 WHERE id = $2 AND client_id = $3 RETURNING id`,
+        [JSON.stringify(map), templateId, clientId]
+      )
+    )[0]
+    return row ? { ok: true } : { ok: false, error: 'Template not found' }
+  }
+
+  const existing = (
+    await query<{ components: any }>(`SELECT components FROM wa_templates WHERE id = $1 AND client_id = $2`, [
+      templateId,
+      clientId,
+    ])
+  )[0]
+  if (!existing) return { ok: false, error: 'Template not found' }
+
+  const components = (Array.isArray(existing.components) ? existing.components : []).filter(
+    (c: any) => c?.type !== MAP_MARKER
+  )
+  components.push({ type: MAP_MARKER, map })
+  await query(`UPDATE wa_templates SET components = $1 WHERE id = $2 AND client_id = $3`, [
+    JSON.stringify(components),
+    templateId,
+    clientId,
+  ])
+  return { ok: true }
 }
 
 interface LeadForVariables {
@@ -140,7 +194,7 @@ export async function getTemplateVariableMap(
   const components = Array.isArray(row.components) ? row.components : []
   const bodyText: string = components.find((c: any) => String(c?.type).toUpperCase() === 'BODY')?.text || ''
   const tokens = extractVariableTokens(bodyText)
-  const map = normalizeVariableMap(row.variable_map)
+  const map = variableMapFromRow(row)
   if (tokens.length === 0) return { map: {}, tokens }
   // A partly-mapped template is treated as unmapped — a half-filled body
   // would be rejected by Meta anyway.
