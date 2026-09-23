@@ -13,27 +13,57 @@ import {
 // that want everything from one place.
 export * from '@/lib/templateVariableFields'
 
-// The variable_map column arrives with scripts/wa-template-variable-map.sql.
-// Until that migration has been run, every query that names the column would
-// error — which would take the whole template list and, worse, the INSERT
-// that records a just-submitted template down with it. So its presence is
-// checked once and everything degrades to the old behaviour without it.
-let variableMapColumnCache: boolean | null = null
+// Every client has its own database (see getClientPool in lib/db), so
+// scripts/wa-template-variable-map.sql has to be applied once per client
+// database, and a column present for one client can be missing for the
+// next. Rather than leave that to be remembered, the column is checked
+// against whichever database the current request is using and created on
+// demand if absent. The cache is keyed by database name for the same
+// reason — a single boolean would leak one client's answer to another.
+const variableMapColumnCache = new Map<string, boolean>()
+
+async function columnState(): Promise<{ db: string; present: boolean }> {
+  const row = (
+    await query<{ db: string; present: boolean }>(
+      `SELECT current_database() AS db,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'wa_templates' AND column_name = 'variable_map'
+              ) AS present`
+    )
+  )[0]
+  return { db: row?.db || 'unknown', present: !!row?.present }
+}
 
 export async function hasVariableMapColumn(): Promise<boolean> {
-  if (variableMapColumnCache !== null) return variableMapColumnCache
   try {
-    const rows = await query<{ exists: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM information_schema.columns
-         WHERE table_name = 'wa_templates' AND column_name = 'variable_map'
-       ) AS exists`
-    )
-    variableMapColumnCache = !!rows[0]?.exists
+    const { db, present } = await columnState()
+    // Only a positive answer is cached: a column never disappears, but a
+    // missing one can be added at any moment by ensureVariableMapColumn.
+    if (present) variableMapColumnCache.set(db, true)
+    return present
   } catch {
-    variableMapColumnCache = false
+    return false
   }
-  return variableMapColumnCache
+}
+
+// Adds the column to this client's database if it isn't there yet. Safe to
+// call repeatedly: ADD COLUMN IF NOT EXISTS is a no-op once it exists.
+export async function ensureVariableMapColumn(): Promise<boolean> {
+  try {
+    const { db, present } = await columnState()
+    if (variableMapColumnCache.get(db)) return true
+    if (present) {
+      variableMapColumnCache.set(db, true)
+      return true
+    }
+    await query(`ALTER TABLE wa_templates ADD COLUMN IF NOT EXISTS variable_map JSONB`)
+    variableMapColumnCache.set(db, true)
+    return true
+  } catch (err) {
+    console.error('[templateVariables] could not add wa_templates.variable_map:', err)
+    return false
+  }
 }
 
 interface LeadForVariables {
