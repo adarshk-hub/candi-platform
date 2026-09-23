@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { assertLeadAccess } from '@/lib/leadAccess'
+import { extractVariableTokens, normalizeVariableMap, renderBody, resolveTemplateVariables } from '@/lib/templateVariables'
 
 // Lead-scoped (assertLeadAccess), not the settings-only canCustomize check
 // GET /api/templates/[clientId] uses — a counsellor who can open this lead's
@@ -11,27 +12,35 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const access = await assertLeadAccess(getSession(req), params.id)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
-  const rows = await query<{ id: string; name: string; category: string | null; language: string; components: any }>(
-    `SELECT id, name, category, language, components
+  const rows = await query<{ id: string; name: string; category: string | null; language: string; components: any; variable_map: any }>(
+    `SELECT id, name, category, language, components, variable_map
      FROM wa_templates WHERE client_id = $1 AND status = 'approved' ORDER BY name ASC`,
     [access.lead.client_id]
   )
 
-  const templates = rows.map((row) => {
-    const components = Array.isArray(row.components) ? row.components : []
-    const bodyComponent = components.find((c: any) => String(c.type || '').toUpperCase() === 'BODY')
-    const bodyText: string = bodyComponent?.text || ''
-    const variableCount = new Set(Array.from(bodyText.matchAll(/\{\{\s*(\d+)\s*\}\}/g)).map((m) => m[1])).size
+  const templates = await Promise.all(
+    rows.map(async (row) => {
+      const components = Array.isArray(row.components) ? row.components : []
+      const bodyComponent = components.find((c: any) => String(c.type || '').toUpperCase() === 'BODY')
+      const bodyText: string = bodyComponent?.text || ''
+      const tokens = extractVariableTokens(bodyText)
+      const map = normalizeVariableMap(row.variable_map)
+      // When the admin has already said what every {{n}} stands for, the
+      // counsellor is shown the finished message rather than a row of boxes
+      // to retype — variableCount 0 means "nothing left to fill in".
+      const fullyMapped = tokens.length > 0 && tokens.every((t) => map[t])
+      const resolved = fullyMapped ? await resolveTemplateVariables(access.lead.client_id, row.name, params.id) : null
 
-    return {
-      id: row.id,
-      name: row.name,
-      category: row.category,
-      language: row.language,
-      bodyPreview: bodyText,
-      variableCount,
-    }
-  })
+      return {
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        language: row.language,
+        bodyPreview: resolved ? renderBody(bodyText, resolved.values, resolved.tokens) : bodyText,
+        variableCount: resolved ? 0 : tokens.length,
+      }
+    })
+  )
 
   return NextResponse.json(templates)
 }
