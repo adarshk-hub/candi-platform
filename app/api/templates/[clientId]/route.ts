@@ -3,14 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
-import { normalizeVariableMap } from '@/lib/templateVariables'
+import { hasVariableMapColumn, normalizeVariableMap } from '@/lib/templateVariables'
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
   if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  const hasColumn = await hasVariableMapColumn()
   const rows = await query<any>(
-    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at, components, variable_map
+    `SELECT id, meta_template_id, name, category, language, status, rejection_reason, submitted_at, approved_at, components,
+            ${hasColumn ? 'variable_map' : 'NULL AS variable_map'}
      FROM wa_templates WHERE client_id = $1 ORDER BY submitted_at DESC`,
     [params.clientId]
   )
@@ -75,6 +77,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { clientId: 
   const body = await req.json().catch(() => null)
   const id = body?.id
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
+
+  if (!(await hasVariableMapColumn())) {
+    return NextResponse.json(
+      { error: 'Run scripts/wa-template-variable-map.sql before setting variable mappings.' },
+      { status: 400 }
+    )
+  }
 
   const row = (
     await query<any>(
