@@ -276,6 +276,10 @@ export async function submitTemplateToMeta(params: {
   category?: string
   language?: string
   components: any[]
+  // 'NAMED' when the body uses {{customer}}-style variables, 'POSITIONAL'
+  // (Meta's default) when it uses {{1}}, {{2}}. Meta rejects a template
+  // whose placeholders don't match the format declared here.
+  parameterFormat?: 'NAMED' | 'POSITIONAL'
 }): Promise<TemplateSubmitResult> {
   try {
     const res = await fetch(withAppSecretProof(`${GRAPH_API_URL}/${params.wabaId}/message_templates`, params.accessToken), {
@@ -286,6 +290,7 @@ export async function submitTemplateToMeta(params: {
         category: params.category || 'UTILITY',
         language: params.language || 'en',
         components: params.components,
+        ...(params.parameterFormat ? { parameter_format: params.parameterFormat } : {}),
       }),
     })
     const data = await res.json().catch(() => ({}))
