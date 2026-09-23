@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { buildLeadsExportFile, ExportableLead, ExportFormat } from '@/lib/leadImportExport'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
+import { leadBucketSql, normalizeBucket } from '@/lib/leadBuckets'
 
 // Shares the exact same filter semantics as GET /api/leads (search, tab,
 // stage/source/grade) so "export what I'm looking at" always matches what's
@@ -54,23 +55,8 @@ export async function GET(req: NextRequest) {
       params.push(gradeFilter)
       where.push(`l.grade = ANY($${params.length})`)
     }
-    if (tab === 'enrolled') {
-      where.push(
-        `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'won')`
-      )
-    } else if (tab === 'hot') {
-      where.push(
-        `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'hot')`
-      )
-    } else if (tab === 'warm') {
-      where.push(
-        `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'warm')`
-      )
-    } else if (tab === 'cold') {
-      where.push(
-        `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'cold')`
-      )
-    }
+    const bucket = normalizeBucket(tab)
+    if (bucket) where.push(leadBucketSql(bucket))
   }
 
   // Global lead visibility window (Settings > Customize > Lead Date
