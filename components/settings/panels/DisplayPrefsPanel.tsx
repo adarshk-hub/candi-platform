@@ -87,7 +87,7 @@ export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
             onChange={(e) => setShowLeadStatusTabs(e.target.checked)}
             className="h-4 w-4"
           />
-          <span className="text-sm text-fg">Show Warm / Hot / Cold / Enrolled tabs in the sidebar</span>
+          <span className="text-sm text-fg">Show Lead / Visit / Enrolled / Cold tabs in the sidebar</span>
         </label>
         <p className="mt-1 pl-6 text-xs text-muted2">
           When off, these sub-links under "All Leads" are hidden for everyone at this institute — the leads
@@ -98,7 +98,7 @@ export default function DisplayPrefsPanel({ clientId }: { clientId: string }) {
       <div className="mb-4 border-t border-border pt-4">
         <h3 className="mb-1 text-sm font-semibold text-fg">Lead table columns</h3>
         <p className="mb-3 text-xs text-muted2">
-          Which columns appear in the leads table, on All Leads and the Warm / Hot / Cold / Enrolled pages
+          Which columns appear in the leads table, on All Leads and the Lead / Visit / Enrolled / Cold pages
           alike. Hiding a column only changes what's on screen — the data is still there, still searchable,
           and still shown when you open a lead.
         </p>
