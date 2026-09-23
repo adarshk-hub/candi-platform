@@ -42,42 +42,44 @@ export function normalizeBucket(tab: string | null | undefined): LeadBucket | nu
   }
 }
 
-// Classification runs off the lead's own pipeline_stage text, with the
-// stage row consulted only as an extra signal. An earlier version required
-// a matching pipeline_stages row: any lead sitting on a renamed, deleted or
-// legacy stage key then matched no bucket at all and silently vanished from
-// every count, which is exactly how a dashboard ends up disagreeing with
-// the leads list.
-function statusGroupExpr(leadAlias: string): string {
+// The Status each stage carries in Settings > Lead Stages IS this mapping —
+// an admin who marks "Visit Scheduled" as Visit has already said where it
+// belongs, so that setting decides the bucket and nothing here second-
+// guesses it (warm = Lead, hot = Visit, won = Enrolled, cold = Cold).
+//
+// The lead's own stage text is only a fallback, for a lead sitting on a
+// stage key that no longer exists in pipeline_stages — renamed, deleted or
+// from before the stages were customised. An earlier version required a
+// matching stage row, so those leads matched no bucket and vanished from
+// every count.
+function stageField(field: string, leadAlias: string, fallback: string): string {
   return `COALESCE((
-    SELECT ps.status_group FROM pipeline_stages ps
+    SELECT ps.${field} FROM pipeline_stages ps
     WHERE ps.client_id = ${leadAlias}.client_id AND ps.key = ${leadAlias}.pipeline_stage
     LIMIT 1
-  ), '')`
+  ), ${fallback})`
 }
 
-function coldLaneExpr(leadAlias: string): string {
-  return `COALESCE((
-    SELECT ps.is_cold_lane FROM pipeline_stages ps
-    WHERE ps.client_id = ${leadAlias}.client_id AND ps.key = ${leadAlias}.pipeline_stage
-    LIMIT 1
-  ), false)`
-}
-
-// Checked in order: cold wins over everything, then payment, then a
-// completed visit. Anything else — new, responded, visit booked, call
-// booked, an unknown or blank stage — is a Lead, so every lead lands in
-// exactly one bucket and the four counts always add up to the total.
+// Every lead lands in exactly one bucket, so the four counts always add up
+// to the total. An unknown or blank stage counts as a Lead.
 function bucketExpr(leadAlias: string): string {
   const stage = `COALESCE(${leadAlias}.pipeline_stage, '')`
-  const isCold = `(${statusGroupExpr(leadAlias)} = 'cold' OR ${coldLaneExpr(leadAlias)} OR ${stage} ILIKE '%cold%' OR ${stage} ILIKE '%lost%')`
-  const isEnrolled = `(${statusGroupExpr(leadAlias)} = 'won' OR ${stage} ILIKE '%payment%' OR ${stage} ILIKE '%enrol%' OR ${stage} ILIKE '%paid%' OR ${stage} ILIKE '%won%')`
-  const isVisit = `(${stage} ILIKE '%done%' OR ${stage} ILIKE '%offer%' OR ${stage} ILIKE '%visited%')`
+  const statusGroup = stageField('status_group', leadAlias, "''")
+  const coldLane = stageField('is_cold_lane', leadAlias, 'false')
+
+  // Fallback rules, used only when the stage has no status_group of its own.
+  const looksCold = `(${stage} ILIKE '%cold%' OR ${stage} ILIKE '%lost%')`
+  const looksEnrolled = `(${stage} ILIKE '%payment%' OR ${stage} ILIKE '%enrol%' OR ${stage} ILIKE '%paid%' OR ${stage} ILIKE '%won%')`
+  const looksVisit = `(${stage} ILIKE '%visit%' OR ${stage} ILIKE '%done%' OR ${stage} ILIKE '%offer%')`
 
   return `(CASE
-    WHEN ${isCold} THEN 'cold'
-    WHEN ${isEnrolled} THEN 'enrolled'
-    WHEN ${isVisit} THEN 'visit'
+    WHEN ${coldLane} OR ${statusGroup} = 'cold' THEN 'cold'
+    WHEN ${statusGroup} = 'won' THEN 'enrolled'
+    WHEN ${statusGroup} = 'hot' THEN 'visit'
+    WHEN ${statusGroup} = 'warm' THEN 'lead'
+    WHEN ${looksCold} THEN 'cold'
+    WHEN ${looksEnrolled} THEN 'enrolled'
+    WHEN ${looksVisit} THEN 'visit'
     ELSE 'lead'
   END)`
 }
