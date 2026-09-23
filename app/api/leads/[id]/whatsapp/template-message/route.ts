@@ -5,6 +5,7 @@ import { assertLeadAccess } from '@/lib/leadAccess'
 import { sendTemplateMessage } from '@/lib/metaWhatsapp'
 import { pauseSequenceForLead } from '@/lib/waSequenceEngine'
 import { handleWriteError } from '@/lib/apiError'
+import { bodyComponentFor, extractVariableTokens, renderBody, resolveTemplateVariables } from '@/lib/templateVariables'
 
 // Companion to POST /api/leads/[id]/whatsapp/messages — that route sends
 // free-form text (window must be open); this one sends an approved
@@ -34,9 +35,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const components = Array.isArray(template.components) ? template.components : []
   const bodyComponent = components.find((c: any) => String(c.type || '').toUpperCase() === 'BODY')
   const bodyText: string = bodyComponent?.text || ''
-  const variableCount = new Set(Array.from(bodyText.matchAll(/\{\{\s*(\d+)\s*\}\}/g)).map((m) => m[1])).size
+  const tokens = extractVariableTokens(bodyText)
+  const variableCount = tokens.length
 
-  const values: string[] = Array.isArray(variables) ? variables.map((v) => String(v ?? '').trim()) : []
+  // If the admin has mapped this template's variables to lead fields, those
+  // win — the values are filled from this lead's own record rather than
+  // being retyped (or mistyped) on every send.
+  const mapped = await resolveTemplateVariables(lead.client_id, template.name, params.id)
+  const values: string[] = mapped
+    ? mapped.values
+    : Array.isArray(variables)
+    ? variables.map((v) => String(v ?? '').trim())
+    : []
   if (values.length !== variableCount || values.some((v) => !v)) {
     return NextResponse.json(
       { error: `This template needs ${variableCount} variable(s), all filled in.` },
@@ -46,10 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // Render a human-readable copy of the sent template for the thread, same
   // as a delivered template would read, so the chat log stays legible.
-  let renderedBody = bodyText
-  values.forEach((v, i) => {
-    renderedBody = renderedBody.replace(new RegExp(`\\{\\{\\s*${i + 1}\\s*\\}\\}`, 'g'), v)
-  })
+  const renderedBody = renderBody(bodyText, values, tokens)
 
   try {
     let row = (
@@ -66,7 +73,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       to: lead.whatsapp_number,
       templateName: template.name,
       languageCode: template.language || 'en',
-      components: values.length > 0 ? [{ type: 'body', parameters: values.map((text) => ({ type: 'text', text })) }] : [],
+      // Named templates ({{customer}}) need the variable name on each
+      // parameter; numbered ones must not carry one.
+      components: bodyComponentFor(tokens, values) || [],
     })
 
     const updated = (
