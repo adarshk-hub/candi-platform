@@ -13,6 +13,29 @@ import {
 // that want everything from one place.
 export * from '@/lib/templateVariableFields'
 
+// The variable_map column arrives with scripts/wa-template-variable-map.sql.
+// Until that migration has been run, every query that names the column would
+// error — which would take the whole template list and, worse, the INSERT
+// that records a just-submitted template down with it. So its presence is
+// checked once and everything degrades to the old behaviour without it.
+let variableMapColumnCache: boolean | null = null
+
+export async function hasVariableMapColumn(): Promise<boolean> {
+  if (variableMapColumnCache !== null) return variableMapColumnCache
+  try {
+    const rows = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'wa_templates' AND column_name = 'variable_map'
+       ) AS exists`
+    )
+    variableMapColumnCache = !!rows[0]?.exists
+  } catch {
+    variableMapColumnCache = false
+  }
+  return variableMapColumnCache
+}
+
 interface LeadForVariables {
   full_name?: string | null
   child_name?: string | null
@@ -74,9 +97,10 @@ export async function getTemplateVariableMap(
   clientId: string,
   templateName: string
 ): Promise<{ map: Record<string, TemplateVariableMapping>; tokens: string[] } | null> {
+  const hasColumn = await hasVariableMapColumn()
   const row = (
     await query<{ components: any; variable_map: any }>(
-      `SELECT components, variable_map FROM wa_templates
+      `SELECT components, ${hasColumn ? 'variable_map' : 'NULL AS variable_map'} FROM wa_templates
        WHERE client_id = $1 AND name = $2 ORDER BY submitted_at DESC LIMIT 1`,
       [clientId, templateName]
     )
