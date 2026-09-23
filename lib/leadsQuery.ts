@@ -2,6 +2,7 @@
 import { query } from '@/lib/db'
 import { SessionUser } from '@/lib/auth'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
+import { leadBucketSql, normalizeBucket } from '@/lib/leadBuckets'
 
 const DEFAULT_PAGE_SIZE = 250
 
@@ -80,23 +81,10 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
     where.push(`l.grade = ANY($${sqlParams.length})`)
   }
 
-  if (tab === 'enrolled') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'won')`
-    )
-  } else if (tab === 'hot') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'hot')`
-    )
-  } else if (tab === 'warm') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'warm')`
-    )
-  } else if (tab === 'cold') {
-    where.push(
-      `EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.client_id = l.client_id AND ps.key = l.pipeline_stage AND ps.status_group = 'cold')`
-    )
-  }
+  // Lead / Visit / Enrolled / Cold all come from one definition in
+  // lib/leadBuckets so this list and the dashboard can't drift apart.
+  const bucket = normalizeBucket(tab)
+  if (bucket) where.push(leadBucketSql(bucket))
 
   // Global lead visibility window (Settings > Customize > Lead Date
   // Range). Applied last so it can never be widened by anything above.
