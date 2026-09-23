@@ -2,6 +2,7 @@
 import { query, queryAsClient, centralQuery } from './db'
 import { sendTemplateMessage } from './metaWhatsapp'
 import { leadDateRangeSql } from './leadDateRange'
+import { bodyComponentFor, resolveTemplateVariables } from './templateVariables'
 import {
   buildAudienceQuery,
   previewAudience as previewAudienceShared,
@@ -201,8 +202,14 @@ export async function processClientBatch(
     )[0]
     if (!broadcast) continue
 
+    // A template whose variables the admin has mapped to lead fields fills
+    // itself from each recipient's record; the older single-field
+    // "Personalize With" setting is only used when there is no such map.
     let components: any[] | undefined
-    if (broadcast.personalize_field !== 'none') {
+    const mapped = await resolveTemplateVariables(broadcast.client_id, broadcast.template_name, recipient.lead_id)
+    if (mapped) {
+      components = bodyComponentFor(mapped.tokens, mapped.values)
+    } else if (broadcast.personalize_field !== 'none') {
       const lead = (
         await queryAsClient<{ full_name: string; child_name: string | null }>(
           clientId,
