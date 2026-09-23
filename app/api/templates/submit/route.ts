@@ -6,7 +6,7 @@ import { decrypt } from '@/lib/waEncryption'
 import { submitTemplateToMeta } from '@/lib/metaWhatsapp'
 import { handleWriteError } from '@/lib/apiError'
 import {
-  hasVariableMapColumn,
+  ensureVariableMapColumn,
   normalizeVariableMap,
   extractVariableTokens,
   isNamedToken,
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     // Recording the template locally must not depend on the variable_map
     // migration having been run — a template that Meta has accepted but we
     // failed to store is invisible in the app while still existing at Meta.
-    const storeVariableMap = await hasVariableMapColumn()
+    const storeVariableMap = await ensureVariableMapColumn()
     const row = (
       await query(
         `INSERT INTO wa_templates (
