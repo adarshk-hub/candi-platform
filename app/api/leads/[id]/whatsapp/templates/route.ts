@@ -1,10 +1,8 @@
-//Re
-
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { assertLeadAccess } from '@/lib/leadAccess'
-import { extractVariableTokens, normalizeVariableMap, renderBody, resolveTemplateVariables } from '@/lib/templateVariables'
+import { extractVariableTokens, hasVariableMapColumn, normalizeVariableMap, renderBody, resolveTemplateVariables } from '@/lib/templateVariables'
 
 // Lead-scoped (assertLeadAccess), not the settings-only canCustomize check
 // GET /api/templates/[clientId] uses — a counsellor who can open this lead's
@@ -14,8 +12,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const access = await assertLeadAccess(getSession(req), params.id)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
+  const hasColumn = await hasVariableMapColumn()
   const rows = await query<{ id: string; name: string; category: string | null; language: string; components: any; variable_map: any }>(
-    `SELECT id, name, category, language, components, variable_map
+    `SELECT id, name, category, language, components, ${hasColumn ? 'variable_map' : 'NULL AS variable_map'}
      FROM wa_templates WHERE client_id = $1 AND status = 'approved' ORDER BY name ASC`,
     [access.lead.client_id]
   )
