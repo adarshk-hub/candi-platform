@@ -14,7 +14,7 @@ import {
   TemplateVariableMapping,
   TemplateVariableSource,
   VariableFormat,
-} from '@/lib/templateVariableFields'
+} from '@/components/whatsapp/variableFields'
 
 // Meta approves {{1}} / {{customer}} as bare slots — it has no idea that one
 // of them is meant to be the parent's name. This is where the admin says
