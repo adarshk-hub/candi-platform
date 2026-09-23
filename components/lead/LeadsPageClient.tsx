@@ -23,10 +23,13 @@ import NotificationBell from '@/components/NotificationBell'
 import type { LeadRow, LeadsPageResult } from '@/lib/leadsQuery'
 
 const TAB_TITLE: Record<string, string> = {
-  warm: 'Warm Leads',
-  hot: 'Hot Leads',
-  cold: 'Cold Leads',
+  lead: 'Leads',
+  visit: 'Visit',
   enrolled: 'Enrolled',
+  cold: 'Cold',
+  // Old links still point at these two.
+  warm: 'Leads',
+  hot: 'Visit',
 }
 
 // Widths for every column that can be shown, taken from the shared
