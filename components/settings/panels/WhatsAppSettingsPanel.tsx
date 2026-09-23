@@ -8,7 +8,7 @@ import { NURTURE_TEMPLATE_DEFINITIONS } from '@/lib/nurtureTemplateDefinitions'
 import { OPERATIONAL_TEMPLATE_DEFINITIONS } from '@/lib/operationalTemplateDefinitions'
 import WhatsAppWalletPanel from './WhatsAppWalletPanel'
 import TemplateVariableMapper from '@/components/whatsapp/TemplateVariableMapper'
-import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/lib/templateVariableFields'
+import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/components/whatsapp/variableFields'
 
 interface TemplateRow {
   id: string
