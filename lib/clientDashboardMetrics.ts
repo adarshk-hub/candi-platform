@@ -1,6 +1,7 @@
 // path: lib/clientDashboardMetrics.ts
 import { query } from './db'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
+import { leadBucketSql, leadReachedSql } from '@/lib/leadBuckets'
 
 export interface CampaignRow {
   id: string
@@ -130,14 +131,24 @@ export async function getClientDashboardMetrics(
     `SELECT COUNT(*)::int AS qualified FROM leads l ${leadWhere} AND l.lead_score >= 3`,
     leadParams
   )
+  // Visited counts leads whose pipeline stage says the visit happened
+  // (visit done / offer made, plus anyone who has since paid) — the same
+  // definition the Visit tab in the leads list uses. It used to count
+  // 'session_booked' events instead, so a booking that never happened
+  // still showed as a visit and the two screens disagreed.
   const [{ visits_booked }] = await query<{ visits_booked: string }>(
-    `SELECT COUNT(DISTINCT l.id)::int AS visits_booked
-     FROM leads l JOIN events ev ON ev.lead_id = l.id AND ev.event_type = 'session_booked'
-     ${leadWhere}`,
+    `SELECT COUNT(*)::int AS visits_booked FROM leads l ${leadWhere} AND ${leadReachedSql('visit')}`,
     leadParams
   )
-  const [{ enrolled, fees_collected }] = await query<{ enrolled: string; fees_collected: string | null }>(
-    `SELECT COUNT(DISTINCT en.lead_id)::int AS enrolled, COALESCE(SUM(en.fee_amount), 0) AS fees_collected
+  // Enrolled is the payment-in stage, again matching the leads list. Fees
+  // still come from the enrollments rows, since that is where the money
+  // is recorded.
+  const [{ enrolled }] = await query<{ enrolled: string }>(
+    `SELECT COUNT(*)::int AS enrolled FROM leads l ${leadWhere} AND ${leadBucketSql('enrolled')}`,
+    leadParams
+  )
+  const [{ fees_collected }] = await query<{ fees_collected: string | null }>(
+    `SELECT COALESCE(SUM(en.fee_amount), 0) AS fees_collected
      FROM leads l JOIN enrollments en ON en.lead_id = l.id
      ${leadWhere}`,
     leadParams
@@ -204,10 +215,9 @@ export async function getClientDashboardMetrics(
   }>(
     `SELECT c.id, c.display_name, c.platform,
             COUNT(DISTINCT l.id)::int AS leads,
-            COUNT(DISTINCT ev.id) FILTER (WHERE ev.event_type = 'session_booked')::int AS visits
+            COUNT(DISTINCT l.id) FILTER (WHERE ${leadReachedSql('visit')})::int AS visits
      FROM campaigns c
      LEFT JOIN leads l ${campaignLeadJoin}
-     LEFT JOIN events ev ON ev.lead_id = l.id
      WHERE c.client_id = $1 AND c.status = 'active'
      GROUP BY c.id, c.display_name, c.platform
      ORDER BY leads DESC`,
@@ -215,8 +225,10 @@ export async function getClientDashboardMetrics(
   )
 
   const campaignFees = await query<{ campaign_id: string; fees: string; enrolled: string }>(
-    `SELECT l.campaign_id, COALESCE(SUM(en.fee_amount), 0) AS fees, COUNT(DISTINCT en.lead_id)::int AS enrolled
-     FROM leads l JOIN enrollments en ON en.lead_id = l.id
+    `SELECT l.campaign_id,
+            COALESCE(SUM(en.fee_amount), 0) AS fees,
+            COUNT(DISTINCT l.id) FILTER (WHERE ${leadBucketSql('enrolled')})::int AS enrolled
+     FROM leads l LEFT JOIN enrollments en ON en.lead_id = l.id
      ${leadWhere} AND l.campaign_id IS NOT NULL
      GROUP BY l.campaign_id`,
     leadParams
@@ -266,16 +278,16 @@ export async function getClientDashboardMetrics(
     organicParams.push(to)
     organicWhere += ` AND l.created_at <= $${organicParams.length}::date + interval '1 day'`
   }
-  const [organicRow] = await query<{ leads: string; visits: string }>(
-    `SELECT COUNT(DISTINCT l.id)::int AS leads,
-            COUNT(DISTINCT ev.id) FILTER (WHERE ev.event_type = 'session_booked')::int AS visits
+  const [organicRow] = await query<{ leads: string; visits: string; enrolled: string }>(
+    `SELECT COUNT(*)::int AS leads,
+            COUNT(*) FILTER (WHERE ${leadReachedSql('visit')})::int AS visits,
+            COUNT(*) FILTER (WHERE ${leadBucketSql('enrolled')})::int AS enrolled
      FROM leads l
-     LEFT JOIN events ev ON ev.lead_id = l.id
      ${organicWhere}`,
     organicParams
   )
-  const [organicFees] = await query<{ enrolled: string; fees: string }>(
-    `SELECT COUNT(DISTINCT en.lead_id)::int AS enrolled, COALESCE(SUM(en.fee_amount), 0) AS fees
+  const [organicFees] = await query<{ fees: string }>(
+    `SELECT COALESCE(SUM(en.fee_amount), 0) AS fees
      FROM leads l JOIN enrollments en ON en.lead_id = l.id
      ${organicWhere}`,
     organicParams
@@ -283,7 +295,7 @@ export async function getClientDashboardMetrics(
   const organic: PlatformBucket = {
     leads: Number(organicRow?.leads || 0),
     visits: Number(organicRow?.visits || 0),
-    enrolled: Number(organicFees?.enrolled || 0),
+    enrolled: Number(organicRow?.enrolled || 0),
     fees: Number(organicFees?.fees || 0),
     spend: 0,
   }
