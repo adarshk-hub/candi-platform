@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
-import { hasVariableMapColumn, normalizeVariableMap } from '@/lib/templateVariables'
+import { ensureVariableMapColumn, hasVariableMapColumn, normalizeVariableMap } from '@/lib/templateVariables'
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
@@ -78,10 +78,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { clientId: 
   const id = body?.id
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
 
-  if (!(await hasVariableMapColumn())) {
+  // Each client has its own database, so the column may simply not exist
+  // here yet — create it rather than making someone run a migration per
+  // client before a mapping can be saved.
+  if (!(await ensureVariableMapColumn())) {
     return NextResponse.json(
-      { error: 'Run scripts/wa-template-variable-map.sql before setting variable mappings.' },
-      { status: 400 }
+      { error: 'Could not add the variable_map column to this client database — check the database user\'s permissions.' },
+      { status: 500 }
     )
   }
 
