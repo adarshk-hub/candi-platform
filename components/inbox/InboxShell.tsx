@@ -18,7 +18,7 @@ import {
 import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
-import { markLeadRead } from '@/lib/useNotifications'
+import { announceNotificationsChanged, markLeadRead } from '@/lib/useNotifications'
 import { useUnreplied } from '@/lib/useUnreplied'
 
 // Two channels at the top level. Email here means mail this CRM has sent —
@@ -268,6 +268,10 @@ export default function InboxShell() {
                   onSent={() => {
                     loadThread()
                     load()
+                    // A reply is exactly what clears the "awaiting a
+                    // reply" badge, so refresh the counts now rather than
+                    // leaving them until the next poll or page change.
+                    announceNotificationsChanged()
                   }}
                   onNeedsLead={() => setActiveLead(openThread)}
                 />
