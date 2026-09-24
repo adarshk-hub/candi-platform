@@ -8,6 +8,7 @@ import { fetchLeadsPage } from '@/lib/leadsQuery'
 import { normalizePhone } from '@/lib/leadIntake'
 import { resolveAssignee } from '@/lib/leadAssignment'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
+import { notifyNewLead } from '@/lib/counsellorAlerts'
 import { createNotification } from '@/lib/notifications'
 
 function splitParam(v: string | null): string[] {
@@ -151,6 +152,20 @@ export async function POST(req: NextRequest) {
 
     // The bell had nothing to show for manually-added leads because this
     // call didn't exist — only the webhook paths recorded a notification.
+    // Same WhatsApp alert as automated sources — "any source" includes a
+    // lead typed in by hand.
+    try {
+      await notifyNewLead({
+        clientId,
+        assignedCounsellorId: lead.assigned_counsellor_id || null,
+        leadName: lead.full_name,
+        phone: lead.whatsapp_number,
+        source: lead.source,
+      })
+    } catch (err) {
+      console.error('[leads:create] counsellor alert failed:', err)
+    }
+
     await createNotification({
       clientId,
       leadId: lead.id,
