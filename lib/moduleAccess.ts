@@ -17,6 +17,7 @@ export const MODULE_PAGES: ModulePage[] = [
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
   { key: 'leads', label: 'All Leads', href: '/leads' },
   { key: 'broadcasts', label: 'Broadcasts', href: '/broadcasts' },
+  { key: 'templates', label: 'Messages', href: '/templates' },
   { key: 'performance', label: 'Counsellor Performance', href: '/performance' },
 ]
 
@@ -29,7 +30,9 @@ export const DEFAULT_COUNSELLOR_PAGES = ['inbox', 'follow_ups', 'calendar', 'lea
 // management no matter what boxes get ticked on a counsellor's login.
 // Dashboard is deliberately not in here: it's ordinary role-gated content
 // that an institute can choose to open up to a counsellor.
-const ADMIN_ONLY_PAGES = ['performance']
+// Writing messages and changing the schedule spends the client's wallet
+// when they go out, so it stays with management, like Broadcasts.
+const ADMIN_ONLY_PAGES = ['performance', 'templates']
 
 // The mirror image: pages that only make sense for the people doing the
 // day-to-day work. My Day is a personal worklog — an admin has no leads of
@@ -60,6 +63,7 @@ export function pageKeyForPath(pathname: string): string | null {
   if (pathname.startsWith('/calendar')) return 'calendar'
   if (pathname.startsWith('/leads')) return 'leads'
   if (pathname.startsWith('/broadcasts')) return 'broadcasts'
+  if (pathname.startsWith('/templates')) return 'templates'
   if (pathname.startsWith('/performance')) return 'performance'
   return null
 }
