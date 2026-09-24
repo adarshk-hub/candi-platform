@@ -8,7 +8,6 @@ import {
   WA_CATEGORY_LABELS,
   WA_PRICING_ORDER,
   RECHARGE_PRESETS,
-  GST_PERCENTAGE,
   MIN_RECHARGE_AMOUNT,
   formatRate,
 } from '@/lib/waCreditRates'
@@ -88,8 +87,6 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
   const [status, setStatus] = useState('')
   const [customAmount, setCustomAmount] = useState('')
   const [recharging, setRecharging] = useState<number | null>(null)
-  // Where the bill goes. Also pre-fills Razorpay's own contact step.
-  const [billingEmail, setBillingEmail] = useState('')
   // The transaction ledger is the long, secondary detail here — keep it
   // collapsed until asked for. The pricing card stays permanently visible.
   const [showTransactions, setShowTransactions] = useState(false)
@@ -132,7 +129,7 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
       const orderRes = await fetch(`/api/clients/${clientId}/wallet/recharge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, email: billingEmail.trim() }),
+        body: JSON.stringify({ amount }),
       })
       const order = await orderRes.json().catch(() => ({}))
       if (!orderRes.ok) {
@@ -147,8 +144,6 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
         order_id: order.orderId,
         name: 'WhatsApp Conversation Credits',
         description: `₹${amount} credits + ${Math.round((order.gstPercentage || 0.18) * 100)}% GST`,
-        // Pre-fills Razorpay's contact step, and is where the bill is sent.
-        prefill: { email: order.email },
         handler: async (response: any) => {
           try {
             const verifyRes = await fetch(`/api/clients/${clientId}/wallet/verify`, {
@@ -159,7 +154,6 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
                 amount: order.amount,
-                email: order.email,
               }),
             })
             const verified = await verifyRes.json().catch(() => ({}))
@@ -167,9 +161,11 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
               setError(verified.error || 'Payment succeeded but verification failed. Contact support.')
               return
             }
-            setStatus(
-              `₹${verified.netAmount.toFixed(2)} credited to your wallet. You paid ₹${verified.grossAmount.toFixed(2)} (including ₹${verified.cutAmount.toFixed(2)} GST). Razorpay is emailing the receipt to ${billingEmail.trim()}.`
-            )
+            {
+              setStatus(
+                `₹${verified.netAmount.toFixed(2)} credited to your wallet. You paid ₹${verified.grossAmount.toFixed(2)}, including ₹${verified.cutAmount.toFixed(2)} GST. Razorpay emails the receipt.`
+              )
+            }
             loadWallet()
           } catch (err: any) {
             setError(err?.message || 'Payment succeeded but verification failed. Contact support.')
@@ -273,26 +269,16 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
 
       <div className="mt-4">
         <p className="mb-2 text-xs font-medium text-muted">Recharge</p>
-        <div className="mb-2">
-          <input
-            type="email"
-            value={billingEmail}
-            onChange={(e) => setBillingEmail(e.target.value)}
-            placeholder="Email for the bill"
-            className="w-72 rounded-md border border-border bg-card2 px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
-          />
-          <p className="mt-1 text-xs text-muted2">
-            Prices below are credits; {Math.round(GST_PERCENTAGE * 100)}% GST is added at checkout. The full credit
-            amount reaches your wallet — no platform fee. The receipt goes to this address and to the account owner.
-          </p>
-        </div>
+        <p className="mb-2 text-xs text-muted2">
+          Prices are credits; 18% GST is added at checkout. Razorpay collects the email for the bill and sends the
+          receipt.
+        </p>
         <div className="flex flex-wrap gap-2">
           {RECHARGE_PRESETS.map((amt) => (
             <button
               key={amt}
               onClick={() => recharge(amt)}
-              disabled={recharging !== null || !billingEmail.trim()}
-              title={billingEmail.trim() ? '' : 'Enter the email for the bill first'}
+              disabled={recharging !== null}
               className="rounded-md border border-border bg-card2 px-4 py-2 text-sm font-medium text-fg hover:bg-card disabled:opacity-50"
             >
               {recharging === amt ? 'Opening…' : `+ ₹${amt}`}
@@ -310,7 +296,7 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
           />
           <button
             onClick={() => recharge(Number(customAmount))}
-            disabled={recharging !== null || !customAmount || !billingEmail.trim()}
+            disabled={recharging !== null || !customAmount}
             className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
           >
             {recharging !== null && recharging === Number(customAmount) ? 'Opening…' : 'Purchase Now'}
@@ -327,7 +313,7 @@ export default function WhatsAppWalletPanel({ clientId }: { clientId: string }) 
           <p className="mb-3 text-xs text-muted2">
             {data.summary.totalMessagesSent.toLocaleString()} messages sent, ₹{data.summary.totalCharged.toFixed(2)}{' '}
             charged. ₹{data.summary.totalRecharged.toFixed(2)} recharged (₹{data.summary.totalCut.toFixed(2)}{' '}
-            including GST).
+            GST and any platform fee).
           </p>
 
           {data.summary.categories.length === 0 ? (
