@@ -1,7 +1,8 @@
+// path: app/api/option-items/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { canCustomize } from '@/lib/customizeAccess'
+import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
@@ -11,7 +12,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = getSession(req)
   const existing = (await query('SELECT * FROM client_option_items WHERE id = $1', [params.id]))[0]
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!canCustomize(session, existing.client_id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : 'cold_reason'))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { value, isActive, sortOrder } = await req.json()
   const setClauses: string[] = []
@@ -52,7 +54,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const session = getSession(req)
   const existing = (await query('SELECT * FROM client_option_items WHERE id = $1', [params.id]))[0]
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!canCustomize(session, existing.client_id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : 'cold_reason'))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   await query('DELETE FROM client_option_items WHERE id = $1', [params.id])
   await logSettingsActivity(
