@@ -47,8 +47,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // scheduled sequence has always behaved.
   const requireConfirmation = body.requireConfirmation === true
 
-  if (!Number.isInteger(dayNumber) || !templateName) {
-    return NextResponse.json({ error: 'dayNumber and templateName are required' }, { status: 400 })
+  if (!Number.isInteger(dayNumber)) {
+    return NextResponse.json({ error: 'dayNumber is required' }, { status: 400 })
+  }
+
+  // An empty template name is the "No message" choice: the step is cleared
+  // so the sequence simply skips that day. Deleting the row is what the
+  // engine already treats as "nothing configured", so no engine change is
+  // needed.
+  if (!templateName) {
+    try {
+      await query(`DELETE FROM wa_sequence_templates WHERE client_id = $1 AND day_number = $2`, [
+        params.id,
+        dayNumber,
+      ])
+      return NextResponse.json({ ok: true, cleared: true })
+    } catch (err) {
+      return handleWriteError(err)
+    }
   }
 
   // Only allow assigning templates Meta has actually approved for this
