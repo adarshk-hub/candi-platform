@@ -1,7 +1,8 @@
+// path: app/api/field-settings/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
-import { canCustomize } from '@/lib/customizeAccess'
+import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
 
 export async function GET(req: NextRequest) {
@@ -32,7 +33,7 @@ export async function PUT(req: NextRequest) {
   const body = await req.json()
   const targetClientId = AGENCY_ROLES.includes(session?.role as any) ? body.clientId : session?.clientId
 
-  if (!targetClientId || !canCustomize(session, targetClientId)) {
+  if (!targetClientId || !canEditSection(session, targetClientId, 'fields')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const { fieldKey, label, isVisible } = body
