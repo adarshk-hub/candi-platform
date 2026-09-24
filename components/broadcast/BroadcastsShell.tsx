@@ -4,8 +4,6 @@
 import { useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import { Radio, MessageCircle, Mail } from 'lucide-react'
-import BroadcastTemplatesPanel from './BroadcastTemplatesPanel'
-import EmailDesignsPanel from './EmailDesignsPanel'
 import BroadcastComposer from './BroadcastComposer'
 import BroadcastHistory from './BroadcastHistory'
 import EmailBroadcastComposer from './EmailBroadcastComposer'
@@ -27,7 +25,8 @@ export default function BroadcastsShell({
   // Read-only now — whichever institute the sidebar has selected.
   const clientId = lockedToClientId || institutes[0]?.id || ''
   const [channel, setChannel] = useState<'whatsapp' | 'email'>('whatsapp')
-  const [tab, setTab] = useState<'new' | 'audience' | 'templates' | 'history'>('new')
+  // Templates moved to their own Messages page in the sidebar.
+  const [tab, setTab] = useState<'new' | 'audience' | 'history'>('new')
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   if (!clientId) {
@@ -93,7 +92,7 @@ export default function BroadcastsShell({
       </div>
 
       <div className="mb-5 flex gap-1 border-b border-border">
-        {(['new', 'audience', 'templates', 'history'] as const).map((t) => (
+        {(['new', 'audience', 'history'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -101,24 +100,12 @@ export default function BroadcastsShell({
               tab === t ? 'border-blue-500 text-fg' : 'border-transparent text-muted2 hover:text-fg'
             }`}
           >
-            {t === 'new'
-              ? 'Send Broadcast'
-              : t === 'audience'
-              ? 'Audience'
-              : t === 'templates'
-              ? 'Templates'
-              : 'History'}
+            {t === 'new' ? 'Send Broadcast' : t === 'audience' ? 'Audience' : 'History'}
           </button>
         ))}
       </div>
 
-      {tab === 'templates' ? (
-        channel === 'email' ? (
-          <EmailDesignsPanel clientId={clientId} instituteName={institutes.find((i) => i.id === clientId)?.name || ''} />
-        ) : (
-          <BroadcastTemplatesPanel clientId={clientId} />
-        )
-      ) : tab === 'audience' ? (
+      {tab === 'audience' ? (
         <AudienceBoard clientId={clientId} embedded />
       ) : channel === 'whatsapp' ? (
         tab === 'new' ? (
