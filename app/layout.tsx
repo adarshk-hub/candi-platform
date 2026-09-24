@@ -27,17 +27,18 @@ export const metadata: Metadata = {
   },
 }
 
-// Applies the saved theme class before first paint (falling back to the
-// user's OS preference for a first-ever visit), so there's no flash of the
-// wrong theme while React hydrates.
+// Applies the saved theme class before first paint, so there's no flash of
+// the wrong theme while React hydrates. Light is the default until someone
+// actually picks dark — the OS preference is deliberately ignored, because
+// a laptop set to dark system-wide was opening the CRM in dark on every
+// refresh even though nobody had chosen it here.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem('cc-theme');
-    var theme = stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.classList.toggle('dark', stored === 'dark');
   } catch (e) {
-    document.documentElement.classList.add('dark');
+    document.documentElement.classList.remove('dark');
   }
 })();
 `
@@ -106,7 +107,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
