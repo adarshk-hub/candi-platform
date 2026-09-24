@@ -6,6 +6,7 @@ import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
+import { ensurePhoneColumn } from '@/lib/counsellorAlerts'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -25,8 +26,13 @@ export async function GET(req: NextRequest) {
     where += ` AND client_id = $${params.length}`
   }
 
+  // phone is optional and added on demand per schema, so it is selected as
+  // NULL where the column isn't there yet rather than erroring the list.
+  const hasPhone = await ensurePhoneColumn()
   const rows = await query(
-    `SELECT id, full_name, email, client_id, allowed_pages, created_at FROM users ${where} ORDER BY full_name`,
+    `SELECT id, full_name, email, client_id, allowed_pages, created_at,
+            ${hasPhone ? 'phone' : "NULL::varchar AS phone"}
+     FROM users ${where} ORDER BY full_name`,
     params
   )
   return NextResponse.json(rows)
@@ -45,7 +51,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { fullName, email, password } = body
+  const { fullName, email, password, phone } = body
   if (!fullName || !email || !password) {
     return NextResponse.json({ error: 'fullName, email, and password required' }, { status: 400 })
   }
@@ -55,11 +61,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const passwordHash = bcrypt.hashSync(password, 10)
+    const hasPhone = await ensurePhoneColumn()
+    const trimmedPhone = typeof phone === 'string' ? phone.trim() : ''
     const rows = await query(
-      `INSERT INTO users (client_id, email, password_hash, full_name, role)
-       VALUES ($1,$2,$3,$4,'client_counsellor')
+      `INSERT INTO users (client_id, email, password_hash, full_name, role${hasPhone ? ', phone' : ''})
+       VALUES ($1,$2,$3,$4,'client_counsellor'${hasPhone ? ', $5' : ''})
        RETURNING id, full_name, email, client_id, created_at`,
-      [targetClientId, email, passwordHash, fullName]
+      hasPhone
+        ? [targetClientId, email, passwordHash, fullName, trimmedPhone || null]
+        : [targetClientId, email, passwordHash, fullName]
     )
     await logSettingsActivity(targetClientId, session, 'Counsellors', `Added counsellor "${fullName}" (${email})`)
     return NextResponse.json(rows[0])
