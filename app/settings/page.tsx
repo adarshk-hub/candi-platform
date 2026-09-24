@@ -94,7 +94,18 @@ export default async function SettingsPage() {
   const canCustomize = true
 
   return (
-    <div className="flex gap-6">
+    <div>
+      {/* Heading above the two columns, matching the other settings pages —
+          it used to sit inside the right column, so the nav started higher
+          than the title. */}
+      <div className="mb-6 flex items-center gap-3">
+        <h1 className="text-2xl font-bold text-fg">Agency Settings</h1>
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
+      </div>
+
+      <div className="flex gap-6">
       <nav className="w-56 shrink-0 space-y-1">
         {/* Current page, shown as the selected item. */}
         <span className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-blue-500 bg-blue-500/10 px-3 py-2 text-left text-sm font-medium text-fg">
@@ -114,16 +125,6 @@ export default async function SettingsPage() {
       </nav>
 
       <div className="min-w-0 flex-1">
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <h1 className="mb-2 text-2xl font-bold text-fg">Agency Settings</h1>
-          <p className="text-muted2">Account and workspace settings.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <NotificationBell />
-        </div>
-      </div>
-
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">
         Lead Capture &amp; Auto-Intake
       </h2>
@@ -209,6 +210,7 @@ export default async function SettingsPage() {
           />
         </div>
       )}
+      </div>
       </div>
     </div>
   )
