@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ListOrdered,
   Tags,
+  Snowflake,
   FormInput,
   Users,
   Rows3,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react'
 import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
+import { COLD_REASON_LIST_KEY } from '@/lib/coldReasons'
 import LeadFormFieldsPanel from './panels/LeadFormFieldsPanel'
 import CounsellorsPanel from './panels/CounsellorsPanel'
 import DisplayPrefsPanel from './panels/DisplayPrefsPanel'
@@ -42,6 +44,9 @@ interface Institute {
 const CATEGORIES = [
   { key: 'stages', label: 'Lead Stages', icon: ListOrdered },
   { key: 'lead_source', label: 'Lead Source', icon: Tags },
+  // Cold reasons are a per-institute list like Lead Source; without this
+  // section the only way to add one was an INSERT in every schema.
+  { key: 'cold_reason', label: 'Cold Reasons', icon: Snowflake },
   { key: 'fields', label: 'Lead Form Fields', icon: FormInput },
   { key: 'counsellors', label: 'Counsellors', icon: Users },
   { key: 'assignment', label: 'Lead Assignment', icon: Shuffle },
@@ -147,6 +152,9 @@ export default function CustomizeShell({
         <div className="min-w-0 flex-1">
           {active === 'stages' && <LeadStagesPanel clientId={clientId} />}
           {active === 'lead_source' && <OptionListPanel clientId={clientId} listKey="lead_source" title="Lead Source" />}
+          {active === 'cold_reason' && (
+            <OptionListPanel clientId={clientId} listKey={COLD_REASON_LIST_KEY} title="Cold Reasons" />
+          )}
           {active === 'fields' && <LeadFormFieldsPanel clientId={clientId} />}
           {active === 'counsellors' && <CounsellorsPanel clientId={clientId} />}
           {active === 'assignment' && <LeadAssignmentPanel clientId={clientId} />}
