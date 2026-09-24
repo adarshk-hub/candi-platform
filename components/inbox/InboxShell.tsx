@@ -19,6 +19,7 @@ import { clsx } from 'clsx'
 import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import NotificationBell from '@/components/NotificationBell'
 import { markLeadRead } from '@/lib/useNotifications'
+import { useUnreplied } from '@/lib/useUnreplied'
 
 // Two channels at the top level. Email here means mail this CRM has sent —
 // there is no incoming side. Reading a mailbox needs IMAP credentials for
@@ -105,6 +106,8 @@ export default function InboxShell() {
   const channel: Channel = 'whatsapp'
   const [search, setSearch] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
+  // How many messages in each thread are still waiting on a reply.
+  const { byLead: unrepliedByLead } = useUnreplied()
   const [openThread, setOpenThread] = useState<string | null>(null)
   const [threadLead, setThreadLead] = useState<any | null>(null)
   const [threadMessages, setThreadMessages] = useState<WaMessage[]>([])
@@ -197,7 +200,19 @@ export default function InboxShell() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-fg">{c.full_name}</span>
-                    <span className="shrink-0 text-[11px] text-muted">{clockTime(c.created_at)}</span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {/* Waiting on a reply — not "unseen". Opening the
+                          thread doesn't clear it; answering does. */}
+                      {unrepliedByLead[c.lead_id] > 0 && (
+                        <span
+                          title={`${unrepliedByLead[c.lead_id]} message(s) awaiting a reply`}
+                          className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                        >
+                          {unrepliedByLead[c.lead_id]}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-muted">{clockTime(c.created_at)}</span>
+                    </span>
                   </span>
                   <span className="flex items-center gap-1">
                     {c.direction === 'outbound' && <StatusTicks status={c.status} />}
