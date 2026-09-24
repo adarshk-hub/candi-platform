@@ -2,6 +2,7 @@
 //Re
 import { queryAsClient } from './db'
 import { fetchMetaObjectName } from './metaAdsSpend'
+import { notifyNewLead } from './counsellorAlerts'
 import { createNotification } from './notifications'
 import { resolveAssignee } from './leadAssignment'
 
@@ -153,6 +154,23 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
     // must not ring the bell as one.
     // Historical backfills pass createdAt to date rows in the past — those
     // aren't news either, so they're skipped.
+    // WhatsApp alert to the counsellor who now owns the lead (or, if it is
+    // still unassigned, to every counsellor who has opted in with a number).
+    // Best-effort: never let an alert failure fail the intake.
+    if (!input.createdAt) {
+      try {
+        await notifyNewLead({
+          clientId: input.clientId,
+          assignedCounsellorId: lead.assigned_counsellor_id || null,
+          leadName: lead.full_name,
+          phone: lead.whatsapp_number,
+          source: lead.source,
+        })
+      } catch (err) {
+        console.error('[leadIntake] counsellor alert failed:', err)
+      }
+    }
+
     if (!input.createdAt) {
       await createNotification({
         clientId: input.clientId,
