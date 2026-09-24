@@ -31,7 +31,7 @@ export default function TemplatesShell({
     <div>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
-          <MessageSquareText size={22} /> Messages
+          <MessageSquareText size={22} /> WhatsApp Templates
         </h1>
         <NotificationBell />
       </div>
