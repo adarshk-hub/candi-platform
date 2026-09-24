@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, email } = body || {}
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = body || {}
 
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !amount) {
     return NextResponse.json({ error: 'Missing payment details' }, { status: 400 })
