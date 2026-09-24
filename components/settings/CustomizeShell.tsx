@@ -184,7 +184,7 @@ export default function CustomizeShell({
           {active === 'counsellors' && <CounsellorsPanel clientId={clientId} />}
           {active === 'assignment' && <LeadAssignmentPanel clientId={clientId} />}
           {active === 'email' && <EmailSettingsPanel clientId={clientId} />}
-          {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} />}
+          {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} role={role} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
           {active === 'lead_range' && <LeadDateRangePanel clientId={clientId} />}
           {active === 'display' && <DisplayPrefsPanel clientId={clientId} />}
