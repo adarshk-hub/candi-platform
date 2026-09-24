@@ -9,6 +9,7 @@ interface Counsellor {
   id: string
   full_name: string
   email: string
+  phone?: string | null
   allowed_pages: string[] | null
   created_at: string
 }
@@ -103,6 +104,7 @@ export default function CounsellorsPanel({ clientId }: { clientId: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-fg">{c.full_name}</p>
                   <p className="truncate text-xs text-muted2">{c.email}</p>
+                  {c.phone && <p className="truncate text-xs text-muted2">WhatsApp alerts: {c.phone}</p>}
                 </div>
               </div>
 
@@ -154,6 +156,9 @@ function CounsellorForm({
 }) {
   const [fullName, setFullName] = useState(existing?.full_name || '')
   const [email, setEmail] = useState(existing?.email || '')
+  // Optional. With a number saved, this counsellor gets a WhatsApp alert
+  // for each new lead they own and each call or visit booked on it.
+  const [phone, setPhone] = useState(existing?.phone || '')
   const [password, setPassword] = useState('')
   // A brand-new login starts on the same defaults an unconfigured counsellor
   // already gets, so ticking nothing produces the familiar behaviour rather
@@ -181,7 +186,7 @@ function CounsellorForm({
     try {
       const url = existing ? `/api/counsellors/${existing.id}` : '/api/counsellors'
       const method = existing ? 'PATCH' : 'POST'
-      const body: any = { clientId, fullName, email, allowedPages: pages }
+      const body: any = { clientId, fullName, email, phone, allowedPages: pages }
       if (!existing || password) body.password = password
       const res = await fetch(url, {
         method,
@@ -202,7 +207,7 @@ function CounsellorForm({
           await fetch(`/api/counsellors/${created.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ allowedPages: pages }),
+            body: JSON.stringify({ allowedPages: pages, phone }),
           }).catch(() => {})
         }
       }
@@ -236,6 +241,16 @@ function CounsellorForm({
           />
         </div>
         <div>
+          <label className="mb-1 block text-xs text-muted">WhatsApp number (optional)</label>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="e.g. 919876543210"
+            title="With a number here, this counsellor is messaged on WhatsApp for every new lead and every call or visit booked."
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+          />
+        </div>
+        <div>
           <label className="mb-1 block text-xs text-muted">{existing ? 'New password (optional)' : 'Password'}</label>
           <input
             type="password"
@@ -263,7 +278,8 @@ function CounsellorForm({
           ))}
         </div>
         <p className="mt-1.5 text-xs text-muted2">
-          Settings is never available to a counsellor. Untick everything to fall back to the standard set
+          A WhatsApp number is optional — add one and that counsellor is alerted on WhatsApp for every new lead and
+        every call or visit booked. Settings is never available to a counsellor. Untick everything to fall back to the standard set
           (Activity, Follow Up, Calendar, All Leads).
         </p>
       </div>
