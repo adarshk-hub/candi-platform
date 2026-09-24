@@ -2,7 +2,6 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { SlidersHorizontal } from 'lucide-react'
 import { getServerSession } from '@/lib/serverAuth'
 import { query } from '@/lib/db'
 import { AGENCY_ROLES } from '@/lib/auth'
@@ -11,6 +10,23 @@ import UsersPanel from '@/components/settings/panels/UsersPanel'
 import AdAccountConnector from '@/components/settings/AdAccountConnector'
 import PageConnector from '@/components/settings/PageConnector'
 import NotificationBell from '@/components/NotificationBell'
+
+// Mirrors the section list in CustomizeShell. Kept as plain data here so
+// this server page doesn't have to pull in the client component.
+const CUSTOMIZE_LINKS = [
+  { panel: 'stages', label: 'Lead Stages' },
+  { panel: 'lead_source', label: 'Lead Source' },
+  { panel: 'cold_reason', label: 'Cold Reasons' },
+  { panel: 'fields', label: 'Lead Form Fields' },
+  { panel: 'counsellors', label: 'Counsellors' },
+  { panel: 'assignment', label: 'Lead Assignment' },
+  { panel: 'email', label: 'School Email' },
+  { panel: 'whatsapp', label: 'WhatsApp' },
+  { panel: 'capi', label: 'Conversions API' },
+  { panel: 'lead_range', label: 'Lead Date Range' },
+  { panel: 'display', label: 'Display Preferences' },
+  { panel: 'activity', label: 'Activity' },
+]
 
 function getBaseUrl() {
   const h = headers()
@@ -69,14 +85,6 @@ export default async function SettingsPage() {
           <p className="text-muted2">Account and workspace settings.</p>
         </div>
         <div className="flex items-center gap-3">
-          {canCustomize && (
-            <Link
-              href="/settings/customize"
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-            >
-              <SlidersHorizontal size={16} /> Customize
-            </Link>
-          )}
           <NotificationBell />
         </div>
       </div>
@@ -154,6 +162,24 @@ export default async function SettingsPage() {
           </div>
         ))}
         {clients.length === 0 && <p className="text-muted">No institution linked to this account.</p>}
+      </div>
+
+      {/* The Customize sections, listed here as links rather than hidden
+          behind one button — both settings pages are siblings and each
+          lists the other's contents. */}
+      <div className="mt-10">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">Customize</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {CUSTOMIZE_LINKS.map((c) => (
+            <Link
+              key={c.panel}
+              href={`/settings/customize?panel=${c.panel}`}
+              className="rounded-card border border-border bg-card px-4 py-3 text-sm text-fg hover:border-blue-500"
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       {canCustomize && (
