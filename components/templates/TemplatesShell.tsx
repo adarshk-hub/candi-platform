@@ -1,81 +1,65 @@
-// path: app/api/templates/counsellor-alert/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { query } from '@/lib/db'
-import { getSession } from '@/lib/auth'
-import { canCustomize } from '@/lib/customizeAccess'
-import { decrypt } from '@/lib/waEncryption'
-import { submitAndRecordTemplate } from '@/lib/metaWhatsapp'
-import { COUNSELLOR_ALERT_TEMPLATES } from '@/lib/counsellorAlerts'
-import { handleWriteError } from '@/lib/apiError'
+// path: components/templates/TemplatesShell.tsx
+'use client'
 
-// Counsellor alerts go to staff, who have usually never messaged the school
-// number — so WhatsApp's 24-hour rule blocks plain text and only an
-// approved template gets through. This submits that one template, so
-// turning the alerts on doesn't mean hand-writing it.
-async function statusFor(clientId: string) {
-  const templates = []
-  for (const def of COUNSELLOR_ALERT_TEMPLATES) {
-    const [row] = await query<{ status: string; rejection_reason: string | null }>(
-      `SELECT status, rejection_reason FROM wa_templates
-       WHERE client_id = $1 AND name ILIKE $2 ORDER BY submitted_at DESC LIMIT 1`,
-      [clientId, `%${def.name}%`]
-    )
-    templates.push({
-      name: def.name,
-      purpose: def.name === 'counsellor_new_lead' ? 'New lead' : 'Call or visit booked',
-      body: def.body,
-      status: row?.status || 'none',
-      rejectionReason: row?.rejection_reason || null,
-    })
-  }
-  // Both have to be approved before every alert can be delivered.
-  const status = templates.every((t) => t.status === 'approved')
-    ? 'approved'
-    : templates.some((t) => t.status === 'rejected')
-      ? 'rejected'
-      : templates.some((t) => t.status === 'pending')
-        ? 'pending'
-        : 'none'
-  return { status, templates }
-}
+import { useState } from 'react'
+import { MessageSquareText, CalendarClock, FilePlus2 } from 'lucide-react'
+import NotificationBell from '@/components/NotificationBell'
+import SequenceStepsPanel from './SequenceStepsPanel'
+import BroadcastTemplatesPanel from '@/components/broadcast/BroadcastTemplatesPanel'
+import CounsellorAlertCard from './CounsellorAlertCard'
 
-export async function GET(req: NextRequest) {
-  const session = getSession(req)
-  const clientId = req.nextUrl.searchParams.get('clientId') || ''
-  if (!canCustomize(session, clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  return NextResponse.json(await statusFor(clientId))
-}
+// One home for messages: when they go out (Schedule) and what they say
+// (Messages). Both used to be buried inside Settings > WhatsApp, next to
+// API credentials, with a second copy of the message list under Broadcast.
+export default function TemplatesShell({
+  institutes,
+  lockedToClientId,
+}: {
+  institutes: { id: string; name: string }[]
+  lockedToClientId: string | null
+}) {
+  const clientId = lockedToClientId || institutes[0]?.id || ''
+  const [tab, setTab] = useState<'schedule' | 'messages'>('schedule')
 
-export async function POST(req: NextRequest) {
-  const session = getSession(req)
-  const { clientId } = await req.json().catch(() => ({ clientId: '' }))
-  if (!canCustomize(session, clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!clientId) return <p className="text-muted">No institution selected.</p>
 
-  const [config] = await query<{ waba_id: string; access_token: string }>(
-    'SELECT waba_id, access_token FROM wa_configs WHERE client_id = $1',
-    [clientId]
+  const tabs = [
+    { key: 'schedule' as const, label: 'Schedule', hint: 'Which message goes out when', icon: CalendarClock },
+    { key: 'messages' as const, label: 'Messages', hint: 'Write and submit for approval', icon: FilePlus2 },
+  ]
+
+  return (
+    <div>
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-fg">
+          <MessageSquareText size={22} /> WhatsApp Templates
+        </h1>
+        <NotificationBell />
+      </div>
+
+      <div className="mb-5 flex gap-1 border-b border-border">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium ${
+              tab === t.key ? 'border-blue-500 text-fg' : 'border-transparent text-muted2 hover:text-fg'
+            }`}
+            title={t.hint}
+          >
+            <t.icon size={15} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'schedule' ? (
+        <SequenceStepsPanel clientId={clientId} />
+      ) : (
+        <div className="space-y-5">
+          <CounsellorAlertCard clientId={clientId} />
+          <BroadcastTemplatesPanel clientId={clientId} />
+        </div>
+      )}
+    </div>
   )
-  if (!config?.waba_id || !config?.access_token) {
-    return NextResponse.json({ error: 'Connect WhatsApp for this institute first.' }, { status: 400 })
-  }
-
-  try {
-    const token = decrypt(config.access_token)
-    const results = []
-    for (const def of COUNSELLOR_ALERT_TEMPLATES) {
-      results.push(
-        await submitAndRecordTemplate({
-          clientId,
-          wabaId: config.waba_id,
-          accessToken: token,
-          name: def.name,
-          category: def.category,
-          body: def.body,
-        })
-      )
-    }
-    return NextResponse.json({ results, ...(await statusFor(clientId)) })
-  } catch (err) {
-    return handleWriteError(err)
-  }
 }
