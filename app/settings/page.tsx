@@ -65,7 +65,7 @@ export default async function SettingsPage() {
     <div>
       <div className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="mb-2 text-2xl font-bold text-fg">Settings</h1>
+          <h1 className="mb-2 text-2xl font-bold text-fg">Agency Settings</h1>
           <p className="text-muted2">Account and workspace settings.</p>
         </div>
         <div className="flex items-center gap-3">
