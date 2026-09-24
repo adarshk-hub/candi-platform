@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
+import { counsellorCanAssign, setCounsellorCanAssign } from '@/lib/assignPermission'
 
 // Two modes only: either a person picks who takes each lead, or the system
 // spreads them automatically. The rule-based routing that briefly lived here
@@ -32,6 +33,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       mode: client?.lead_assignment_mode || 'manual',
       waWelcomeConfirm: client?.wa_welcome_confirm !== false,
+      // Whether counsellors may pass leads to each other.
+      counsellorCanAssign: await counsellorCanAssign(clientId),
     })
   } catch (err: any) {
     if (err?.code === '42703' || err?.code === '42P01') {
@@ -57,6 +60,9 @@ export async function PUT(req: NextRequest) {
   try {
     if (body.mode !== undefined) {
       await query('UPDATE clients SET lead_assignment_mode = $1 WHERE id = $2', [body.mode, clientId])
+    }
+    if (body.counsellorCanAssign !== undefined) {
+      await setCounsellorCanAssign(clientId, !!body.counsellorCanAssign)
     }
     if (body.waWelcomeConfirm !== undefined) {
       await query('UPDATE clients SET wa_welcome_confirm = $1 WHERE id = $2', [!!body.waWelcomeConfirm, clientId])
