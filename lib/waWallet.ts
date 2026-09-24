@@ -184,7 +184,8 @@ async function findRechargeByPaymentId(razorpayPaymentId: string): Promise<Recha
 }
 
 // Credits a Razorpay recharge to the wallet. The charge includes 18% GST,
-// so the pre-tax amount is credited and the tax recorded alongside it. Called
+// so only the pre-tax amount becomes usable balance; the tax is recorded in
+// cut_amount, the column that used to hold the platform margin. Called
 // only after the Razorpay payment signature has been verified — either
 // by POST /wallet/verify (browser callback) or the Razorpay webhook
 // (server-to-server backup for when the browser callback never fires,
@@ -202,9 +203,6 @@ export async function creditRecharge(params: {
 
   await getOrCreateWallet(params.clientId)
 
-  // The charged amount includes 18% GST. Only the pre-tax part becomes
-  // usable balance; the tax is recorded in cut_amount, which used to hold
-  // the platform margin and now holds the tax instead.
   const { credit, gst } = splitGst(params.grossAmount)
   const cutAmount = gst
   const netAmount = credit
