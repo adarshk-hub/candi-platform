@@ -1,13 +1,14 @@
+// path: app/api/clients/[id]/settings-activity/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { canCustomize } from '@/lib/customizeAccess'
+import { canEditSection } from '@/lib/settingsSections'
 
 const PAGE_SIZE = 50
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!canEditSection(session, params.id, 'activity')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1)
   const offset = (page - 1) * PAGE_SIZE
