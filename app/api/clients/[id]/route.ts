@@ -4,12 +4,20 @@ import { resolveLeadColumns } from '@/lib/leadTableColumns'
 import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
+import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Display Preferences and Lead Date Range read and write this row, and
+  // counsellors may open both — so those two sections are allowed here as
+  // well as full customize access.
+  const allowed =
+    canCustomize(session, params.id) ||
+    canEditSection(session, params.id, 'display') ||
+    canEditSection(session, params.id, 'lead_range')
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const rows = await query(
     `SELECT id, name, leads_per_page, show_lead_status_tabs, lead_range_from, lead_range_to, lead_table_columns,
@@ -28,7 +36,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Display Preferences and Lead Date Range read and write this row, and
+  // counsellors may open both — so those two sections are allowed here as
+  // well as full customize access.
+  const allowed =
+    canCustomize(session, params.id) ||
+    canEditSection(session, params.id, 'display') ||
+    canEditSection(session, params.id, 'lead_range')
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
   const setClauses: string[] = []
