@@ -1,5 +1,6 @@
+// path: lib/waWallet.ts
 import { query } from './db'
-import { getRateForCategory, isFreeCategory, RECHARGE_CUT_PERCENTAGE, WaMessageCategory } from './waCreditRates'
+import { getRateForCategory, isFreeCategory, splitGst, WaMessageCategory } from './waCreditRates'
 
 export interface WalletDebitResult {
   ok: boolean
@@ -182,8 +183,8 @@ async function findRechargeByPaymentId(razorpayPaymentId: string): Promise<Recha
   }
 }
 
-// Credits a Razorpay recharge to the wallet, withholding the platform
-// cut (see RECHARGE_CUT_PERCENTAGE) before crediting the rest. Called
+// Credits a Razorpay recharge to the wallet. The charge includes 18% GST,
+// so the pre-tax amount is credited and the tax recorded alongside it. Called
 // only after the Razorpay payment signature has been verified — either
 // by POST /wallet/verify (browser callback) or the Razorpay webhook
 // (server-to-server backup for when the browser callback never fires,
@@ -201,8 +202,12 @@ export async function creditRecharge(params: {
 
   await getOrCreateWallet(params.clientId)
 
-  const cutAmount = Math.round(params.grossAmount * RECHARGE_CUT_PERCENTAGE * 100) / 100
-  const netAmount = Math.round((params.grossAmount - cutAmount) * 100) / 100
+  // The charged amount includes 18% GST. Only the pre-tax part becomes
+  // usable balance; the tax is recorded in cut_amount, which used to hold
+  // the platform margin and now holds the tax instead.
+  const { credit, gst } = splitGst(params.grossAmount)
+  const cutAmount = gst
+  const netAmount = credit
 
   const updated = (
     await query<{ balance: string }>(
