@@ -1,7 +1,8 @@
 // path: app/api/activity/assign/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
-import { getSession, AGENCY_ROLES } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
+import { canAssignLeads } from '@/lib/assignPermission'
 import { handleWriteError } from '@/lib/apiError'
 
 // Bulk counsellor assignment for the Activity page. The per-lead equivalent
@@ -9,15 +10,14 @@ import { handleWriteError } from '@/lib/apiError'
 // morning's unassigned intake can be distributed in one action instead of
 // opening each lead in turn.
 //
-// Same permission rule as the single-lead reassign: agency staff, or the
-// institute's own client_admin. A counsellor cannot hand leads to (or take
-// them from) anyone.
+// Same permission rule as the single-lead reassign: agency staff, the
+// institute's own client_admin, and — when the institute has turned it on
+// under Settings > Lead Assignment — its counsellors too.
 export async function POST(req: NextRequest) {
   const session = getSession(req)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const canAssign = AGENCY_ROLES.includes(session.role) || session.role === 'client_admin'
-  if (!canAssign) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await canAssignLeads(session))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
   const leadIds: string[] = Array.isArray(body.leadIds)
