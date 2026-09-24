@@ -1,7 +1,8 @@
+// path: app/api/option-items/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
-import { canCustomize } from '@/lib/customizeAccess'
+import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 
@@ -50,7 +51,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const targetClientId = AGENCY_ROLES.includes(session?.role as any) ? body.clientId : session?.clientId
 
-  if (!targetClientId || !canCustomize(session, targetClientId)) {
+  // lead_source is a section counsellors may edit; every other list
+  // (cold reasons, services…) stays with admins.
+  const section = (body?.listKey || '') === 'lead_source' ? 'lead_source' : 'cold_reason'
+  if (!targetClientId || !canEditSection(session, targetClientId, section)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const { listKey, value } = body
