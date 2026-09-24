@@ -224,33 +224,6 @@ export default function NextActionsPage() {
         />
       </div>
 
-      {/* Lead condition, as opposed to plan state. A lead can be overdue
-          *and* never called, so these sit on their own row rather than
-          competing with the three figures above. */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {([
-          { key: '' as const, label: 'All leads', n: null },
-          { key: 'never_called' as const, label: 'Never called', n: counts.neverCalled },
-          { key: 'not_called_today' as const, label: 'Not called today', n: counts.notCalledToday },
-          { key: 'unassigned' as const, label: 'Unassigned', n: counts.unassigned },
-          { key: 'cold_no_reason' as const, label: 'Cold, no reason', n: counts.coldNoReason },
-        ]).map((b) => (
-          <button
-            key={b.key || 'all'}
-            onClick={() => setBucket(b.key)}
-            className={clsx(
-              'rounded-full border px-3 py-1 text-xs',
-              bucket === b.key
-                ? 'border-blue-500 bg-blue-500/15 text-blue-300'
-                : 'border-border text-muted2 hover:text-fg'
-            )}
-          >
-            {b.label}
-            {b.n !== null && <span className="ml-1.5 text-muted">{b.n}</span>}
-          </button>
-        ))}
-      </div>
-
       {canAssign && selected.size > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-3 rounded-card border border-border bg-card p-3">
           <span className="text-sm text-muted2">{selected.size} selected</span>
