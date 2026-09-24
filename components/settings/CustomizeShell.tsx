@@ -145,16 +145,16 @@ export default function CustomizeShell({
 
       <div className="flex gap-6">
         <nav className="w-56 shrink-0 space-y-1">
-          {/* The other settings page, listed as a section rather than a
-              button in the corner — the two pages are siblings, so they
-              appear in the same list. */}
+          {/* The way back to the webhook keys and Users page. It sits in
+              this list rather than as a breadcrumb, so both settings pages
+              are reachable from either one. */}
           {(role === 'agency_admin' || role === 'agency_staff') && (
             <Link
               href="/settings"
               className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left text-sm text-muted2 transition-colors hover:bg-card2 hover:text-fg"
             >
               <Webhook size={16} />
-              Webhooks &amp; Users
+              Agency Settings
             </Link>
           )}
           {categories.map((c) => (
