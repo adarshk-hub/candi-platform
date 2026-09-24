@@ -1,5 +1,15 @@
 // path: lib/settingsSections.ts
-import { SessionUser, AGENCY_ROLES } from './auth'
+// No imports on purpose. This file is read by CustomizeShell, a client
+// component, so pulling in lib/auth would drag jsonwebtoken into the
+// browser bundle — which is exactly what broke every page with a
+// client-side exception, not just Settings.
+const AGENCY: string[] = ['agency_admin', 'agency_staff']
+
+// The shape this needs from a session, without importing the session type.
+interface SessionLike {
+  role: string
+  clientId: string | null
+}
 
 // Which Customize sections each role may open. One list, read by the screen
 // that draws the tabs and by the APIs behind them, so a section a role
@@ -54,7 +64,7 @@ export function sectionsForRole(role: string | null | undefined): SettingsSectio
     'activity',
   ]
   if (!role) return []
-  if (AGENCY_ROLES.includes(role as any)) return all
+  if (AGENCY.includes(role)) return all
   if (role === 'client_admin') return all.filter((s) => !AGENCY_ONLY_SECTIONS.includes(s))
   if (role === 'client_counsellor') return COUNSELLOR_SECTIONS
   return []
@@ -69,12 +79,12 @@ export function canOpenSection(role: string | null | undefined, section: Setting
 // now open — the institute still has to match, so a counsellor can only
 // ever edit their own school's lists.
 export function canEditSection(
-  session: SessionUser | null,
+  session: SessionLike | null,
   targetClientId: string | null | undefined,
   section: SettingsSection
 ): boolean {
   if (!session || !targetClientId) return false
   if (!canOpenSection(session.role, section)) return false
-  if (AGENCY_ROLES.includes(session.role)) return true
+  if (AGENCY.includes(session.role)) return true
   return session.clientId === targetClientId
 }
