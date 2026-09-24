@@ -320,7 +320,10 @@ export default function Sidebar({
       </nav>
 
       <div className={clsx('w-full space-y-1 border-t border-border pt-3', collapsed && 'flex flex-col items-center')}>
-        {user?.role !== 'client_counsellor' && user?.role !== 'client_staff' && (
+        {/* Counsellors now get Settings too, but Customize only shows them
+            the day-to-day lists (lib/settingsSections) — no logins, no
+            credentials, no wallet. */}
+        {user?.role !== 'client_staff' && (
           // Everyone with settings access — agency roles included — lands
           // on Customize (their day-to-day config: Lead Stages,
           // Counsellors, WhatsApp, etc.) by default rather than the raw
