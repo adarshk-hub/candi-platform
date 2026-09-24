@@ -24,9 +24,11 @@ import {
   PhoneCall,
   BarChart3,
   Inbox,
+  MessageSquareText,
   CalendarCheck,
   CalendarRange,
 } from 'lucide-react'
+import { useUnreplied } from '@/lib/useUnreplied'
 import { canAccessPage } from '@/lib/moduleAccess'
 import type { Role } from '@/lib/auth'
 import ThemeToggle from './ThemeToggle'
@@ -114,6 +116,8 @@ export default function Sidebar({
   const searchParams = useSearchParams()
   const tab = searchParams.get('tab')
   const [collapsed, setCollapsed] = useState(false)
+  // Messages nobody has replied to yet — the Inbox badge.
+  const { total: unrepliedTotal } = useUnreplied()
 
   useEffect(() => {
     const stored = localStorage.getItem('cc-sidebar-collapsed')
@@ -262,13 +266,40 @@ export default function Sidebar({
         )}
 
         {can('inbox') && (
-          <NavItem href="/inbox" icon={Inbox} label="Inbox" active={pathname === '/inbox'} collapsed={collapsed} />
+          <NavItem
+            href="/inbox"
+            icon={Inbox}
+            label="Inbox"
+            active={pathname === '/inbox'}
+            collapsed={collapsed}
+            trailing={
+              // Messages still waiting on a reply. Reading them doesn't
+              // clear this; replying does.
+              unrepliedTotal > 0 ? (
+                <span
+                  title={`${unrepliedTotal} message(s) awaiting a reply`}
+                  className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                >
+                  {unrepliedTotal > 99 ? '99+' : unrepliedTotal}
+                </span>
+              ) : null
+            }
+          />
         )}
         {can('calendar') && (
           <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
         )}
         {can('broadcasts') && (
           <NavItem href="/broadcasts" icon={Radio} label="Broadcast" active={pathname === '/broadcasts'} collapsed={collapsed} />
+        )}
+        {can('templates') && (
+          <NavItem
+            href="/templates"
+            icon={MessageSquareText}
+            label="Messages"
+            active={pathname === '/templates'}
+            collapsed={collapsed}
+          />
         )}
 
         {/* Counsellor section. Set apart by a gap and a heading rather than
