@@ -5,6 +5,7 @@ import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { getStageLabel } from '@/lib/stagesServer'
+import { canAssignLeads } from '@/lib/assignPermission'
 import { DECISION_MAKER_LABEL } from '@/lib/types'
 import { sendOperationalTemplate } from '@/lib/metaWhatsapp'
 import { sendEmail } from '@/lib/email'
@@ -351,7 +352,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Counsellor reassignment — restricted to agency roles and the owning
   // client_admin; a counsellor cannot reassign a lead away from themselves.
   if ('assigned_counsellor_id' in body) {
-    if (!isAgency && !isOwningClientAdmin) {
+    // Counsellors may hand a lead to a colleague only where the institute
+    // has allowed it (Settings > Lead Assignment).
+    if (!isAgency && !isOwningClientAdmin && !(await canAssignLeads(session, existing.client_id))) {
       return NextResponse.json({ error: 'Forbidden: cannot reassign counsellor' }, { status: 403 })
     }
     const newCounsellorId: string | null = body.assigned_counsellor_id || null
