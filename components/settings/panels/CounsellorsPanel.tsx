@@ -104,7 +104,9 @@ export default function CounsellorsPanel({ clientId }: { clientId: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-fg">{c.full_name}</p>
                   <p className="truncate text-xs text-muted2">{c.email}</p>
-                  {c.phone && <p className="truncate text-xs text-muted2">WhatsApp alerts: {c.phone}</p>}
+                  <p className="truncate text-xs text-muted2">
+                    {c.phone ? `WhatsApp alerts: ${c.phone}` : 'WhatsApp alerts: off'}
+                  </p>
                 </div>
               </div>
 
@@ -245,7 +247,7 @@ function CounsellorForm({
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="e.g. 919876543210"
+            placeholder="e.g. 919876543210 — clear to stop alerts"
             title="With a number here, this counsellor is messaged on WhatsApp for every new lead and every call or visit booked."
             className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
           />
