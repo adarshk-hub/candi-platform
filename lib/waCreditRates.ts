@@ -1,3 +1,4 @@
+// path: lib/waCreditRates.ts
 // Fixed internal rates for the WCC wallet — deliberately NOT tied to
 // Meta's live per-conversation/per-message pricing. Edit the numbers
 // below whenever you want to change what a message "costs" in credits;
@@ -73,11 +74,27 @@ export function formatRate(rate: number): string {
   return `₹${decimals < 2 ? rate.toFixed(2) : trimmed}`
 }
 
-// The cut withheld on every Razorpay recharge before crediting WCC, e.g.
-// a client paying ₹1500 with a 6.67% cut gets ₹1400 credited to their
-// wallet balance (the remaining ₹100 is the platform's margin). Adjust
-// this single constant to change the cut across all recharges.
-export const RECHARGE_CUT_PERCENTAGE = 0.0667
+// No platform margin is withheld any more: whatever a client pays for
+// credits, they get in credits. Kept as a constant (rather than deleted)
+// so the recharge maths, the stored cut_amount column and the older
+// transactions that do carry a cut all still line up.
+export const RECHARGE_CUT_PERCENTAGE = 0
+
+// GST charged on top of the credit amount at checkout. A ₹500 recharge is
+// billed as ₹590, of which ₹500 lands in the wallet and ₹90 is tax — the
+// tax is never credited as usable balance.
+export const GST_PERCENTAGE = 0.18
+
+// What the card is actually charged for a given credit amount.
+export function grossWithGst(creditAmount: number): number {
+  return Math.round(creditAmount * (1 + GST_PERCENTAGE) * 100) / 100
+}
+
+// Splits a charged amount back into credit and tax.
+export function splitGst(chargedAmount: number): { credit: number; gst: number } {
+  const credit = Math.round((chargedAmount / (1 + GST_PERCENTAGE)) * 100) / 100
+  return { credit, gst: Math.round((chargedAmount - credit) * 100) / 100 }
+}
 
 // Preset "quick recharge" amounts shown as buttons in the wallet UI,
 // starting low so a client can top up in small amounts if their balance
