@@ -330,9 +330,23 @@ export default function Sidebar({
           // webhook-keys/Users page. Agency roles can still get to that
           // page via the "← Settings" link inside Customize.
           <NavItem
-            href="/settings/customize"
+            // Agency staff land on /settings, which holds the webhook keys
+            // and the Users panel and links on to Customize — so they no
+            // longer have to go via Customize and click back. Everyone else
+            // has no access to that page and goes straight to Customize.
+            href={
+              user?.role === 'agency_admin' || user?.role === 'agency_staff'
+                ? '/settings'
+                : '/settings/customize'
+            }
             icon={Settings}
-            label="Settings"
+            label={
+              user?.role === 'agency_admin' || user?.role === 'agency_staff'
+                ? 'Agency Settings'
+                : user?.role === 'client_counsellor'
+                  ? 'Counsellor Settings'
+                  : 'Client Settings'
+            }
             active={pathname === '/settings' || pathname === '/settings/customize'}
             collapsed={collapsed}
           />
