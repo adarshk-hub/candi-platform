@@ -74,10 +74,9 @@ export function formatRate(rate: number): string {
   return `₹${decimals < 2 ? rate.toFixed(2) : trimmed}`
 }
 
-// No platform margin is withheld any more: whatever a client pays for
-// credits, they get in credits. Kept as a constant (rather than deleted)
-// so the recharge maths, the stored cut_amount column and the older
-// transactions that do carry a cut all still line up.
+// No platform margin is withheld: whatever a client pays for credits, they
+// get in credits. Kept as a constant so older transactions that do carry a
+// cut still line up with the recharge maths.
 export const RECHARGE_CUT_PERCENTAGE = 0
 
 // GST charged on top of the credit amount at checkout. A ₹500 recharge is
