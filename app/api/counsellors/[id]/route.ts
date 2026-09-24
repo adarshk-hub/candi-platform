@@ -7,7 +7,7 @@ import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 import { MODULE_PAGES } from '@/lib/moduleAccess'
-import { ensurePhoneColumn } from '@/lib/counsellorAlerts'
+import { setCounsellorPhone } from '@/lib/counsellorAlerts'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -31,11 +31,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // box unticked should mean "no restrictions set", not a counsellor locked
   // out of their own CRM.
   // Optional WhatsApp number for new-lead and booking alerts. Blank clears
-  // it, which switches the alerts off for that counsellor.
-  if (body.phone !== undefined && (await ensurePhoneColumn())) {
-    const trimmed = typeof body.phone === 'string' ? body.phone.trim() : ''
-    values.push(trimmed || null)
-    setClauses.push(`phone = $${values.length}`)
+  // it, which switches the alerts off for that counsellor. Written through
+  // a helper because it lands on users.phone or, where that column cannot
+  // be added, in client_option_items.
+  if (body.phone !== undefined) {
+    await setCounsellorPhone(existing.client_id, params.id, body.phone)
   }
   if (body.allowedPages !== undefined) {
     const known = MODULE_PAGES.map((p) => p.key)
