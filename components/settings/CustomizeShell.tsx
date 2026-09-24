@@ -35,6 +35,7 @@ import WhatsAppSettingsPanel from './panels/WhatsAppSettingsPanel'
 import ConversionsApiPanel from './panels/ConversionsApiPanel'
 import SettingsActivityPanel from './panels/SettingsActivityPanel'
 import LeadAssignmentPanel from './panels/LeadAssignmentPanel'
+import { sectionsForRole, SettingsSection } from '@/lib/settingsSections'
 
 interface Institute {
   id: string
@@ -64,9 +65,14 @@ export default function CustomizeShell({
   institutes,
   lockedToClientId,
   showSettingsLink = true,
+  role,
 }: {
   institutes: Institute[]
   lockedToClientId: string | null
+  // Decides which sections appear. Agency sees everything; a client admin
+  // sees everything except the three integration screens; a counsellor sees
+  // the day-to-day lists only (lib/settingsSections).
+  role: string
   // client_admin has no access to /settings itself (agency-only — see
   // app/settings/page.tsx), so for them this breadcrumb would just bounce
   // straight back to this same Customize page. Only show it for roles that
@@ -83,10 +89,15 @@ export default function CustomizeShell({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  // Only the sections this role may open, so a panel it can't use is never
+  // drawn — and can't be reached by editing ?panel= in the URL either.
+  const allowed = sectionsForRole(role)
+  const categories = CATEGORIES.filter((c) => allowed.includes(c.key as SettingsSection))
+
   const requested = searchParams.get('panel') as CategoryKey | null
-  const active: CategoryKey = CATEGORIES.some((c) => c.key === requested)
+  const active: CategoryKey = categories.some((c) => c.key === requested)
     ? (requested as CategoryKey)
-    : 'stages'
+    : ((categories[0]?.key || 'stages') as CategoryKey)
 
   function setActive(key: CategoryKey) {
     // replace, not push: switching panels is changing a view, not
@@ -132,7 +143,7 @@ export default function CustomizeShell({
 
       <div className="flex gap-6">
         <nav className="w-56 shrink-0 space-y-1">
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <button
               key={c.key}
               onClick={() => setActive(c.key)}
