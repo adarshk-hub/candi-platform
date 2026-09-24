@@ -69,6 +69,71 @@ export async function phoneSelect(alias = 'u'): Promise<string> {
   return (await ensurePhoneColumn()) ? `${alias}.phone` : `NULL::varchar AS phone`
 }
 
+// Where a number lives when users.phone cannot be added — some schemas are
+// owned by a role that may write rows but not alter tables, and a number
+// that silently vanishes on save is worse than no feature at all.
+// client_option_items is an existing table the settings screens already
+// write to, so one row per counsellor goes there instead.
+const PHONE_LIST_KEY = 'counsellor_phone'
+
+async function fallbackPhones(clientId: string): Promise<Record<string, string>> {
+  try {
+    const rows = await query<{ value: string }>(
+      `SELECT value FROM client_option_items WHERE client_id = $1 AND list_key = $2`,
+      [clientId, PHONE_LIST_KEY]
+    )
+    const out: Record<string, string> = {}
+    for (const row of rows) {
+      // Stored as "<user id>:<number>".
+      const at = (row.value || '').indexOf(':')
+      if (at > 0) out[row.value.slice(0, at)] = row.value.slice(at + 1)
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+// Saves (or, with a blank number, clears) one counsellor's alert number.
+export async function setCounsellorPhone(clientId: string, userId: string, raw: string | null | undefined) {
+  const phone = (raw || '').trim()
+  if (await ensurePhoneColumn()) {
+    await query('UPDATE users SET phone = $1 WHERE id = $2', [phone || null, userId])
+    return
+  }
+  await query(`DELETE FROM client_option_items WHERE client_id = $1 AND list_key = $2 AND value LIKE $3`, [
+    clientId,
+    PHONE_LIST_KEY,
+    `${userId}:%`,
+  ])
+  if (!phone) return
+  await query(
+    `INSERT INTO client_option_items (client_id, list_key, value, is_active)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (client_id, list_key, value) DO NOTHING`,
+    [clientId, PHONE_LIST_KEY, `${userId}:${phone}`]
+  )
+}
+
+// Reads them back for a list of counsellors, from whichever place they are
+// stored in this schema.
+export async function counsellorPhones(clientId: string): Promise<Record<string, string>> {
+  if (await ensurePhoneColumn()) {
+    try {
+      const rows = await query<{ id: string; phone: string | null }>(
+        `SELECT id, phone FROM users WHERE client_id = $1 AND phone IS NOT NULL AND phone <> ''`,
+        [clientId]
+      )
+      const out: Record<string, string> = {}
+      for (const row of rows) out[row.id] = row.phone as string
+      return out
+    } catch {
+      return {}
+    }
+  }
+  return fallbackPhones(clientId)
+}
+
 interface Recipient {
   id: string
   full_name: string | null
@@ -79,7 +144,24 @@ interface Recipient {
 // nobody owns it yet — every counsellor at that institute who has saved a
 // number, so a new lead is never announced to no one.
 async function recipientsFor(clientId: string, assignedCounsellorId: string | null): Promise<Recipient[]> {
-  if (!(await ensurePhoneColumn())) return []
+  // Without the column, numbers live in client_option_items — look them up
+  // there and pair them with the counsellor rows.
+  if (!(await ensurePhoneColumn())) {
+    const phones = await fallbackPhones(clientId)
+    const ids = assignedCounsellorId ? [assignedCounsellorId] : Object.keys(phones)
+    const wanted = ids.filter((id) => phones[id])
+    if (wanted.length === 0) return []
+    try {
+      const rows = await query<{ id: string; full_name: string | null }>(
+        `SELECT id, full_name FROM users
+         WHERE id = ANY($1::uuid[]) AND client_id = $2 AND COALESCE(is_active, true)`,
+        [wanted, clientId]
+      )
+      return rows.map((r) => ({ id: r.id, full_name: r.full_name, phone: phones[r.id] }))
+    } catch {
+      return []
+    }
+  }
   try {
     if (assignedCounsellorId) {
       return await query<Recipient>(
