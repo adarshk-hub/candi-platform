@@ -6,28 +6,19 @@ import { sendTemplateMessage, sendTextMessage } from '@/lib/metaWhatsapp'
 // person last messaged the school's number. A counsellor almost never has,
 // so an approved template is what makes these alerts actually arrive. This
 // is the template used, one free-text variable carrying the whole line.
-// Two utility templates, one per kind of alert. Meta reviews wording, and
-// a template that is almost entirely variables tends to be rejected, so
-// each body carries real sentence text around its placeholders.
-export const COUNSELLOR_ALERT_TEMPLATES = [
-  {
-    name: 'counsellor_new_lead',
-    category: 'UTILITY' as const,
-    // {{1}} parent name, {{2}} phone, {{3}} source
-    body:
-      'New enquiry received. Parent: {{1}}. Phone: {{2}}. Source: {{3}}. Please open Candi Connect to call and update the lead.',
-  },
-  {
-    name: 'counsellor_booking_alert',
-    category: 'UTILITY' as const,
-    // {{1}} call/visit, {{2}} parent name, {{3}} date and time
-    body:
-      'A {{1}} has been booked with {{2}} for {{3}}. Please open Candi Connect to review the details and prepare for it.',
-  },
-]
-
-export const NEW_LEAD_TEMPLATE = COUNSELLOR_ALERT_TEMPLATES[0].name
-export const BOOKING_TEMPLATE = COUNSELLOR_ALERT_TEMPLATES[1].name
+// The two approved templates these alerts are sent with. Create them by
+// hand on the WhatsApp Templates page with exactly these names; the body
+// wording is yours to choose, but the variable order has to match:
+//
+//   counsellor_new_lead       {{1}} parent name, {{2}} phone, {{3}} source
+//   counsellor_booking_alert  {{1}} call or campus visit, {{2}} parent name,
+//                             {{3}} date and time
+//
+// Until a template exists and Meta has approved it, the alert falls back to
+// plain text, which WhatsApp only delivers within 24 hours of that person
+// last messaging the school's number.
+export const NEW_LEAD_TEMPLATE = 'counsellor_new_lead'
+export const BOOKING_TEMPLATE = 'counsellor_booking_alert'
 
 // Phone numbers get typed in every shape. Meta wants digits with a country
 // code and nothing else, and a bare 10-digit Indian mobile is the most
