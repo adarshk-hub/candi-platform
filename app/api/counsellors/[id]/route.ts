@@ -7,6 +7,7 @@ import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 import { MODULE_PAGES } from '@/lib/moduleAccess'
+import { ensurePhoneColumn } from '@/lib/counsellorAlerts'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
@@ -29,6 +30,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // NULL rather than as "nothing allowed" — an accidental save with every
   // box unticked should mean "no restrictions set", not a counsellor locked
   // out of their own CRM.
+  // Optional WhatsApp number for new-lead and booking alerts. Blank clears
+  // it, which switches the alerts off for that counsellor.
+  if (body.phone !== undefined && (await ensurePhoneColumn())) {
+    const trimmed = typeof body.phone === 'string' ? body.phone.trim() : ''
+    values.push(trimmed || null)
+    setClauses.push(`phone = $${values.length}`)
+  }
   if (body.allowedPages !== undefined) {
     const known = MODULE_PAGES.map((p) => p.key)
     const pages = Array.isArray(body.allowedPages)
