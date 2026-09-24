@@ -1,3 +1,4 @@
+// path: components/settings/panels/WhatsAppSettingsPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -615,7 +616,7 @@ export default function WhatsAppSettingsPanel({ clientId }: { clientId: string }
       <WhatsAppWalletPanel clientId={clientId} />
 
       <p className="text-xs text-muted2">
-        Messages and the sequence schedule now live on the Messages page in the sidebar.
+        Templates and the sequence schedule now live on the WhatsApp Templates page in the sidebar.
       </p>
     </div>
   )
