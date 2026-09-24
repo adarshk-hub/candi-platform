@@ -1,3 +1,4 @@
+// path: app/settings/customize/page.tsx
 import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/serverAuth'
 import { query } from '@/lib/db'
@@ -9,7 +10,12 @@ export default async function CustomizePage() {
   if (!session) redirect('/login')
 
   const isAgency = AGENCY_ROLES.includes(session.role)
-  if (!isAgency && session.role !== 'client_admin') redirect('/settings')
+  // Counsellors now get this page too, but with only the day-to-day
+  // sections on it (lib/settingsSections). Anyone with no sections at all
+  // has no business here.
+  if (!isAgency && session.role !== 'client_admin' && session.role !== 'client_counsellor') {
+    redirect('/leads')
+  }
 
   // A session can only ever query its own institute's database (see
   // lib/db.ts) — there's no query that reaches "every institute" from here,
@@ -21,5 +27,12 @@ export default async function CustomizePage() {
     ? await query<{ id: string; name: string }>('SELECT id, name FROM clients WHERE id = $1', [session.clientId])
     : []
 
-  return <CustomizeShell institutes={institutes} lockedToClientId={session.clientId} showSettingsLink={isAgency} />
+  return (
+    <CustomizeShell
+      institutes={institutes}
+      lockedToClientId={session.clientId}
+      showSettingsLink={isAgency}
+      role={session.role}
+    />
+  )
 }
