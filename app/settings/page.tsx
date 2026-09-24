@@ -2,6 +2,21 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import {
+  Webhook,
+  ListOrdered,
+  Tags,
+  Snowflake,
+  FormInput,
+  Users,
+  Shuffle,
+  Mail,
+  MessageCircle,
+  Radio,
+  CalendarRange,
+  Rows3,
+  History,
+} from 'lucide-react'
 import { getServerSession } from '@/lib/serverAuth'
 import { query } from '@/lib/db'
 import { AGENCY_ROLES } from '@/lib/auth'
@@ -15,18 +30,18 @@ import NotificationBell from '@/components/NotificationBell'
 // settings pages carry one menu and you can jump straight to a section
 // from here instead of going through Customize first.
 const CUSTOMIZE_LINKS = [
-  { panel: 'stages', label: 'Lead Stages' },
-  { panel: 'lead_source', label: 'Lead Source' },
-  { panel: 'cold_reason', label: 'Cold Reasons' },
-  { panel: 'fields', label: 'Lead Form Fields' },
-  { panel: 'counsellors', label: 'Counsellors' },
-  { panel: 'assignment', label: 'Lead Assignment' },
-  { panel: 'email', label: 'School Email' },
-  { panel: 'whatsapp', label: 'WhatsApp' },
-  { panel: 'capi', label: 'Conversions API' },
-  { panel: 'lead_range', label: 'Lead Date Range' },
-  { panel: 'display', label: 'Display Preferences' },
-  { panel: 'activity', label: 'Activity' },
+  { panel: 'stages', label: 'Lead Stages', icon: ListOrdered },
+  { panel: 'lead_source', label: 'Lead Source', icon: Tags },
+  { panel: 'cold_reason', label: 'Cold Reasons', icon: Snowflake },
+  { panel: 'fields', label: 'Lead Form Fields', icon: FormInput },
+  { panel: 'counsellors', label: 'Counsellors', icon: Users },
+  { panel: 'assignment', label: 'Lead Assignment', icon: Shuffle },
+  { panel: 'email', label: 'School Email', icon: Mail },
+  { panel: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { panel: 'capi', label: 'Conversions API', icon: Radio },
+  { panel: 'lead_range', label: 'Lead Date Range', icon: CalendarRange },
+  { panel: 'display', label: 'Display Preferences', icon: Rows3 },
+  { panel: 'activity', label: 'Activity', icon: History },
 ]
 
 function getBaseUrl() {
@@ -82,7 +97,8 @@ export default async function SettingsPage() {
     <div className="flex gap-6">
       <nav className="w-56 shrink-0 space-y-1">
         {/* Current page, shown as the selected item. */}
-        <span className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-blue-500 bg-card2 px-3 py-2 text-left text-sm font-medium text-fg">
+        <span className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-blue-500 bg-blue-500/10 px-3 py-2 text-left text-sm font-medium text-fg">
+          <Webhook size={16} />
           Agency Settings
         </span>
         {CUSTOMIZE_LINKS.map((c) => (
@@ -91,6 +107,7 @@ export default async function SettingsPage() {
             href={`/settings/customize?panel=${c.panel}`}
             className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left text-sm text-muted2 transition-colors hover:bg-card2 hover:text-fg"
           >
+            <c.icon size={16} />
             {c.label}
           </Link>
         ))}
