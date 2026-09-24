@@ -10,10 +10,10 @@ import { clsx } from 'clsx'
 import LeadDateRangePanel from './panels/LeadDateRangePanel'
 import NotificationBell from '@/components/NotificationBell'
 import {
-  ArrowLeft,
   ListOrdered,
   Tags,
   Snowflake,
+  Webhook,
   FormInput,
   Users,
   Rows3,
@@ -113,11 +113,6 @@ export default function CustomizeShell({
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
-        {showSettingsLink && (
-          <Link href="/settings" className="flex items-center gap-1.5 text-sm text-muted2 hover:text-fg">
-            <ArrowLeft size={16} /> Settings
-          </Link>
-        )}
         <h1 className="text-2xl font-bold text-fg">
           {/* Named for who is looking at it, matching the sidebar. */}
           {role === 'agency_admin' || role === 'agency_staff'
@@ -150,6 +145,18 @@ export default function CustomizeShell({
 
       <div className="flex gap-6">
         <nav className="w-56 shrink-0 space-y-1">
+          {/* The other settings page, listed as a section rather than a
+              button in the corner — the two pages are siblings, so they
+              appear in the same list. */}
+          {(role === 'agency_admin' || role === 'agency_staff') && (
+            <Link
+              href="/settings"
+              className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left text-sm text-muted2 transition-colors hover:bg-card2 hover:text-fg"
+            >
+              <Webhook size={16} />
+              Webhooks &amp; Users
+            </Link>
+          )}
           {categories.map((c) => (
             <button
               key={c.key}
