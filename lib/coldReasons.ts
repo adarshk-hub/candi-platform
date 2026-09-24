@@ -19,5 +19,6 @@ export const DEFAULT_COLD_REASONS: string[] = [
   'Admission postponed',
   'No longer interested',
   'Duplicate or test enquiry',
+  'Looking for other board',
   'Other',
 ]
