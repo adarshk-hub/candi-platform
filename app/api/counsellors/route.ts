@@ -6,7 +6,7 @@ import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
-import { ensurePhoneColumn } from '@/lib/counsellorAlerts'
+import { counsellorPhones, ensurePhoneColumn, setCounsellorPhone } from '@/lib/counsellorAlerts'
 
 export async function GET(req: NextRequest) {
   const session = getSession(req)
@@ -35,7 +35,11 @@ export async function GET(req: NextRequest) {
      FROM users ${where} ORDER BY full_name`,
     params
   )
-  return NextResponse.json(rows)
+  // Numbers may live on users.phone or, where that column could not be
+  // added, in client_option_items — merge whichever applies.
+  const scope = AGENCY_ROLES.includes(session.role) ? clientId || session.clientId : session.clientId
+  const phones = scope ? await counsellorPhones(scope) : {}
+  return NextResponse.json(rows.map((r: any) => ({ ...r, phone: r.phone || phones[r.id] || null })))
 }
 
 // First user-creation endpoint in the app — creates a client_counsellor
@@ -71,6 +75,8 @@ export async function POST(req: NextRequest) {
         ? [targetClientId, email, passwordHash, fullName, trimmedPhone || null]
         : [targetClientId, email, passwordHash, fullName]
     )
+    // Saved separately so it works whether or not users.phone exists.
+    await setCounsellorPhone(targetClientId, rows[0].id, phone)
     await logSettingsActivity(targetClientId, session, 'Counsellors', `Added counsellor "${fullName}" (${email})`)
     return NextResponse.json(rows[0])
   } catch (err: any) {
