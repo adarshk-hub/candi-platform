@@ -2,6 +2,7 @@
 import { query } from '@/lib/db'
 import { SessionUser, AGENCY_ROLES } from '@/lib/auth'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
+import { canAssignLeads } from '@/lib/assignPermission'
 
 export type ActivityBucket =
   | 'not_called'
@@ -308,6 +309,6 @@ export async function fetchActivityOverview(
     page: safePage,
     pageSize: PAGE_SIZE,
     bucket,
-    canAssign: AGENCY_ROLES.includes(session.role) || session.role === 'client_admin',
+    canAssign: await canAssignLeads(session),
   }
 }
