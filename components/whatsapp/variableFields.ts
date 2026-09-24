@@ -10,6 +10,7 @@ export type TemplateVariableSource =
   | 'phone'
   | 'grade'
   | 'location'
+  | 'source'
   | 'counsellor_name'
   | 'institute_name'
   | 'custom'
@@ -33,6 +34,7 @@ export const VARIABLE_SOURCE_LABELS: Record<TemplateVariableSource, string> = {
   phone: 'Phone number',
   grade: 'Grade',
   location: 'Location',
+  source: 'Lead source',
   counsellor_name: "Counsellor's name",
   institute_name: 'Institute name',
   custom: 'Fixed text (same for everyone)',
@@ -49,6 +51,7 @@ export const VARIABLE_SAMPLE_VALUES: Record<TemplateVariableSource, string> = {
   phone: '9876543210',
   grade: 'Grade 5',
   location: 'Bengaluru',
+  source: 'Instagram',
   counsellor_name: 'Sneha',
   institute_name: 'Our school',
   custom: 'Sample text',
@@ -62,6 +65,7 @@ export const VARIABLE_SUGGESTED_NAMES: Record<TemplateVariableSource, string> = 
   phone: 'phone',
   grade: 'grade',
   location: 'location',
+  source: 'source',
   counsellor_name: 'counsellor',
   institute_name: 'school_name',
   custom: 'custom_text',
