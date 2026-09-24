@@ -1,7 +1,9 @@
+// path: app/api/clients/[id]/whatsapp-config/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query, centralQuery } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
+import { canEditWhatsAppConfig } from '@/lib/settingsSections'
 import { encrypt } from '@/lib/waEncryption'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
@@ -41,7 +43,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 // false; call POST /api/clients/[id]/verify-whatsapp to re-confirm.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // The Meta credentials are the agency's to set. A client admin can open
+  // the WhatsApp section for the wallet, but not write this.
+  if (!canCustomize(session, params.id) || !canEditWhatsAppConfig(session?.role)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const body = await req.json().catch(() => null)
   const { phoneNumberId, wabaId, accessToken, displayPhoneNumber } = body || {}
