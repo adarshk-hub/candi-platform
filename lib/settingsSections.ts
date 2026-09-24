@@ -1,0 +1,80 @@
+// path: lib/settingsSections.ts
+import { SessionUser, AGENCY_ROLES } from './auth'
+
+// Which Customize sections each role may open. One list, read by the screen
+// that draws the tabs and by the APIs behind them, so a section a role
+// cannot see is also a section it cannot write to by calling the endpoint
+// directly.
+//
+//   Agency      — everything.
+//   Client admin— everything except the three integration screens, which
+//                 hold credentials the agency manages: School Email,
+//                 WhatsApp API and Conversions API.
+//   Counsellor  — the day-to-day lists only, and nothing that touches
+//                 logins, money or credentials.
+export type SettingsSection =
+  | 'stages'
+  | 'lead_source'
+  | 'cold_reason'
+  | 'fields'
+  | 'counsellors'
+  | 'assignment'
+  | 'email'
+  | 'whatsapp'
+  | 'capi'
+  | 'lead_range'
+  | 'display'
+  | 'activity'
+
+// The three integration screens, agency-only.
+const AGENCY_ONLY_SECTIONS: SettingsSection[] = ['email', 'whatsapp', 'capi']
+
+export const COUNSELLOR_SECTIONS: SettingsSection[] = [
+  'stages',
+  'lead_source',
+  'fields',
+  'lead_range',
+  'display',
+  'activity',
+]
+
+export function sectionsForRole(role: string | null | undefined): SettingsSection[] {
+  const all: SettingsSection[] = [
+    'stages',
+    'lead_source',
+    'cold_reason',
+    'fields',
+    'counsellors',
+    'assignment',
+    'email',
+    'whatsapp',
+    'capi',
+    'lead_range',
+    'display',
+    'activity',
+  ]
+  if (!role) return []
+  if (AGENCY_ROLES.includes(role as any)) return all
+  if (role === 'client_admin') return all.filter((s) => !AGENCY_ONLY_SECTIONS.includes(s))
+  if (role === 'client_counsellor') return COUNSELLOR_SECTIONS
+  return []
+}
+
+export function canOpenSection(role: string | null | undefined, section: SettingsSection): boolean {
+  return sectionsForRole(role).includes(section)
+}
+
+// Server-side permission for one settings section. Replaces a plain
+// canCustomize check in the endpoints behind the sections a counsellor may
+// now open — the institute still has to match, so a counsellor can only
+// ever edit their own school's lists.
+export function canEditSection(
+  session: SessionUser | null,
+  targetClientId: string | null | undefined,
+  section: SettingsSection
+): boolean {
+  if (!session || !targetClientId) return false
+  if (!canOpenSection(session.role, section)) return false
+  if (AGENCY_ROLES.includes(session.role)) return true
+  return session.clientId === targetClientId
+}
