@@ -23,6 +23,8 @@ const MODES: { key: Mode; title: string; blurb: string }[] = [
 
 export default function LeadAssignmentPanel({ clientId }: { clientId: string }) {
   const [mode, setMode] = useState<Mode>('manual')
+  // Whether counsellors can pass leads to each other, or only admins can.
+  const [counsellorCanAssign, setCounsellorCanAssign] = useState(false)
   const [counsellorCount, setCounsellorCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -39,6 +41,7 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
       .then(([data, people]) => {
         if (data) {
           setMode(data.mode === 'round_robin' ? 'round_robin' : 'manual')
+          setCounsellorCanAssign(!!data.counsellorCanAssign)
           setMigrationNeeded(!!data.migrationNeeded)
         }
         setCounsellorCount(Array.isArray(people) ? people.length : 0)
@@ -55,7 +58,7 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
       const res = await fetch('/api/lead-automation', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, mode }),
+        body: JSON.stringify({ clientId, mode, counsellorCanAssign }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -114,6 +117,28 @@ export default function LeadAssignmentPanel({ clientId }: { clientId: string }) 
             assign them together.
           </p>
         )}
+      </div>
+
+      <div className="rounded-card border border-border bg-card p-5">
+        <h2 className="text-lg font-bold text-fg">Who can reassign a lead</h2>
+        <p className="mt-1 text-sm text-muted2">
+          Admins can always reassign. Turn this on to let counsellors hand a lead to a colleague too.
+        </p>
+        <label className="mt-3 flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={counsellorCanAssign}
+            onChange={(e) => setCounsellorCanAssign(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+          />
+          <span className="text-sm">
+            <span className="block font-medium text-fg">Counsellors can assign leads to other counsellors</span>
+            <span className="block text-xs text-muted2">
+              Adds the Counsellor dropdown on the lead panel for them, and lets them assign several selected leads
+              at once on the leads pages. Off means only admins can move a lead.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="flex items-center gap-3">
