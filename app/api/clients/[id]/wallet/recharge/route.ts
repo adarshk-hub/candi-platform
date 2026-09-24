@@ -15,9 +15,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const body = await req.json().catch(() => null)
   const amount = Number(body?.amount)
-  // Where the bill goes. Razorpay also pre-fills its own contact step with
-  // it, so the payer doesn't type it twice.
-  const email = typeof body?.email === 'string' ? body.email.trim() : ''
 
   if (!amount || amount < MIN_RECHARGE_AMOUNT) {
     return NextResponse.json({ error: `Minimum recharge amount is ₹${MIN_RECHARGE_AMOUNT}` }, { status: 400 })
@@ -27,10 +24,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const keySecret = process.env.RAZORPAY_KEY_SECRET
   if (!keyId || !keySecret) {
     return NextResponse.json({ error: 'Razorpay is not configured on the server yet.' }, { status: 500 })
-  }
-
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return NextResponse.json({ error: 'Enter the email the bill should go to.' }, { status: 400 })
   }
 
   // The wallet is credited with what the client asked for; GST is added on
@@ -48,15 +41,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         amount: Math.round(chargedAmount * 100), // Razorpay expects paise
         currency: 'INR',
         receipt: `wcc_${params.id}_${Date.now()}`,
-        // Razorpay sends the receipt itself (Dashboard > Settings >
-        // Configuration > customer receipts), so the payer's email travels
-        // with the order and appears on that receipt.
+        // Razorpay collects the payer's email at checkout and sends the
+        // receipt itself (Dashboard > Settings > Configuration).
         notes: {
           clientId: params.id,
           purpose: 'wa_wallet_recharge',
           creditAmount: String(amount),
           gst: String(Math.round((chargedAmount - amount) * 100) / 100),
-          email,
         },
       }),
     })
@@ -70,7 +61,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       amount: data.amount,
       currency: data.currency,
       keyId,
-      email,
       creditAmount: amount,
       gstAmount: Math.round((chargedAmount - amount) * 100) / 100,
       chargedAmount,
