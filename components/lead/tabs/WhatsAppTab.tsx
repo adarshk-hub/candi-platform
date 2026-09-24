@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { announceNotificationsChanged } from '@/lib/useNotifications'
 import { clsx } from 'clsx'
 import { Check, CheckCheck, Clock, AlertCircle, Link as LinkIcon, Lock } from 'lucide-react'
 
@@ -127,6 +128,9 @@ function TemplateRestartPanel({
       setSelectedId('')
       setValues([])
       onSent()
+      // Replying is what clears the "awaiting a reply" badge — tell the
+      // sidebar and leads list straight away.
+      announceNotificationsChanged()
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     } finally {
@@ -259,6 +263,9 @@ export default function WhatsAppTab({
       }
       setText('')
       load()
+      // Replying clears the "awaiting a reply" badge — refresh it now
+      // rather than on the next poll.
+      announceNotificationsChanged()
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     } finally {
