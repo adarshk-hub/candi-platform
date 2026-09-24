@@ -6,7 +6,6 @@ import { MessageSquareText, CalendarClock, FilePlus2 } from 'lucide-react'
 import NotificationBell from '@/components/NotificationBell'
 import SequenceStepsPanel from './SequenceStepsPanel'
 import BroadcastTemplatesPanel from '@/components/broadcast/BroadcastTemplatesPanel'
-import CounsellorAlertCard from './CounsellorAlertCard'
 
 // One home for messages: when they go out (Schedule) and what they say
 // (Messages). Both used to be buried inside Settings > WhatsApp, next to
@@ -55,10 +54,7 @@ export default function TemplatesShell({
       {tab === 'schedule' ? (
         <SequenceStepsPanel clientId={clientId} />
       ) : (
-        <div className="space-y-5">
-          <CounsellorAlertCard clientId={clientId} />
-          <BroadcastTemplatesPanel clientId={clientId} />
-        </div>
+        <BroadcastTemplatesPanel clientId={clientId} />
       )}
     </div>
   )
