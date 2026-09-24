@@ -126,6 +126,7 @@ interface LeadForVariables {
   whatsapp_number?: string | null
   grade?: string | null
   location?: string | null
+  source?: string | null
   counsellor_name?: string | null
   institute_name?: string | null
 }
@@ -149,6 +150,9 @@ function valueFor(mapping: TemplateVariableMapping, lead: LeadForVariables): str
       return (lead.grade || '').trim() || fallback
     case 'location':
       return (lead.location || '').trim() || fallback
+    case 'source':
+      // Where the enquiry came from (Instagram, Google, Manual…).
+      return (lead.source || '').trim() || fallback
     case 'counsellor_name':
       return (lead.counsellor_name || '').trim() || fallback
     case 'institute_name':
@@ -162,7 +166,7 @@ function valueFor(mapping: TemplateVariableMapping, lead: LeadForVariables): str
 export async function loadLeadForVariables(leadId: string): Promise<LeadForVariables | null> {
   const row = (
     await query<LeadForVariables>(
-      `SELECT l.full_name, l.child_name, l.whatsapp_number, l.grade, l.location,
+      `SELECT l.full_name, l.child_name, l.whatsapp_number, l.grade, l.location, l.source,
               u.full_name AS counsellor_name, c.name AS institute_name
        FROM leads l
        LEFT JOIN users u ON u.id = l.assigned_counsellor_id
