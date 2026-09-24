@@ -11,6 +11,24 @@ import AdAccountConnector from '@/components/settings/AdAccountConnector'
 import PageConnector from '@/components/settings/PageConnector'
 import NotificationBell from '@/components/NotificationBell'
 
+// The same section list the Customize page shows in its left nav, so both
+// settings pages carry one menu and you can jump straight to a section
+// from here instead of going through Customize first.
+const CUSTOMIZE_LINKS = [
+  { panel: 'stages', label: 'Lead Stages' },
+  { panel: 'lead_source', label: 'Lead Source' },
+  { panel: 'cold_reason', label: 'Cold Reasons' },
+  { panel: 'fields', label: 'Lead Form Fields' },
+  { panel: 'counsellors', label: 'Counsellors' },
+  { panel: 'assignment', label: 'Lead Assignment' },
+  { panel: 'email', label: 'School Email' },
+  { panel: 'whatsapp', label: 'WhatsApp' },
+  { panel: 'capi', label: 'Conversions API' },
+  { panel: 'lead_range', label: 'Lead Date Range' },
+  { panel: 'display', label: 'Display Preferences' },
+  { panel: 'activity', label: 'Activity' },
+]
+
 function getBaseUrl() {
   const h = headers()
   const host = h.get('host') || 'localhost:3000'
@@ -61,7 +79,24 @@ export default async function SettingsPage() {
   const canCustomize = true
 
   return (
-    <div>
+    <div className="flex gap-6">
+      <nav className="w-56 shrink-0 space-y-1">
+        {/* Current page, shown as the selected item. */}
+        <span className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-blue-500 bg-card2 px-3 py-2 text-left text-sm font-medium text-fg">
+          Agency Settings
+        </span>
+        {CUSTOMIZE_LINKS.map((c) => (
+          <Link
+            key={c.panel}
+            href={`/settings/customize?panel=${c.panel}`}
+            className="flex w-full items-center gap-2.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left text-sm text-muted2 transition-colors hover:bg-card2 hover:text-fg"
+          >
+            {c.label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="min-w-0 flex-1">
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="mb-2 text-2xl font-bold text-fg">Agency Settings</h1>
@@ -157,6 +192,7 @@ export default async function SettingsPage() {
           />
         </div>
       )}
+      </div>
     </div>
   )
 }
