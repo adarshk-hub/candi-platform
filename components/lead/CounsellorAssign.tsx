@@ -1,3 +1,4 @@
+// path: components/lead/CounsellorAssign.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -8,7 +9,7 @@ interface Counsellor {
   full_name: string
 }
 
-const REASSIGN_ROLES = ['agency_admin', 'agency_staff', 'client_admin']
+const ADMIN_REASSIGN_ROLES = ['agency_admin', 'agency_staff', 'client_admin']
 
 export default function CounsellorAssign({
   leadId,
@@ -22,6 +23,9 @@ export default function CounsellorAssign({
   onChanged: () => void
 }) {
   const [role, setRole] = useState<string | null>(null)
+  // Counsellors get the dropdown only where the institute has allowed it
+  // (Settings > Lead Assignment), so this can't be decided from role alone.
+  const [canReassign, setCanReassign] = useState(false)
   const [counsellors, setCounsellors] = useState<Counsellor[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -29,18 +33,29 @@ export default function CounsellorAssign({
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setRole(data?.role || null))
+      .then((data) => {
+        setRole(data?.role || null)
+        if (data?.role && ADMIN_REASSIGN_ROLES.includes(data.role)) {
+          setCanReassign(true)
+          return
+        }
+        if (data?.role !== 'client_counsellor') return
+        fetch('/api/lead-assign-permission')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p) => setCanReassign(!!p?.canAssign))
+          .catch(() => {})
+      })
   }, [])
 
   useEffect(() => {
-    if (role && REASSIGN_ROLES.includes(role)) {
+    if (canReassign) {
       fetch('/api/counsellors')
         .then((r) => (r.ok ? r.json() : []))
         .then((data) => setCounsellors(Array.isArray(data) ? data : []))
     }
-  }, [role])
+  }, [canReassign])
 
-  if (!role || !REASSIGN_ROLES.includes(role)) {
+  if (!canReassign) {
     return (
       <p className="flex items-center justify-end gap-2 text-fg">
         {currentName && (
