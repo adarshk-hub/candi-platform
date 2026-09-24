@@ -118,7 +118,14 @@ export default function CustomizeShell({
             <ArrowLeft size={16} /> Settings
           </Link>
         )}
-        <h1 className="text-2xl font-bold text-fg">Customize</h1>
+        <h1 className="text-2xl font-bold text-fg">
+          {/* Named for who is looking at it, matching the sidebar. */}
+          {role === 'agency_admin' || role === 'agency_staff'
+            ? 'Agency Settings'
+            : role === 'client_counsellor'
+              ? 'Counsellor Settings'
+              : 'Client Settings'}
+        </h1>
         <div className="ml-auto">
           <NotificationBell />
         </div>
