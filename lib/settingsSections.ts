@@ -36,8 +36,17 @@ export type SettingsSection =
   | 'display'
   | 'activity'
 
-// The three integration screens, agency-only.
-const AGENCY_ONLY_SECTIONS: SettingsSection[] = ['email', 'whatsapp', 'capi']
+// The integration screens a client admin never sees. WhatsApp is not among
+// them any more: a client admin opens that section, but only to top up the
+// wallet — the credentials and the test send stay agency-only, enforced
+// inside the panel and by canEditWhatsAppConfig below.
+const AGENCY_ONLY_SECTIONS: SettingsSection[] = ['email', 'capi']
+
+// Who may see and change the Meta credentials (phone number id, WABA id,
+// access token) and send the test message.
+export function canEditWhatsAppConfig(role: string | null | undefined): boolean {
+  return !!role && AGENCY.includes(role)
+}
 
 export const COUNSELLOR_SECTIONS: SettingsSection[] = [
   'stages',
