@@ -347,7 +347,9 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
 
   // Per-row unread WhatsApp badges, kept in step with the bell — opening a
   // lead clears it in both places at once.
-  const { unreadByLead } = useNotifications()
+  // Polls: without this the badge only updated on a full page reload,
+  // which is why a new message sometimes didn't show until refresh.
+  const { unreadByLead } = useNotifications({ poll: true })
 
   function setView(v: 'list' | 'kanban') {
     const params = new URLSearchParams(searchParams.toString())
@@ -372,6 +374,13 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
   const [deleting, setDeleting] = useState(false)
   const [filters, setFilters] = useState<LeadListFilterState>(EMPTY_LEAD_FILTERS)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Bulk reassignment. Who may do it is a server answer (admins always,
+  // counsellors only where the institute allows it), so it is asked for
+  // rather than guessed from the role in the browser.
+  const [canAssign, setCanAssign] = useState(false)
+  const [counsellors, setCounsellors] = useState<{ id: string; full_name: string }[]>([])
+  const [assignTo, setAssignTo] = useState('')
+  const [assigning, setAssigning] = useState(false)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   // Tracks whether the params this render would fetch for are the exact
   // same ones the server already fetched for — only true on first mount,
@@ -485,6 +494,44 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
       else next.add(id)
       return next
     })
+  }
+
+  useEffect(() => {
+    fetch('/api/lead-assign-permission')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p) => {
+        if (!p?.canAssign) return
+        setCanAssign(true)
+        fetch('/api/counsellors')
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows) => setCounsellors(Array.isArray(rows) ? rows : []))
+          .catch(() => {})
+      })
+      .catch(() => {})
+  }, [])
+
+  async function assignSelected() {
+    if (selected.size === 0 || !assignTo) return
+    setAssigning(true)
+    try {
+      const res = await fetch('/api/activity/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds: Array.from(selected), counsellorId: assignTo }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        window.alert(data.error || 'Could not assign the selected leads.')
+        return
+      }
+      setSelected(new Set())
+      setAssignTo('')
+      load()
+    } catch (err: any) {
+      window.alert(err?.message || 'Could not reach the server.')
+    } finally {
+      setAssigning(false)
+    }
   }
 
   async function deleteSelected() {
@@ -629,6 +676,29 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
               {selected.size > 0 && (
                 <div className="flex items-center gap-2 rounded-md border border-border bg-card2 px-3 py-1.5">
                   <span className="text-fg">{selected.size} selected</span>
+                  {canAssign && (
+                    <>
+                      <select
+                        value={assignTo}
+                        onChange={(e) => setAssignTo(e.target.value)}
+                        className="rounded-md border border-border bg-card px-2 py-1 text-xs text-fg outline-none focus:border-blue-500"
+                      >
+                        <option value="">Assign to…</option>
+                        {counsellors.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.full_name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={assignSelected}
+                        disabled={!assignTo || assigning}
+                        className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                      >
+                        {assigning ? 'Assigning…' : 'Assign'}
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={deleteSelected}
                     disabled={deleting}
