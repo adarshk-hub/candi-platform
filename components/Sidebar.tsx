@@ -366,7 +366,7 @@ export default function Sidebar({
                 ? 'Agency Settings'
                 : user?.role === 'client_counsellor'
                   ? 'Counsellor Settings'
-                  : 'Client Settings'
+                  : 'Admin Settings'
             }
             active={pathname === '/settings' || pathname === '/settings/customize'}
             collapsed={collapsed}
