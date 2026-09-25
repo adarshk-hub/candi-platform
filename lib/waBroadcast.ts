@@ -125,6 +125,8 @@ export async function createBroadcast(params: CreateBroadcastParams): Promise<{ 
 }
 
 export interface BroadcastBatchResult {
+  // Per-institute failures, so the cron response says why nothing sent.
+  errors?: { clientId: string; error: string }[]
   processed: number
   sent: number
   failed: number
@@ -153,7 +155,7 @@ export interface BroadcastBatchResult {
 export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchResult> {
   const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
   const total: BroadcastBatchResult = {
-    processed: 0, sent: 0, failed: 0, insufficientCredit: 0, broadcastsCompleted: 0,
+    processed: 0, sent: 0, failed: 0, insufficientCredit: 0, broadcastsCompleted: 0, errors: [],
   }
   for (const client of clients) {
     try {
@@ -163,8 +165,11 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
       total.failed += r.failed
       total.insufficientCredit += r.insufficientCredit
       total.broadcastsCompleted += r.broadcastsCompleted
-    } catch (err) {
+    } catch (err: any) {
+      // Reported back to the caller as well as logged: a broadcast stuck at
+      // 0/N with a 200 response and no detail is impossible to diagnose.
       console.error(`[wa-broadcast] client ${client.id} batch failed:`, err)
+      ;(total.errors ||= []).push({ clientId: client.id, error: err?.message || String(err) })
     }
   }
   return total
