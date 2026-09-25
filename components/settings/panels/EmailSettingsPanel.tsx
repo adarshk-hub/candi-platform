@@ -13,6 +13,9 @@ import { Check } from 'lucide-react'
 export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
   const [schoolEmail, setSchoolEmail] = useState('')
   const [fromName, setFromName] = useState('')
+  // Set by the client admin from the Broadcast page when they want email
+  // broadcasts turned on.
+  const [requested, setRequested] = useState(false)
   const [smtpHost, setSmtpHost] = useState('')
   const [smtpPort, setSmtpPort] = useState('')
   const [smtpUser, setSmtpUser] = useState('')
@@ -25,6 +28,10 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
 
   useEffect(() => {
     setLoading(true)
+    fetch(`/api/email-broadcast-request?clientId=${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setRequested(!!d?.requested))
+      .catch(() => {})
     fetch(`/api/clients/${clientId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
