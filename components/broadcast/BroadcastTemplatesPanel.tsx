@@ -42,7 +42,19 @@ const STATUS_STYLE: Record<string, string> = {
 // Only submission and approval status live here. Assigning templates to
 // nurture steps stays in Settings > WhatsApp, because that is about the
 // automated sequence rather than about sending a broadcast today.
-export default function BroadcastTemplatesPanel({ clientId }: { clientId: string }) {
+export type TemplateView = 'apply' | 'approved' | 'pending' | 'rejected'
+
+export default function BroadcastTemplatesPanel({
+  clientId,
+  view = 'apply',
+}: {
+  clientId: string
+  // Which of the WhatsApp > Templates tabs is showing. 'apply' is the
+  // submission form on its own — no list, because a template that has just
+  // been sent to Meta has no status worth reading yet; it appears under
+  // Pending once Meta has it.
+  view?: TemplateView
+}) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
@@ -72,6 +84,9 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   // job is "what can I use". Kept rather than auto-deleted, because the
   // rejection reason is the only way to learn what Meta objected to.
   const [showRejected, setShowRejected] = useState(false)
+  // Approved templates are the ones people hunt through, so that tab has a
+  // search box; the others are short lists.
+  const [search, setSearch] = useState('')
 
   // Meta approves a template against a *sample* file, then wants the real
   // file re-uploaded on every send. So two things are kept: the handle Meta
@@ -246,7 +261,9 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
   // Rejected ones are hidden unless asked for: the list exists to answer
   // "which templates can I send", and six permanent failures crowd out the
   // one that works.
-  const visible = showRejected ? templates : templates.filter((t) => t.status !== 'rejected')
+  const visible = templates
+    .filter((t) => (view === 'apply' ? false : t.status === view))
+    .filter((t) => (view === 'approved' && search.trim() ? t.name.toLowerCase().includes(search.trim().toLowerCase()) : true))
 
   const counts = templates.reduce(
     (acc, t) => ({ ...acc, [t.status]: (acc as any)[t.status] + 1 }),
@@ -255,55 +272,46 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
 
   return (
     <div className="space-y-4">
-      <div className="rounded-card border border-border bg-card p-5">
-        <h2 className="text-lg font-bold text-fg">WhatsApp templates</h2>
-        <p className="mt-1 text-sm text-muted2">
-          Meta has to approve every template before it can be sent. Submit the starter set, then check back —
-          approval usually takes minutes but can take a day.
-        </p>
-
-        {/* The "submit starter templates" and "submit reminder templates"
-            buttons are gone. They generated names from the institute's name
-            — CANDID_day0_welcome — and Meta only accepts lower-case letters
-            and underscores, so every one came back rejected. A button whose
-            only outcome is a rejection is worse than no button: it looks
-            like the system is broken rather than like nothing was set up.
-            Write the templates you actually want below instead. */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => run('sync', `/api/templates/sync/${clientId}`)}
-            disabled={!!busy}
-            className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm text-muted2 hover:text-fg disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={busy === 'sync' ? 'animate-spin' : undefined} />
-            Check approval status
-          </button>
-        </div>
-
-        {notice && <p className="mt-3 text-sm text-green-400">{notice}</p>}
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-
-        <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted2">
-          <span>
-            {counts.approved} approved · {counts.pending} awaiting Meta · {counts.rejected} rejected
-          </span>
-          {counts.rejected > 0 && (
-            <>
-              <button onClick={() => setShowRejected((v) => !v)} className="text-blue-400 hover:underline">
-                {showRejected ? 'Hide rejected' : `Show ${counts.rejected} rejected`}
-              </button>
+      {view !== 'apply' && (
+        <div className="rounded-card border border-border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted2">
+              {counts.approved} approved · {counts.pending} awaiting Meta · {counts.rejected} rejected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {view === 'approved' && (
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search approved templates"
+                  className="w-56 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+                />
+              )}
               <button
-                onClick={() => removeTemplate()}
+                onClick={() => run('sync', `/api/templates/sync/${clientId}`)}
                 disabled={!!busy}
-                className="text-red-400 hover:underline disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg disabled:opacity-50"
               >
-                Delete all rejected
+                <RefreshCw size={14} className={busy === 'sync' ? 'animate-spin' : undefined} />
+                Check approval status
               </button>
-            </>
-          )}
-        </p>
-      </div>
+              {view === 'rejected' && counts.rejected > 0 && (
+                <button
+                  onClick={() => removeTemplate()}
+                  disabled={!!busy}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  Delete all rejected
+                </button>
+              )}
+            </div>
+          </div>
+          {notice && <p className="mt-3 text-sm text-green-400">{notice}</p>}
+          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        </div>
+      )}
 
+      {view === 'apply' && (
       <div className="rounded-card border border-border bg-card p-5">
         <h2 className="text-lg font-bold text-fg">New template</h2>
         <p className="mt-1 text-sm text-muted2">
@@ -444,8 +452,12 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
         >
           {busy === 'submit' ? 'Submitting…' : 'Submit for approval'}
         </button>
+        {notice && <p className="mt-3 text-sm text-green-400">{notice}</p>}
+        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       </div>
+      )}
 
+      {view !== 'apply' && (
       <div className="overflow-hidden rounded-card border border-border bg-card">
         {visible.map((t) => {
           const Icon = STATUS_ICON[t.status] || Clock
@@ -552,12 +564,17 @@ export default function BroadcastTemplatesPanel({ clientId }: { clientId: string
           <p className="px-4 py-10 text-center text-sm text-muted">
             {loading
               ? 'Loading…'
-              : templates.length > 0
-              ? 'Nothing approved or pending — only rejected templates, hidden above.'
-              : 'No templates submitted yet.'}
+              : view === 'approved'
+                ? search.trim()
+                  ? 'No approved template matches that name.'
+                  : 'Nothing approved yet.'
+                : view === 'pending'
+                  ? 'Nothing waiting on Meta.'
+                  : 'Nothing rejected.'}
           </p>
         )}
       </div>
+      )}
     </div>
   )
 }
