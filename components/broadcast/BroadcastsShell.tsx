@@ -31,6 +31,9 @@ export default function BroadcastsShell({
   // Email broadcasts need an SMTP server saved for this institute
   // (Settings > School Email); without one the channel isn't offered.
   const [emailReady, setEmailReady] = useState(false)
+  // A client admin can't configure SMTP themselves, so instead of a mail
+  // server form they tick this and the agency sets it up.
+  const [emailRequested, setEmailRequested] = useState(false)
 
   useEffect(() => {
     if (!clientId) return
@@ -42,7 +45,24 @@ export default function BroadcastsShell({
         if (!ready) setChannel('whatsapp')
       })
       .catch(() => setEmailReady(false))
+    fetch(`/api/email-broadcast-request?clientId=${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setEmailRequested(!!d?.requested))
+      .catch(() => {})
   }, [clientId])
+
+  async function toggleEmailRequest(next: boolean) {
+    setEmailRequested(next)
+    try {
+      await fetch('/api/email-broadcast-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, requested: next }),
+      })
+    } catch {
+      setEmailRequested(!next)
+    }
+  }
 
   if (!clientId) {
     return <p className="text-muted">No institution to broadcast to yet.</p>
@@ -108,6 +128,17 @@ export default function BroadcastsShell({
           >
             <Mail size={16} /> Email
           </button>
+        )}
+        {!emailReady && (
+          <label className="flex items-center gap-2 rounded-md border border-border bg-card2 px-4 py-2 text-sm text-muted2">
+            <input
+              type="checkbox"
+              checked={emailRequested}
+              onChange={(e) => toggleEmailRequest(e.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            {emailRequested ? 'Email broadcast requested — we’ll set it up' : 'I want email broadcasts too'}
+          </label>
         )}
       </div>
 
