@@ -1,8 +1,9 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/ad-spend-sync",
-      "schedule": "0 3 * * *"
-    }
+    { "path": "/api/cron/ad-spend-sync", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/wa-broadcast-send", "schedule": "* * * * *" },
+    { "path": "/api/cron/wa-sequence-advance", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/email-broadcast-send", "schedule": "* * * * *" },
+    { "path": "/api/cron/visit-reminders", "schedule": "0 * * * *" }
   ]
 }
