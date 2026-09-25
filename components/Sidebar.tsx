@@ -265,6 +265,10 @@ export default function Sidebar({
           </div>
         )}
 
+        {can('calendar') && (
+          <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
+        )}
+
         {/* WhatsApp, as one group of pages: the conversations, the
             broadcasts, the templates and the automated schedule. They were
             scattered across the sidebar before. */}
@@ -318,9 +322,6 @@ export default function Sidebar({
           </div>
         )}
 
-        {can('calendar') && (
-          <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
-        )}
 
 
         {/* Counsellor section. Set apart by a gap and a heading rather than
