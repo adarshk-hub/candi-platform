@@ -296,7 +296,7 @@ export default function Sidebar({
           <NavItem
             href="/templates"
             icon={MessageSquareText}
-            label="WhatsApp Templates"
+            label="WhatsApp"
             active={pathname === '/templates'}
             collapsed={collapsed}
           />
