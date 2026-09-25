@@ -1,5 +1,5 @@
 // path: lib/waBroadcast.ts
-import { query, queryAsClient, centralQuery } from './db'
+import { query, queryAsClient, centralQuery, runAsClient } from './db'
 import { sendTemplateMessage } from './metaWhatsapp'
 import { leadDateRangeSql } from './leadDateRange'
 import { bodyComponentFor, resolveTemplateVariables } from './templateVariables'
@@ -165,7 +165,11 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
   }
   for (const client of clients) {
     try {
-      const r = await processClientBatch(client.id, batchSize)
+      // Everything below this call — the wallet debit, the Meta send, the
+      // template lookup — reaches for query(), which resolves its database
+      // from the logged-in session. A cron request has none, so the whole
+      // batch is run inside this institute's scope instead.
+      const r = await runAsClient(client.id, () => processClientBatch(client.id, batchSize))
       ;(total.perClient ||= []).push({ clientId: client.id, pending: r.processed })
       total.processed += r.processed
       total.sent += r.sent
