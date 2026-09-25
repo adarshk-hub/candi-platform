@@ -119,7 +119,7 @@ export default function CustomizeShell({
             ? 'Agency Settings'
             : role === 'client_counsellor'
               ? 'Counsellor Settings'
-              : 'Client Settings'}
+              : 'Admin Settings'}
         </h1>
         <div className="ml-auto">
           <NotificationBell />
