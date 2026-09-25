@@ -17,7 +17,7 @@ export const MODULE_PAGES: ModulePage[] = [
   { key: 'calendar', label: 'Calendar View', href: '/calendar' },
   { key: 'leads', label: 'All Leads', href: '/leads' },
   { key: 'broadcasts', label: 'Broadcasts', href: '/broadcasts' },
-  { key: 'templates', label: 'WhatsApp Templates', href: '/templates' },
+  { key: 'templates', label: 'WhatsApp', href: '/templates' },
   { key: 'performance', label: 'Counsellor Performance', href: '/performance' },
 ]
 
