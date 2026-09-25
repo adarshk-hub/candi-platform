@@ -1,5 +1,13 @@
 // path: lib/counsellorAlerts.ts
-import { query } from '@/lib/db'
+import { query, queryAsClient } from '@/lib/db'
+
+// Alerts fire from webhooks and cron (a Meta lead form, the intake queue),
+// where there is no logged-in session for query() to resolve a database
+// from — so every call here names the institute explicitly.
+function db(clientId?: string | null) {
+  return <T = any>(text: string, params?: any[]): Promise<T[]> =>
+    clientId ? queryAsClient<T>(clientId, text, params) : query<T>(text, params)
+}
 import { sendTemplateMessage, sendTextMessage } from '@/lib/metaWhatsapp'
 
 // Meta only delivers a plain text message inside the 24 hours after that
@@ -39,9 +47,9 @@ export function normalizePhone(raw: string | null | undefined): string {
 // demand rather than through a migration that has to be run five times.
 const columnReady = new Map<string, boolean>()
 
-export async function ensurePhoneColumn(): Promise<boolean> {
+export async function ensurePhoneColumn(clientId?: string | null): Promise<boolean> {
   try {
-    const [row] = await query<{ schema: string; present: boolean }>(
+    const [row] = await db(clientId)<{ schema: string; present: boolean }>(
       `SELECT current_schema() AS schema,
               EXISTS (
                 SELECT 1 FROM information_schema.columns
@@ -54,7 +62,7 @@ export async function ensurePhoneColumn(): Promise<boolean> {
       columnReady.set(key, true)
       return true
     }
-    await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR`)
+    await db(clientId)(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR`)
     columnReady.set(key, true)
     return true
   } catch (err) {
@@ -65,8 +73,8 @@ export async function ensurePhoneColumn(): Promise<boolean> {
 
 // SELECT fragment, so a query still works on a schema where the column
 // hasn't been added yet.
-export async function phoneSelect(alias = 'u'): Promise<string> {
-  return (await ensurePhoneColumn()) ? `${alias}.phone` : `NULL::varchar AS phone`
+export async function phoneSelect(alias = 'u', clientId?: string | null): Promise<string> {
+  return (await ensurePhoneColumn(clientId)) ? `${alias}.phone` : `NULL::varchar AS phone`
 }
 
 // Where a number lives when users.phone cannot be added — some schemas are
@@ -78,7 +86,7 @@ const PHONE_LIST_KEY = 'counsellor_phone'
 
 async function fallbackPhones(clientId: string): Promise<Record<string, string>> {
   try {
-    const rows = await query<{ value: string }>(
+    const rows = await db(clientId)<{ value: string }>(
       `SELECT value FROM client_option_items WHERE client_id = $1 AND list_key = $2`,
       [clientId, PHONE_LIST_KEY]
     )
@@ -97,17 +105,17 @@ async function fallbackPhones(clientId: string): Promise<Record<string, string>>
 // Saves (or, with a blank number, clears) one counsellor's alert number.
 export async function setCounsellorPhone(clientId: string, userId: string, raw: string | null | undefined) {
   const phone = (raw || '').trim()
-  if (await ensurePhoneColumn()) {
-    await query('UPDATE users SET phone = $1 WHERE id = $2', [phone || null, userId])
+  if (await ensurePhoneColumn(clientId)) {
+    await db(clientId)('UPDATE users SET phone = $1 WHERE id = $2', [phone || null, userId])
     return
   }
-  await query(`DELETE FROM client_option_items WHERE client_id = $1 AND list_key = $2 AND value LIKE $3`, [
+  await db(clientId)(`DELETE FROM client_option_items WHERE client_id = $1 AND list_key = $2 AND value LIKE $3`, [
     clientId,
     PHONE_LIST_KEY,
     `${userId}:%`,
   ])
   if (!phone) return
-  await query(
+  await db(clientId)(
     `INSERT INTO client_option_items (client_id, list_key, value, is_active)
      VALUES ($1, $2, $3, true)
      ON CONFLICT (client_id, list_key, value) DO NOTHING`,
@@ -118,9 +126,9 @@ export async function setCounsellorPhone(clientId: string, userId: string, raw: 
 // Reads them back for a list of counsellors, from whichever place they are
 // stored in this schema.
 export async function counsellorPhones(clientId: string): Promise<Record<string, string>> {
-  if (await ensurePhoneColumn()) {
+  if (await ensurePhoneColumn(clientId)) {
     try {
-      const rows = await query<{ id: string; phone: string | null }>(
+      const rows = await db(clientId)<{ id: string; phone: string | null }>(
         `SELECT id, phone FROM users WHERE client_id = $1 AND phone IS NOT NULL AND phone <> ''`,
         [clientId]
       )
@@ -146,13 +154,13 @@ interface Recipient {
 async function recipientsFor(clientId: string, assignedCounsellorId: string | null): Promise<Recipient[]> {
   // Without the column, numbers live in client_option_items — look them up
   // there and pair them with the counsellor rows.
-  if (!(await ensurePhoneColumn())) {
+  if (!(await ensurePhoneColumn(clientId))) {
     const phones = await fallbackPhones(clientId)
     const ids = assignedCounsellorId ? [assignedCounsellorId] : Object.keys(phones)
     const wanted = ids.filter((id) => phones[id])
     if (wanted.length === 0) return []
     try {
-      const rows = await query<{ id: string; full_name: string | null }>(
+      const rows = await db(clientId)<{ id: string; full_name: string | null }>(
         `SELECT id, full_name FROM users
          WHERE id = ANY($1::uuid[]) AND client_id = $2 AND COALESCE(is_active, true)`,
         [wanted, clientId]
@@ -164,13 +172,13 @@ async function recipientsFor(clientId: string, assignedCounsellorId: string | nu
   }
   try {
     if (assignedCounsellorId) {
-      return await query<Recipient>(
+      return await db(clientId)<Recipient>(
         `SELECT id, full_name, phone FROM users
          WHERE id = $1 AND phone IS NOT NULL AND phone <> '' AND COALESCE(is_active, true)`,
         [assignedCounsellorId]
       )
     }
-    return await query<Recipient>(
+    return await db(clientId)<Recipient>(
       `SELECT id, full_name, phone FROM users
        WHERE client_id = $1 AND role = 'client_counsellor'
          AND phone IS NOT NULL AND phone <> '' AND COALESCE(is_active, true)`,
@@ -191,7 +199,7 @@ async function deliver(clientId: string, to: string, templateName: string, value
   const number = normalizePhone(to)
   if (!number) return
   try {
-    const [tpl] = await query<{ name: string; language: string }>(
+    const [tpl] = await db(clientId)<{ name: string; language: string }>(
       `SELECT name, language FROM wa_templates
        WHERE client_id = $1 AND status = 'approved' AND name ILIKE $2
        ORDER BY submitted_at DESC LIMIT 1`,
