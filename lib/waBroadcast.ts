@@ -127,6 +127,11 @@ export async function createBroadcast(params: CreateBroadcastParams): Promise<{ 
 export interface BroadcastBatchResult {
   // Per-institute failures, so the cron response says why nothing sent.
   errors?: { clientId: string; error: string }[]
+  // How many institutes the loop actually visited, and how many pending
+  // recipients each had. Without this, "processed: 0" could equally mean
+  // no institutes, no pending rows, or every institute throwing.
+  clientsSeen?: number
+  perClient?: { clientId: string; pending: number }[]
   processed: number
   sent: number
   failed: number
@@ -156,10 +161,12 @@ export async function processNextBatch(batchSize = 20): Promise<BroadcastBatchRe
   const clients = await centralQuery<{ id: string }>('SELECT id FROM clients')
   const total: BroadcastBatchResult = {
     processed: 0, sent: 0, failed: 0, insufficientCredit: 0, broadcastsCompleted: 0, errors: [],
+    clientsSeen: clients.length, perClient: [],
   }
   for (const client of clients) {
     try {
       const r = await processClientBatch(client.id, batchSize)
+      ;(total.perClient ||= []).push({ clientId: client.id, pending: r.processed })
       total.processed += r.processed
       total.sent += r.sent
       total.failed += r.failed
@@ -353,4 +360,4 @@ export async function getBroadcastDetail(broadcastId: string, clientId: string) 
   )
 
   return { broadcast, recipients }
-}
+}s
