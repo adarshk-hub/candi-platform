@@ -1,7 +1,7 @@
 // path: components/broadcast/BroadcastsShell.tsx
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import { Radio, MessageCircle, Mail } from 'lucide-react'
 import BroadcastComposer from './BroadcastComposer'
@@ -28,6 +28,21 @@ export default function BroadcastsShell({
   // Templates moved to their own Messages page in the sidebar.
   const [tab, setTab] = useState<'new' | 'audience' | 'history'>('new')
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  // Email broadcasts need an SMTP server saved for this institute
+  // (Settings > School Email); without one the channel isn't offered.
+  const [emailReady, setEmailReady] = useState(false)
+
+  useEffect(() => {
+    if (!clientId) return
+    fetch(`/api/clients/${clientId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const ready = !!(data?.smtp_host && data?.smtp_user)
+        setEmailReady(ready)
+        if (!ready) setChannel('whatsapp')
+      })
+      .catch(() => setEmailReady(false))
+  }, [clientId])
 
   if (!clientId) {
     return <p className="text-muted">No institution to broadcast to yet.</p>
@@ -81,14 +96,19 @@ export default function BroadcastsShell({
         >
           <MessageCircle size={16} /> WhatsApp
         </button>
-        <button
-          onClick={() => switchChannel('email')}
-          className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
-            channel === 'email' ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-border bg-card2 text-muted2 hover:text-fg'
-          }`}
-        >
-          <Mail size={16} /> Email
-        </button>
+        {/* Only where this institute has an SMTP server saved under
+            Settings > School Email — without one an email broadcast can
+            only fail, so the channel isn't offered. */}
+        {emailReady && (
+          <button
+            onClick={() => switchChannel('email')}
+            className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
+              channel === 'email' ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-border bg-card2 text-muted2 hover:text-fg'
+            }`}
+          >
+            <Mail size={16} /> Email
+          </button>
+        )}
       </div>
 
       <div className="mb-5 flex gap-1 border-b border-border">
