@@ -265,42 +265,63 @@ export default function Sidebar({
           </div>
         )}
 
-        {can('inbox') && (
-          <NavItem
-            href="/inbox"
-            icon={Inbox}
-            label="Inbox"
-            active={pathname === '/inbox'}
-            collapsed={collapsed}
-            trailing={
-              // Messages still waiting on a reply. Reading them doesn't
-              // clear this; replying does.
-              unrepliedTotal > 0 ? (
-                <span
-                  title={`${unrepliedTotal} message(s) awaiting a reply`}
-                  className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
-                >
-                  {unrepliedTotal > 99 ? '99+' : unrepliedTotal}
-                </span>
-              ) : null
-            }
-          />
+        {/* WhatsApp, as one group of pages: the conversations, the
+            broadcasts, the templates and the automated schedule. They were
+            scattered across the sidebar before. */}
+        {(can('inbox') || can('broadcasts') || can('templates')) && (
+          <div className="pt-3">
+            {!collapsed && (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-muted">WhatsApp</p>
+            )}
+            {can('inbox') && (
+              <NavItem
+                href="/inbox"
+                icon={Inbox}
+                label="Inbox"
+                active={pathname === '/inbox'}
+                collapsed={collapsed}
+                trailing={
+                  // Messages still waiting on a reply. Reading them doesn't
+                  // clear this; replying does.
+                  unrepliedTotal > 0 ? (
+                    <span
+                      title={`${unrepliedTotal} message(s) awaiting a reply`}
+                      className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                    >
+                      {unrepliedTotal > 99 ? '99+' : unrepliedTotal}
+                    </span>
+                  ) : null
+                }
+              />
+            )}
+            {can('broadcasts') && (
+              <NavItem href="/broadcasts" icon={Radio} label="Broadcast" active={pathname === '/broadcasts'} collapsed={collapsed} />
+            )}
+            {can('templates') && (
+              <>
+                <NavItem
+                  href="/templates"
+                  icon={MessageSquareText}
+                  label="Templates"
+                  active={pathname === '/templates'}
+                  collapsed={collapsed}
+                />
+                <NavItem
+                  href="/templates/automation"
+                  icon={CalendarClock}
+                  label="Automation"
+                  active={pathname === '/templates/automation'}
+                  collapsed={collapsed}
+                />
+              </>
+            )}
+          </div>
         )}
+
         {can('calendar') && (
           <NavItem href="/calendar" icon={CalendarDays} label="Bookings" active={pathname === '/calendar'} collapsed={collapsed} />
         )}
-        {can('broadcasts') && (
-          <NavItem href="/broadcasts" icon={Radio} label="Broadcast" active={pathname === '/broadcasts'} collapsed={collapsed} />
-        )}
-        {can('templates') && (
-          <NavItem
-            href="/templates"
-            icon={MessageSquareText}
-            label="WhatsApp"
-            active={pathname === '/templates'}
-            collapsed={collapsed}
-          />
-        )}
+
 
         {/* Counsellor section. Set apart by a gap and a heading rather than
             put behind a disclosure: these are checked several times a day,
