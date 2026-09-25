@@ -1,5 +1,5 @@
 // path: lib/emailBroadcast.ts
-import { query, queryAsClient, centralQuery } from './db'
+import { query, queryAsClient, centralQuery, runAsClient } from './db'
 import { sendEmail } from './email'
 import { findPreset } from './emailBroadcastTemplates'
 import { buildAudienceQuery, previewAudience as previewAudienceShared, BroadcastFilters, AudienceLead } from './leadAudience'
@@ -148,7 +148,9 @@ export async function processNextBatch(batchSize = 20): Promise<EmailBroadcastBa
 
   for (const client of clients) {
     try {
-      const r = await processClientBatch(client.id, batchSize)
+      // Same reason as the WhatsApp worker: helpers below call query(),
+      // which needs a session this cron request doesn't have.
+      const r = await runAsClient(client.id, () => processClientBatch(client.id, batchSize))
       total.processed += r.processed
       total.sent += r.sent
       total.failed += r.failed
