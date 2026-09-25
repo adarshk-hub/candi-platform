@@ -1,3 +1,4 @@
+//Re
 {
   "crons": [
     { "path": "/api/cron/ad-spend-sync", "schedule": "0 3 * * *" },
