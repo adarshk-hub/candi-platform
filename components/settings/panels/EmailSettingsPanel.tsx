@@ -1,4 +1,3 @@
-//Re
 // path: components/settings/panels/EmailSettingsPanel.tsx
 'use client'
 
@@ -106,6 +105,40 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
         </a>
         , not your regular password.
       </p>
+
+      {/* Always shown, whichever way it is set — no banner at all would
+          leave the agency guessing whether the institute had asked or the
+          state simply hadn't loaded. The agency can tick it too, for a
+          school that asked over the phone. */}
+      <label
+        className={`mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+          requested ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border bg-card2 text-muted2'
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={requested}
+          onChange={async (e) => {
+            const next = e.target.checked
+            setRequested(next)
+            try {
+              await fetch('/api/email-broadcast-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId, requested: next }),
+              })
+            } catch {
+              setRequested(!next)
+            }
+          }}
+          className="mt-0.5 h-4 w-4 rounded border-border"
+        />
+        <span>
+          {requested
+            ? 'This institute has asked for email broadcasts. Fill in the mailbox below to switch the channel on for them.'
+            : 'Email broadcasts not requested by this institute. They can ask from the Broadcast page, or tick this if they asked another way.'}
+        </span>
+      </label>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
