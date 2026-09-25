@@ -1,5 +1,15 @@
 // path: lib/templateVariables.ts
-import { query } from '@/lib/db'
+import { query, queryAsClient } from '@/lib/db'
+
+// query() resolves its database from the logged-in session. There is no
+// session on a cron request (the broadcast worker, the sequence engine), so
+// anything on that path must say which institute it means. Every function
+// here therefore takes a clientId and routes through queryAsClient, falling
+// back to query() only where no id is available.
+function db(clientId?: string | null) {
+  return <T = any>(text: string, params?: any[]): Promise<T[]> =>
+    clientId ? queryAsClient<T>(clientId, text, params) : query<T>(text, params)
+}
 import {
   TemplateVariableMapping,
   buildBodyParameters,
@@ -23,9 +33,9 @@ export * from '@/components/whatsapp/variableFields'
 // reason — a single boolean would leak one client's answer to another.
 const variableMapColumnCache = new Map<string, boolean>()
 
-async function columnState(): Promise<{ db: string; present: boolean }> {
+async function columnState(clientId?: string | null): Promise<{ db: string; present: boolean }> {
   const row = (
-    await query<{ db: string; present: boolean }>(
+    await db(clientId)<{ db: string; present: boolean }>(
       `SELECT current_database() AS db,
               EXISTS (
                 SELECT 1 FROM information_schema.columns
@@ -36,12 +46,12 @@ async function columnState(): Promise<{ db: string; present: boolean }> {
   return { db: row?.db || 'unknown', present: !!row?.present }
 }
 
-export async function hasVariableMapColumn(): Promise<boolean> {
+export async function hasVariableMapColumn(clientId?: string | null): Promise<boolean> {
   try {
-    const { db, present } = await columnState()
+    const { db: name, present } = await columnState(clientId)
     // Only a positive answer is cached: a column never disappears, but a
     // missing one can be added at any moment by ensureVariableMapColumn.
-    if (present) variableMapColumnCache.set(db, true)
+    if (present) variableMapColumnCache.set(name, true)
     return present
   } catch {
     return false
@@ -50,16 +60,16 @@ export async function hasVariableMapColumn(): Promise<boolean> {
 
 // Adds the column to this client's database if it isn't there yet. Safe to
 // call repeatedly: ADD COLUMN IF NOT EXISTS is a no-op once it exists.
-export async function ensureVariableMapColumn(): Promise<{ ok: boolean; error?: string }> {
+export async function ensureVariableMapColumn(clientId?: string | null): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { db, present } = await columnState()
-    if (variableMapColumnCache.get(db)) return { ok: true }
+    const { db: name, present } = await columnState(clientId)
+    if (variableMapColumnCache.get(name)) return { ok: true }
     if (present) {
-      variableMapColumnCache.set(db, true)
+      variableMapColumnCache.set(name, true)
       return { ok: true }
     }
-    await query(`ALTER TABLE wa_templates ADD COLUMN IF NOT EXISTS variable_map JSONB`)
-    variableMapColumnCache.set(db, true)
+    await db(clientId)(`ALTER TABLE wa_templates ADD COLUMN IF NOT EXISTS variable_map JSONB`)
+    variableMapColumnCache.set(name, true)
     return { ok: true }
   } catch (err: any) {
     console.error('[templateVariables] could not add wa_templates.variable_map:', err)
@@ -89,10 +99,10 @@ export async function saveVariableMap(
   templateId: string,
   map: Record<string, TemplateVariableMapping>
 ): Promise<{ ok: boolean; error?: string }> {
-  const column = await ensureVariableMapColumn()
+  const column = await ensureVariableMapColumn(clientId)
   if (column.ok) {
     const row = (
-      await query<{ id: string }>(
+      await db(clientId)<{ id: string }>(
         `UPDATE wa_templates SET variable_map = $1 WHERE id = $2 AND client_id = $3 RETURNING id`,
         [JSON.stringify(map), templateId, clientId]
       )
@@ -101,7 +111,7 @@ export async function saveVariableMap(
   }
 
   const existing = (
-    await query<{ components: any }>(`SELECT components FROM wa_templates WHERE id = $1 AND client_id = $2`, [
+    await db(clientId)<{ components: any }>(`SELECT components FROM wa_templates WHERE id = $1 AND client_id = $2`, [
       templateId,
       clientId,
     ])
@@ -112,7 +122,7 @@ export async function saveVariableMap(
     (c: any) => c?.type !== MAP_MARKER
   )
   components.push({ type: MAP_MARKER, map })
-  await query(`UPDATE wa_templates SET components = $1 WHERE id = $2 AND client_id = $3`, [
+  await db(clientId)(`UPDATE wa_templates SET components = $1 WHERE id = $2 AND client_id = $3`, [
     JSON.stringify(components),
     templateId,
     clientId,
@@ -163,9 +173,9 @@ function valueFor(mapping: TemplateVariableMapping, lead: LeadForVariables): str
 }
 
 // Everything a mapping can refer to, fetched in one go.
-export async function loadLeadForVariables(leadId: string): Promise<LeadForVariables | null> {
+export async function loadLeadForVariables(leadId: string, clientId?: string | null): Promise<LeadForVariables | null> {
   const row = (
-    await query<LeadForVariables>(
+    await db(clientId)<LeadForVariables>(
       `SELECT l.full_name, l.child_name, l.whatsapp_number, l.grade, l.location, l.source,
               u.full_name AS counsellor_name, c.name AS institute_name
        FROM leads l
@@ -185,9 +195,9 @@ export async function getTemplateVariableMap(
   clientId: string,
   templateName: string
 ): Promise<{ map: Record<string, TemplateVariableMapping>; tokens: string[] } | null> {
-  const hasColumn = await hasVariableMapColumn()
+  const hasColumn = await hasVariableMapColumn(clientId)
   const row = (
-    await query<{ components: any; variable_map: any }>(
+    await db(clientId)<{ components: any; variable_map: any }>(
       `SELECT components, ${hasColumn ? 'variable_map' : 'NULL AS variable_map'} FROM wa_templates
        WHERE client_id = $1 AND name = $2 ORDER BY submitted_at DESC LIMIT 1`,
       [clientId, templateName]
@@ -218,7 +228,7 @@ export async function resolveTemplateVariables(
   if (!mapped) return null
   if (mapped.tokens.length === 0) return { tokens: [], values: [] }
 
-  const lead = await loadLeadForVariables(leadId)
+  const lead = await loadLeadForVariables(leadId, clientId)
   if (!lead) return null
   return { tokens: mapped.tokens, values: mapped.tokens.map((t) => valueFor(mapped.map[t], lead)) }
 }
