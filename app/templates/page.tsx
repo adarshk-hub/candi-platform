@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/serverAuth'
 import { query } from '@/lib/db'
 import { AGENCY_ROLES } from '@/lib/auth'
+import { canAccessPage } from '@/lib/moduleAccess'
 import TemplatesShell from '@/components/templates/TemplatesShell'
 
 export const dynamic = 'force-dynamic'
@@ -11,10 +12,16 @@ export default async function TemplatesPage() {
   const session = getServerSession()
   if (!session) redirect('/login')
 
-  // Writing messages and changing the schedule costs money out of the
-  // client's wallet when they send, so counsellors don't get this page —
-  // same restriction as Broadcast and Settings > Customize.
-  if (session.role === 'client_counsellor') redirect('/leads')
+  // Counsellors reach this page only when their login has been given it in
+  // Settings > Counsellors ("WhatsApp Templates"), the same rule the
+  // sidebar uses.
+  if (session.role === 'client_counsellor') {
+    const [row] = await query<{ allowed_pages: string[] | null }>(
+      'SELECT allowed_pages FROM users WHERE id = $1',
+      [session.id]
+    )
+    if (!canAccessPage(session.role, row?.allowed_pages || null, 'templates')) redirect('/leads')
+  }
 
   const isAgency = AGENCY_ROLES.includes(session.role)
   const institutes = isAgency
