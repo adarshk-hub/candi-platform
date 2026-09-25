@@ -5,7 +5,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Clock, Paperclip, RefreshCw, XCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 import TemplateVariableMapper from '@/components/whatsapp/TemplateVariableMapper'
-import { TemplateVariableMapping, normalizeVariableMap, extractVariableTokens, VARIABLE_SOURCE_LABELS } from '@/components/whatsapp/variableFields'
+import {
+  TemplateVariableMapping,
+  normalizeVariableMap,
+  extractVariableTokens,
+  sampleValues,
+  renderBody,
+  VARIABLE_SOURCE_LABELS,
+} from '@/components/whatsapp/variableFields'
 
 interface Template {
   id: string
@@ -87,6 +94,8 @@ export default function BroadcastTemplatesPanel({
   // Approved templates are the ones people hunt through, so that tab has a
   // search box; the others are short lists.
   const [search, setSearch] = useState('')
+  // Which template's WhatsApp preview is open.
+  const [previewId, setPreviewId] = useState<string | null>(null)
 
   // Meta approves a template against a *sample* file, then wants the real
   // file re-uploaded on every send. So two things are kept: the handle Meta
@@ -463,8 +472,13 @@ export default function BroadcastTemplatesPanel({
           const Icon = STATUS_ICON[t.status] || Clock
           return (
             <div key={t.id} className="border-b border-border px-4 py-3 last:border-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-sm text-fg">{t.name}</span>
+              <div
+                className="flex flex-wrap items-center gap-3"
+                role="button"
+                title="Show how this looks on WhatsApp"
+                onClick={() => setPreviewId((id) => (id === t.id ? null : t.id))}
+              >
+                <span className="cursor-pointer font-mono text-sm text-fg">{t.name}</span>
                 <span className={clsx('flex items-center gap-1 rounded-md px-2 py-0.5 text-xs', STATUS_STYLE[t.status])}>
                   <Icon size={12} />
                   {t.status}
@@ -504,6 +518,28 @@ export default function BroadcastTemplatesPanel({
                   {t.body_text || t.bodyPreview || '—'}
                 </p>
               </div>
+
+              {/* Click the name to see it the way a parent will: the same
+                  chat bubble Meta shows, with the variables filled in from
+                  this template's mapping rather than left as {{1}}. */}
+              {previewId === t.id &&
+                (() => {
+                  const body = t.body_text || t.bodyPreview || ''
+                  const tokens = extractVariableTokens(body)
+                  const filled = renderBody(body, sampleValues(tokens, normalizeVariableMap(t.variable_map)), tokens)
+                  const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                  return (
+                    <div className="mt-3">
+                      <p className="mb-1 text-xs font-medium text-muted">On WhatsApp</p>
+                      <div className="rounded-md bg-[#efe7dd] p-4">
+                        <div className="max-w-sm rounded-lg rounded-tl-none bg-white px-3 py-2 shadow-sm">
+                          <p className="whitespace-pre-wrap break-words text-sm text-[#111b21]">{filled}</p>
+                          <p className="mt-1 text-right text-[10px] text-[#667781]">{time}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               {extractVariableTokens(t.body_text || t.bodyPreview || '').length > 0 && (
                 <div className="mt-2 text-xs">
                   <span className="font-medium text-muted">Variables: </span>
