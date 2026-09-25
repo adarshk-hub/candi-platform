@@ -13,8 +13,7 @@ import { Check } from 'lucide-react'
 export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
   const [schoolEmail, setSchoolEmail] = useState('')
   const [fromName, setFromName] = useState('')
-  // Set by the client admin from the Broadcast page when they want email
-  // broadcasts turned on.
+  // Whether email broadcasts have been asked for by this institute.
   const [requested, setRequested] = useState(false)
   const [smtpHost, setSmtpHost] = useState('')
   const [smtpPort, setSmtpPort] = useState('')
@@ -106,10 +105,8 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
         , not your regular password.
       </p>
 
-      {/* Always shown, whichever way it is set — no banner at all would
-          leave the agency guessing whether the institute had asked or the
-          state simply hadn't loaded. The agency can tick it too, for a
-          school that asked over the phone. */}
+      {/* Whether this institute wants email broadcasts. Shown either way,
+          so the state is never a guess. */}
       <label
         className={`mb-4 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
           requested ? 'border-amber-500/40 bg-amber-500/10 text-amber-500' : 'border-border bg-card2 text-muted2'
@@ -135,8 +132,8 @@ export default function EmailSettingsPanel({ clientId }: { clientId: string }) {
         />
         <span>
           {requested
-            ? 'This institute has asked for email broadcasts. Fill in the mailbox below to switch the channel on for them.'
-            : 'Email broadcasts not requested by this institute. They can ask from the Broadcast page, or tick this if they asked another way.'}
+            ? 'Email broadcast requested for this institute. Fill in the mailbox below to switch the channel on for them.'
+            : 'Email broadcast not requested for this institute.'}
         </span>
       </label>
 
