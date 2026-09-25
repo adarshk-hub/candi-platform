@@ -30,9 +30,10 @@ export const DEFAULT_COUNSELLOR_PAGES = ['inbox', 'follow_ups', 'calendar', 'lea
 // management no matter what boxes get ticked on a counsellor's login.
 // Dashboard is deliberately not in here: it's ordinary role-gated content
 // that an institute can choose to open up to a counsellor.
-// Writing messages and changing the schedule spends the client's wallet
-// when they go out, so it stays with management, like Broadcasts.
-const ADMIN_ONLY_PAGES = ['performance', 'templates']
+// WhatsApp Templates is not in here: Settings > Counsellors offers it as a
+// tick box per login, and a page that can be granted there must not be
+// blocked outright — that is what made the box do nothing.
+const ADMIN_ONLY_PAGES = ['performance']
 
 // The mirror image: pages that only make sense for the people doing the
 // day-to-day work. My Day is a personal worklog — an admin has no leads of
