@@ -360,4 +360,4 @@ export async function getBroadcastDetail(broadcastId: string, clientId: string) 
   )
 
   return { broadcast, recipients }
-}s
+}
