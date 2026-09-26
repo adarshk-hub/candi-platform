@@ -1,6 +1,7 @@
 // path: lib/visitReminders.ts
 import { query, queryAsClient, centralQuery } from './db'
 import { sendOperationalTemplate } from './metaWhatsapp'
+import { sendDueBookingRemindersForClient } from './counsellorAlerts'
 import { sendEmail, SmtpConfig } from './email'
 import { renderEmailTemplate, VISIT_REMINDER_48H_KEY, VISIT_REMINDER_24H_KEY } from './emailTemplates'
 
@@ -101,6 +102,9 @@ export async function sendDueVisitReminders(): Promise<ReminderResult[]> {
   for (const client of clients) {
     try {
       all.push(...(await sendDueVisitRemindersForClient(client.id)))
+      // Counsellors get their own reminder an hour before a call or visit
+      // (lib/counsellorAlerts), on this same schedule.
+      await sendDueBookingRemindersForClient(client.id)
     } catch (err) {
       // One institute's failure must not stop the others.
       console.error(`[visit-reminders] client ${client.id} failed:`, err)
