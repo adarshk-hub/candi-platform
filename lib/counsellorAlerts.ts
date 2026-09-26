@@ -285,3 +285,110 @@ export async function notifyBooking(params: {
     `A ${kind} has been booked with ${name} for ${when}. Open Candi Connect for the details.`
   )
 }
+
+// --- Booking reminders -----------------------------------------------
+// A counsellor is told about a booking an hour before it happens, not when
+// it is made — a visit booked three weeks out is no use as an alert today.
+// Two columns on events track this: when the reminder went out, and the
+// booking time it was sent for, so moving a booking re-arms the reminder
+// for the new time. Added on demand, as each school is its own schema.
+const reminderColumnsReady = new Map<string, boolean>()
+
+async function ensureReminderColumns(clientId: string): Promise<boolean> {
+  try {
+    const [row] = await db(clientId)<{ schema: string; present: boolean }>(
+      `SELECT current_schema() AS schema,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'events' AND column_name = 'counsellor_reminder_sent_at'
+              ) AS present`
+    )
+    const key = row?.schema || clientId
+    if (reminderColumnsReady.get(key)) return true
+    if (!row?.present) {
+      await db(clientId)(`ALTER TABLE events ADD COLUMN IF NOT EXISTS counsellor_reminder_sent_at TIMESTAMP`)
+      await db(clientId)(`ALTER TABLE events ADD COLUMN IF NOT EXISTS counsellor_reminder_for TIMESTAMP`)
+    }
+    reminderColumnsReady.set(key, true)
+    return true
+  } catch (err) {
+    console.error('[counsellorAlerts] could not add reminder columns:', err)
+    return false
+  }
+}
+
+// Combines a date column and an optional time column into one instant,
+// read as IST — the same convention the parent-facing visit reminders use.
+function bookingDateTime(date: string, time: string | null): Date {
+  const day = new Date(date).toISOString().slice(0, 10)
+  return new Date(`${day}T${(time || '09:00').slice(0, 5)}:00+05:30`)
+}
+
+// Sends the hour-before reminder for one institute. Called by the visit
+// reminder cron, so it runs on the same schedule.
+export async function sendDueBookingRemindersForClient(clientId: string): Promise<number> {
+  if (!(await ensureReminderColumns(clientId))) return 0
+
+  const rows = await db(clientId)<{
+    id: string
+    event_type: string
+    event_date: string
+    event_time: string | null
+    counsellor_reminder_sent_at: string | null
+    counsellor_reminder_for: string | null
+    full_name: string | null
+    assigned_counsellor_id: string | null
+  }>(
+    // Cancelled bookings are excluded by the status filter, so a cancelled
+    // one is never reminded about.
+    `SELECT e.id, e.event_type, e.event_date, e.event_time,
+            e.counsellor_reminder_sent_at, e.counsellor_reminder_for,
+            l.full_name, l.assigned_counsellor_id
+     FROM events e
+     JOIN leads l ON l.id = e.lead_id
+     WHERE e.event_type IN ('session_booked', 'call_booked')
+       AND e.status = 'scheduled'
+       AND e.event_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '1 day'`
+  )
+
+  const now = Date.now()
+  let sent = 0
+
+  for (const row of rows) {
+    const at = bookingDateTime(row.event_date, row.event_time)
+    const when = at.getTime()
+
+    // Already reminded for this exact time — nothing to do. A booking moved
+    // to a different time clears this test and is reminded about again.
+    const remindedFor = row.counsellor_reminder_for ? new Date(row.counsellor_reminder_for).getTime() : null
+    if (row.counsellor_reminder_sent_at && remindedFor === when) continue
+
+    // An hour before — or straight away for a booking made inside that hour,
+    // which would otherwise never get a reminder at all. Nothing is sent
+    // once the booking time has passed.
+    if (now < when - 60 * 60 * 1000) continue
+    if (now > when) continue
+
+    await notifyBooking({
+      clientId,
+      assignedCounsellorId: row.assigned_counsellor_id,
+      leadName: row.full_name,
+      kind: row.event_type === 'call_booked' ? 'call' : 'visit',
+      when: at.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Kolkata',
+      }),
+    })
+
+    await db(clientId)(
+      `UPDATE events SET counsellor_reminder_sent_at = now(), counsellor_reminder_for = $2 WHERE id = $1`,
+      [row.id, at.toISOString()]
+    )
+    sent += 1
+  }
+
+  return sent
+}
