@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { assertLeadAccess } from '@/lib/leadAccess'
-import { notifyBooking } from '@/lib/counsellorAlerts'
 import { handleWriteError } from '@/lib/apiError'
 import { AUTO_CANCEL_PAST_SQL } from '@/lib/bookingWindow'
 
@@ -48,20 +47,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
        VALUES ($1, 'system', 'Visit Scheduled', $2, $3)`,
       [params.id, `Campus visit booked for ${eventDate} at ${eventTime}.`, session!.id]
     )
-
-    // WhatsApp alert to the counsellor who owns this lead. Best-effort —
-    // a messaging failure must never undo a booking that is already saved.
-    try {
-      await notifyBooking({
-        clientId: access.lead.client_id,
-        assignedCounsellorId: access.lead.assigned_counsellor_id || null,
-        leadName: access.lead.full_name,
-        kind: 'visit',
-        when: [eventDate, eventTime].filter(Boolean).join(' at '),
-      })
-    } catch (err) {
-      console.error('[visits] counsellor alert failed:', err)
-    }
 
     return NextResponse.json(rows[0])
   } catch (err: any) {
