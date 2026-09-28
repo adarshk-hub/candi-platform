@@ -9,6 +9,7 @@ import { normalizePhone } from '@/lib/leadIntake'
 import { resolveAssignee } from '@/lib/leadAssignment'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 import { notifyNewLead } from '@/lib/counsellorAlerts'
+import { rememberDeletedLeads, forgetDeletedLead } from '@/lib/deletedLeads'
 import { createNotification } from '@/lib/notifications'
 
 function splitParam(v: string | null): string[] {
@@ -96,6 +97,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Adding a number by hand means it is wanted again, so any tombstone
+    // from an earlier deletion is cleared.
+    if (clientId && whatsappNumber) {
+      await forgetDeletedLead(clientId, String(whatsappNumber).replace(/\D/g, ''))
+    }
     const rows = await query(
       `INSERT INTO leads (
         client_id, full_name, child_name, whatsapp_number, second_phone, email,
@@ -303,8 +309,8 @@ export async function DELETE(req: NextRequest) {
   // id here that doesn't resolve is either a stale row or belongs to
   // someone else's institute entirely — either way it's simply skipped
   // rather than erroring the whole batch.
-  const rows = await query<{ id: string; assigned_counsellor_id: string | null }>(
-    `SELECT id, assigned_counsellor_id FROM leads WHERE id = ANY($1)`,
+  const rows = await query<{ id: string; assigned_counsellor_id: string | null; normalized_phone: string | null; client_id: string }>(
+    `SELECT id, assigned_counsellor_id, normalized_phone, client_id FROM leads WHERE id = ANY($1)`,
     [ids]
   )
 
@@ -322,6 +328,15 @@ export async function DELETE(req: NextRequest) {
         `DELETE FROM leads WHERE id = ANY($1)`,
         [deletable.map((r) => r.id)]
       )
+      // Remember the numbers, or the hourly Meta backfill re-imports these
+      // same leads within the hour and they appear to come back.
+      const scope = deletable[0]?.client_id || session.clientId
+      if (scope) {
+        await rememberDeletedLeads(
+          scope,
+          deletable.map((r) => r.normalized_phone || '').filter(Boolean)
+        )
+      }
     }
   } catch (err: any) {
     // Naming the blocking table turns "Could not delete the selected leads."
