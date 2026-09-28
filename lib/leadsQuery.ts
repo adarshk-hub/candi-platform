@@ -58,8 +58,10 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
     sqlParams.push(session.clientId)
     where.push(`l.client_id = $${sqlParams.length}`)
   } else if (session.role === 'client_counsellor') {
-    sqlParams.push(session.id)
-    where.push(`l.assigned_counsellor_id = $${sqlParams.length}`)
+    // Counsellors see every lead at their own institute, not only the ones
+    // assigned to them — they cover for each other and need the whole list.
+    sqlParams.push(session.clientId)
+    where.push(`l.client_id = $${sqlParams.length}`)
   }
 
   if (search) {
