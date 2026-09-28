@@ -3,6 +3,7 @@
 import { queryAsClient } from './db'
 import { fetchMetaObjectName } from './metaAdsSpend'
 import { notifyNewLead } from './counsellorAlerts'
+import { wasLeadDeleted } from './deletedLeads'
 import { createNotification } from './notifications'
 import { resolveAssignee } from './leadAssignment'
 
@@ -44,6 +45,9 @@ export interface IntakeResult {
   lead: any
   created: boolean
   duplicate: boolean
+  // Set when the number was deleted in the CRM: nothing was created, on
+  // purpose. lead is null in that case.
+  skippedDeleted?: boolean
 }
 
 // Shared entry point for every inbound channel (Meta webhook, landing-page
@@ -70,6 +74,12 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
      ORDER BY created_at ASC LIMIT 1`,
     [input.clientId, normalized]
   )
+
+  // Deleted in the CRM means "not wanted" — the backfill re-offering the
+  // same lead an hour later must not undo that.
+  if (!candidates[0] && (await wasLeadDeleted(input.clientId, normalized))) {
+    return { lead: null as any, created: false, duplicate: false, skippedDeleted: true }
+  }
 
   if (candidates[0]) {
     const existing = candidates[0]
