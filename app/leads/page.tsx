@@ -1,3 +1,4 @@
+// path: app/leads/page.tsx
 import { redirect } from 'next/navigation'
 import { getServerSession } from '@/lib/serverAuth'
 import { fetchLeadsPage } from '@/lib/leadsQuery'
@@ -32,6 +33,7 @@ export default async function LeadsPage({
     stage: [],
     source: [],
     grade: [],
+    counsellor: [],
   })
 
   return <LeadsPageClient initial={initial} />
