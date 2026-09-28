@@ -33,6 +33,7 @@ export interface LeadsPageParams {
   stage: string[]
   source: string[]
   grade: string[]
+  counsellor: string[]
 }
 
 export interface LeadsPageResult {
@@ -49,7 +50,15 @@ export interface LeadsPageResult {
 // then wait on a separate browser round trip just to show what it already
 // could have rendered from the start).
 export async function fetchLeadsPage(session: SessionUser, params: LeadsPageParams): Promise<LeadsPageResult> {
-  const { page, search, tab, stage: stageFilter, source: sourceFilter, grade: gradeFilter } = params
+  const {
+    page,
+    search,
+    tab,
+    stage: stageFilter,
+    source: sourceFilter,
+    grade: gradeFilter,
+    counsellor: counsellorFilter = [],
+  } = params
 
   const where: string[] = []
   const sqlParams: any[] = []
@@ -78,6 +87,11 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
     sqlParams.push(sourceFilter)
     where.push(`l.source = ANY($${sqlParams.length})`)
   }
+  if (counsellorFilter.length > 0) {
+    sqlParams.push(counsellorFilter)
+    where.push(`l.assigned_counsellor_id = ANY($${sqlParams.length}::uuid[])`)
+  }
+
   if (gradeFilter.length > 0) {
     sqlParams.push(gradeFilter)
     where.push(`l.grade = ANY($${sqlParams.length})`)
