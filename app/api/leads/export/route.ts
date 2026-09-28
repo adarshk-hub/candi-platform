@@ -30,8 +30,9 @@ export async function GET(req: NextRequest) {
     params.push(session.clientId)
     where.push(`l.client_id = $${params.length}`)
   } else if (session.role === 'client_counsellor') {
-    params.push(session.id)
-    where.push(`l.assigned_counsellor_id = $${params.length}`)
+    // Same scope as the leads list: the whole institute, not just their own.
+    params.push(session.clientId)
+    where.push(`l.client_id = $${params.length}`)
   }
 
   if (idsParam.length > 0) {
