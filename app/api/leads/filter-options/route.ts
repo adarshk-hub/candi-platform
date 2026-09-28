@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   where.push(leadDateRangeSql('l'))
   const whereSql = `WHERE ${where.join(' AND ')}`
 
-  const [stages, sources, grades] = await Promise.all([
+  const [stages, sources, grades, counsellors] = await Promise.all([
     query<{ key: string; label: string }>(
       `SELECT key, label FROM pipeline_stages WHERE client_id = $1 AND is_active = true ORDER BY sort_order ASC`,
       [session.clientId]
@@ -39,11 +39,21 @@ export async function GET(req: NextRequest) {
       `SELECT DISTINCT l.grade FROM leads l ${whereSql} AND l.grade IS NOT NULL AND l.grade <> '' ORDER BY l.grade ASC`,
       params
     ),
+    // Only counsellors who actually hold leads here, so the panel never
+    // offers a name that returns nothing.
+    query<{ id: string; full_name: string }>(
+      `SELECT DISTINCT u.id, u.full_name
+       FROM leads l JOIN users u ON u.id = l.assigned_counsellor_id
+       ${whereSql}
+       ORDER BY u.full_name ASC`,
+      params
+    ).catch(() => []),
   ])
 
   return NextResponse.json({
     stages,
     sources: sources.map((s) => s.source).filter(Boolean),
     grades: grades.map((g) => g.grade).filter(Boolean),
+    counsellors: counsellors.map((c) => ({ id: c.id, name: c.full_name || 'Unnamed' })),
   })
 }
