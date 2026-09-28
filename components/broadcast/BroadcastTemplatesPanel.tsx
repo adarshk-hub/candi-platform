@@ -471,14 +471,18 @@ export default function BroadcastTemplatesPanel({
         {visible.map((t) => {
           const Icon = STATUS_ICON[t.status] || Clock
           return (
-            <div key={t.id} className="border-b border-border px-4 py-3 last:border-0">
-              <div
-                className="flex flex-wrap items-center gap-3"
-                role="button"
-                title="Show how this looks on WhatsApp"
-                onClick={() => setPreviewId((id) => (id === t.id ? null : t.id))}
-              >
-                <span className="cursor-pointer font-mono text-sm text-fg">{t.name}</span>
+            // Clicking anywhere on the row shows the WhatsApp preview. The
+            // controls inside it (Edit, Delete) stop the click, so they
+            // still do their own thing.
+            <div
+              key={t.id}
+              role="button"
+              title="Click to see how this looks on WhatsApp"
+              onClick={() => setPreviewId((id) => (id === t.id ? null : t.id))}
+              className="cursor-pointer border-b border-border px-4 py-3 last:border-0 hover:bg-card2"
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-mono text-sm text-fg">{t.name}</span>
                 <span className={clsx('flex items-center gap-1 rounded-md px-2 py-0.5 text-xs', STATUS_STYLE[t.status])}>
                   <Icon size={12} />
                   {t.status}
@@ -571,13 +575,22 @@ export default function BroadcastTemplatesPanel({
                       />
                       <div className="mt-2 flex items-center gap-3">
                         <button
-                          onClick={() => saveVariableMap(t.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            saveVariableMap(t.id)
+                          }}
                           disabled={savingVars}
                           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500 disabled:opacity-50"
                         >
                           {savingVars ? 'Saving…' : 'Save'}
                         </button>
-                        <button onClick={() => setEditingVarsId(null)} className="text-xs text-muted2 hover:text-fg">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingVarsId(null)
+                          }}
+                          className="text-xs text-muted2 hover:text-fg"
+                        >
                           Cancel
                         </button>
                         {varsError && <span className="text-xs text-red-400">{varsError}</span>}
@@ -599,7 +612,8 @@ export default function BroadcastTemplatesPanel({
                         )
                       })}
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation()
                           setVarsDraft(normalizeVariableMap(t.variable_map))
                           setEditingVarsId(t.id)
                         }}
