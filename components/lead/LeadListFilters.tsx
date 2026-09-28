@@ -1,3 +1,4 @@
+// path: components/lead/LeadListFilters.tsx
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -9,14 +10,17 @@ export interface LeadListFilterState {
   stage: string[]
   source: string[]
   grade: string[]
+  // Counsellor ids, so a rename doesn't break a saved filter.
+  counsellor: string[]
 }
 
-export const EMPTY_LEAD_FILTERS: LeadListFilterState = { stage: [], source: [], grade: [] }
+export const EMPTY_LEAD_FILTERS: LeadListFilterState = { stage: [], source: [], grade: [], counsellor: [] }
 
 interface FilterOptions {
   stages: { key: string; label: string }[]
   sources: string[]
   grades: string[]
+  counsellors: { id: string; name: string }[]
 }
 
 function Section({
@@ -62,7 +66,7 @@ export default function LeadListFilters({
   onChange: (v: LeadListFilterState) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [options, setOptions] = useState<FilterOptions>({ stages: [], sources: [], grades: [] })
+  const [options, setOptions] = useState<FilterOptions>({ stages: [], sources: [], grades: [], counsellors: [] })
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -80,7 +84,7 @@ export default function LeadListFilters({
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [open])
 
-  const activeCount = value.stage.length + value.source.length + value.grade.length
+  const activeCount = value.stage.length + value.source.length + value.grade.length + (value.counsellor?.length || 0)
 
   function toggle(key: keyof LeadListFilterState, v: string) {
     const current = value[key]
@@ -116,12 +120,21 @@ export default function LeadListFilters({
             onToggle={(v) => toggle('source', v)}
           />
           <Section
+            title="Counsellor"
+            options={options.counsellors.map((c) => ({ value: c.id, label: c.name }))}
+            selected={value.counsellor || []}
+            onToggle={(v) => toggle('counsellor', v)}
+          />
+          <Section
             title="Grade"
             options={options.grades.map((g) => ({ value: g, label: g }))}
             selected={value.grade}
             onToggle={(v) => toggle('grade', v)}
           />
-          {options.stages.length === 0 && options.sources.length === 0 && options.grades.length === 0 && (
+          {options.stages.length === 0 &&
+            options.sources.length === 0 &&
+            options.grades.length === 0 &&
+            options.counsellors.length === 0 && (
             <p className="px-3 py-4 text-sm text-muted">No filter options yet.</p>
           )}
           {activeCount > 0 && (
