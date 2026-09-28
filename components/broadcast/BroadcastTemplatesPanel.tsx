@@ -1,4 +1,3 @@
-//Re
 // path: components/broadcast/BroadcastTemplatesPanel.tsx
 'use client'
 
@@ -239,8 +238,18 @@ export default function BroadcastTemplatesPanel({
       const res = await fetch(url, { method: 'DELETE' })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(b.error || 'Could not remove that template.')
+        // Shown as an alert as well as inline: the inline line sits at the
+        // top of the page, far from the row that was clicked, so a failed
+        // delete looked like nothing happening at all.
+        const message = b.error || 'Could not remove that template.'
+        setError(message)
+        window.alert(message)
         return
+      }
+      if (Array.isArray(b.clearedSteps) && b.clearedSteps.length > 0) {
+        window.alert(
+          `Deleted. It was also in use on the message schedule, so ${b.clearedSteps.length} step(s) have been cleared.`
+        )
       }
       load()
     } finally {
