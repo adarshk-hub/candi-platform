@@ -59,7 +59,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { clientId:
   // remove that template." — the actual reason is what is needed.
   try {
     const [config] = await query<{ waba_id: string; access_token: string }>(
-      'SELECT waba_id, access_token FROM wa_configs WHERE client_id = $1',
+      'SELECT waba_id, access_token FROM wa_client_config WHERE client_id = $1',
       [params.clientId]
     )
 
