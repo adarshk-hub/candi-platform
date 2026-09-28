@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     stage: splitParam(sp.get('stage')),
     source: splitParam(sp.get('source')),
     grade: splitParam(sp.get('grade')),
+    counsellor: splitParam(sp.get('counsellor')),
   })
 
   return NextResponse.json(result)
