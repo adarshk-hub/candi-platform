@@ -1,3 +1,4 @@
+// path: lib/metaWhatsapp.ts
 import crypto from 'crypto'
 import { query } from './db'
 import { decrypt } from './waEncryption'
@@ -533,5 +534,30 @@ export async function uploadMediaForSending(params: {
     return { ok: true, handle: data.id }
   } catch (err: any) {
     return { ok: false, error: err.message || 'Request to Meta failed' }
+  }
+}
+
+// Removes a template at Meta. Deleting by name removes every language
+// version of it, which matches how the CRM stores them (one row per name).
+export async function deleteTemplateAtMeta(params: {
+  wabaId: string
+  accessToken: string
+  name: string
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const proof = appSecretProof(params.accessToken)
+    const res = await fetch(
+      `${GRAPH_API_URL}/${params.wabaId}/message_templates?name=${encodeURIComponent(params.name)}${
+        proof ? `&appsecret_proof=${proof}` : ''
+      }`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${params.accessToken}` } }
+    )
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { ok: false, error: data?.error?.message || `Meta returned ${res.status}` }
+    }
+    return { ok: true }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Could not reach Meta' }
   }
 }
