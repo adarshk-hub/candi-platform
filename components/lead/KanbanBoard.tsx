@@ -185,6 +185,7 @@ export default function KanbanBoard({
     }
     if (filters.source.length > 0 && !filters.source.includes(l.source)) return false
     if (filters.grade.length > 0 && !filters.grade.includes(l.grade || '')) return false
+    if (filters.counsellor?.length > 0 && !filters.counsellor.includes(l.assigned_counsellor_id || '')) return false
     return true
   })
 
