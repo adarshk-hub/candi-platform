@@ -16,8 +16,11 @@ export async function GET(req: NextRequest) {
   const where: string[] = []
   const params: any[] = []
   if (session.role === 'client_counsellor') {
-    params.push(session.id)
-    where.push(`l.assigned_counsellor_id = $${params.length}`)
+    // Counsellors see every lead at their institute, so the filter options
+    // must cover the institute too — scoping these to their own leads left
+    // the Counsellor list showing only themselves.
+    params.push(session.clientId)
+    where.push(`l.client_id = $${params.length}`)
   }
   // The Source and Grade dropdowns must only offer values that exist on
   // visible leads — otherwise the filter panel advertises a source whose
