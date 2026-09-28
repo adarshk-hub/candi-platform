@@ -583,7 +583,10 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      {/* Sticky: with a few hundred leads, Delete and Assign act on rows
+          far down the page, and scrolling back to the top to reach them is
+          the whole job. */}
+      <div className="sticky top-0 z-20 -mx-6 mb-6 flex items-center justify-between border-b border-border bg-bg px-6 py-3">
         <div>
           <h1 className="text-2xl font-bold text-fg">{TAB_TITLE[tab] || 'All Leads'}</h1>
           <p className="text-muted2">Total Leads {total}</p>
@@ -668,7 +671,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
         <KanbanBoard search={search} filters={filters} />
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between text-sm text-muted2">
+          <div className="sticky top-[76px] z-10 -mx-6 mb-3 flex items-center justify-between bg-bg px-6 py-2 text-sm text-muted2">
             <div className="flex items-center gap-3">
               <span>
                 Showing {from} to {to} of {total} leads
