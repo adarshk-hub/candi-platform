@@ -9,7 +9,14 @@ import { hasVariableMapColumn, normalizeVariableMap, saveVariableMap, variableMa
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Reading the list is open to anyone signed in at that institute —
+  // counsellors need to see which templates are approved before they can
+  // send one. Writing still goes through canCustomize below.
+  const canRead =
+    !!session &&
+    (canCustomize(session, params.clientId) ||
+      (!!session.clientId && session.clientId === params.clientId))
+  if (!canRead) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const hasColumn = await hasVariableMapColumn()
   const rows = await query<any>(
@@ -47,66 +54,94 @@ export async function DELETE(req: NextRequest, { params }: { params: { clientId:
   const id = req.nextUrl.searchParams.get('id')
   const all = req.nextUrl.searchParams.get('all') === 'rejected'
 
-  // Meta holds the real template, so anything deleted here is deleted there
-  // too — otherwise it reappears the next time "Check approval status"
-  // imports what Meta still has.
-  const [config] = await query<{ waba_id: string; access_token: string }>(
-    'SELECT waba_id, access_token FROM wa_configs WHERE client_id = $1',
-    [params.clientId]
-  )
-
-  async function removeAtMeta(name: string): Promise<string | null> {
-    if (!config?.waba_id || !config?.access_token) return null
-    const res = await deleteTemplateAtMeta({
-      wabaId: config.waba_id,
-      accessToken: decrypt(config.access_token),
-      name,
-    })
-    return res.ok ? null : res.error || 'Meta refused the delete'
-  }
-
-  if (all) {
-    const rows = await query<{ id: string; name: string }>(
-      `SELECT id, name FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`,
+  // Everything here is wrapped: an unhandled throw returns a 500 with no
+  // JSON body, which the panel could only report as the generic "Could not
+  // remove that template." — the actual reason is what is needed.
+  try {
+    const [config] = await query<{ waba_id: string; access_token: string }>(
+      'SELECT waba_id, access_token FROM wa_configs WHERE client_id = $1',
       [params.clientId]
     )
-    for (const row of rows) await removeAtMeta(row.name)
-    await query(`DELETE FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`, [params.clientId])
-    return NextResponse.json({ deleted: rows.length })
+
+    // Meta holds the real template, so it is deleted there too — otherwise
+    // "Check approval status" re-imports it and it appears to come back.
+    // A template Meta doesn't have (never submitted, or already deleted
+    // there) must still be removable here, so that case is not an error.
+    async function removeAtMeta(name: string): Promise<string | null> {
+      if (!config?.waba_id || !config?.access_token) return null
+      try {
+        const res = await deleteTemplateAtMeta({
+          wabaId: config.waba_id,
+          accessToken: decrypt(config.access_token),
+          name,
+        })
+        if (res.ok) return null
+        const reason = res.error || ''
+        // 100 / "does not exist" — nothing to delete at Meta's end.
+        if (/does not exist|not found|Unknown/i.test(reason)) return null
+        return reason
+      } catch (err: any) {
+        return err?.message || 'Could not reach Meta'
+      }
+    }
+
+    // A template wired into the message schedule is unhooked at the same
+    // time, or that step would point at something that no longer exists.
+    async function clearSchedule(name: string): Promise<number[]> {
+      try {
+        const rows = await query<{ day_number: number }>(
+          'DELETE FROM wa_sequence_templates WHERE client_id = $1 AND template_name = $2 RETURNING day_number',
+          [params.clientId, name]
+        )
+        return rows.map((r) => r.day_number)
+      } catch {
+        return []
+      }
+    }
+
+    if (all) {
+      const rows = await query<{ id: string; name: string }>(
+        `SELECT id, name FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`,
+        [params.clientId]
+      )
+      for (const row of rows) {
+        await removeAtMeta(row.name)
+        await clearSchedule(row.name)
+      }
+      await query(`DELETE FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`, [params.clientId])
+      return NextResponse.json({ deleted: rows.length })
+    }
+
+    if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
+
+    const [existing] = await query<{ id: string; name: string }>(
+      'SELECT id, name FROM wa_templates WHERE id = $1 AND client_id = $2',
+      [id, params.clientId]
+    )
+    if (!existing) return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+
+    const metaError = await removeAtMeta(existing.name)
+    if (metaError) {
+      return NextResponse.json({ error: `Meta would not delete this template: ${metaError}` }, { status: 400 })
+    }
+
+    const clearedSteps = await clearSchedule(existing.name)
+    const deleted = await query<{ id: string }>(
+      'DELETE FROM wa_templates WHERE id = $1 AND client_id = $2 RETURNING id',
+      [id, params.clientId]
+    )
+    if (!deleted[0]) {
+      return NextResponse.json({ error: 'The template row could not be deleted.' }, { status: 500 })
+    }
+
+    return NextResponse.json({ deleted: 1, clearedSteps })
+  } catch (err: any) {
+    console.error('[templates:delete] failed:', err)
+    return NextResponse.json(
+      { error: err?.message ? `Delete failed: ${err.message}` : 'Delete failed for an unknown reason.' },
+      { status: 500 }
+    )
   }
-
-  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
-
-  const [existing] = await query<{ id: string; name: string }>(
-    'SELECT id, name FROM wa_templates WHERE id = $1 AND client_id = $2',
-    [id, params.clientId]
-  )
-  if (!existing) return NextResponse.json({ error: 'Template not found' }, { status: 404 })
-
-  // A template still wired into a sequence step would fail to send once it
-  // is gone, so that is said plainly rather than silently allowed.
-  const inUse = await query<{ day_number: number }>(
-    'SELECT day_number FROM wa_sequence_templates WHERE client_id = $1 AND template_name = $2',
-    [params.clientId, existing.name]
-  )
-
-  const metaError = await removeAtMeta(existing.name)
-  if (metaError) {
-    return NextResponse.json({ error: `Meta would not delete this template: ${metaError}` }, { status: 400 })
-  }
-
-  await query('DELETE FROM wa_templates WHERE id = $1 AND client_id = $2', [id, params.clientId])
-  if (inUse.length > 0) {
-    await query('DELETE FROM wa_sequence_templates WHERE client_id = $1 AND template_name = $2', [
-      params.clientId,
-      existing.name,
-    ])
-  }
-
-  return NextResponse.json({
-    deleted: 1,
-    clearedSteps: inUse.map((r) => r.day_number),
-  })
 }
 
 // Updates what each {{n}} variable in a template is filled with. The mapping
