@@ -49,7 +49,14 @@ export async function GET(req: NextRequest, { params }: { params: { clientId: st
 // handled on their side.
 export async function DELETE(req: NextRequest, { params }: { params: { clientId: string } }) {
   const session = getSession(req)
-  if (!canCustomize(session, params.clientId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Anyone signed in at that institute may delete its templates —
+  // counsellors and client admins as well as the agency. The institute
+  // still has to match, so one school can never delete another's.
+  const canDelete =
+    !!session &&
+    (canCustomize(session, params.clientId) ||
+      (!!session.clientId && session.clientId === params.clientId))
+  if (!canDelete) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const id = req.nextUrl.searchParams.get('id')
   const all = req.nextUrl.searchParams.get('all') === 'rejected'
