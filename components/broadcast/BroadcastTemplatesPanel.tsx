@@ -485,6 +485,24 @@ export default function BroadcastTemplatesPanel({
                 </span>
                 <span className="text-xs uppercase tracking-wide text-muted">{t.category || '—'}</span>
                 <span className="text-xs text-muted">{t.language}</span>
+                {/* Deleting removes it at Meta too, so anything still
+                    pointing at it stops sending — hence the confirmation. */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (
+                      window.confirm(
+                        `Delete "${t.name}"? It is removed from Meta too, and anything still using it will stop sending.`
+                      )
+                    ) {
+                      removeTemplate(t.id)
+                    }
+                  }}
+                  disabled={!!busy}
+                  className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  Delete
+                </button>
                 {t.submitted_at && (
                   <span className="ml-auto text-xs text-muted">
                     Submitted {new Date(t.submitted_at).toLocaleDateString('en-IN')}
