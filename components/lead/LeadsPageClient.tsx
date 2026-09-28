@@ -421,6 +421,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
     if (filters.stage.length) params.set('stage', filters.stage.join(','))
     if (filters.source.length) params.set('source', filters.source.join(','))
     if (filters.grade.length) params.set('grade', filters.grade.join(','))
+    if (filters.counsellor?.length) params.set('counsellor', filters.counsellor.join(','))
     return params
   }
 
