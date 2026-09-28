@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
+import { deleteTemplateAtMeta } from '@/lib/metaWhatsapp'
+import { decrypt } from '@/lib/waEncryption'
 import { hasVariableMapColumn, normalizeVariableMap, saveVariableMap, variableMapFromRow } from '@/lib/templateVariables'
 
 export async function GET(req: NextRequest, { params }: { params: { clientId: string } }) {
@@ -45,27 +47,66 @@ export async function DELETE(req: NextRequest, { params }: { params: { clientId:
   const id = req.nextUrl.searchParams.get('id')
   const all = req.nextUrl.searchParams.get('all') === 'rejected'
 
+  // Meta holds the real template, so anything deleted here is deleted there
+  // too — otherwise it reappears the next time "Check approval status"
+  // imports what Meta still has.
+  const [config] = await query<{ waba_id: string; access_token: string }>(
+    'SELECT waba_id, access_token FROM wa_configs WHERE client_id = $1',
+    [params.clientId]
+  )
+
+  async function removeAtMeta(name: string): Promise<string | null> {
+    if (!config?.waba_id || !config?.access_token) return null
+    const res = await deleteTemplateAtMeta({
+      wabaId: config.waba_id,
+      accessToken: decrypt(config.access_token),
+      name,
+    })
+    return res.ok ? null : res.error || 'Meta refused the delete'
+  }
+
   if (all) {
-    const rows = await query(
-      `DELETE FROM wa_templates WHERE client_id = $1 AND status = 'rejected' RETURNING id`,
+    const rows = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`,
       [params.clientId]
     )
+    for (const row of rows) await removeAtMeta(row.name)
+    await query(`DELETE FROM wa_templates WHERE client_id = $1 AND status = 'rejected'`, [params.clientId])
     return NextResponse.json({ deleted: rows.length })
   }
 
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
 
-  const rows = await query(
-    `DELETE FROM wa_templates WHERE id = $1 AND client_id = $2 AND status = 'rejected' RETURNING id`,
+  const [existing] = await query<{ id: string; name: string }>(
+    'SELECT id, name FROM wa_templates WHERE id = $1 AND client_id = $2',
     [id, params.clientId]
   )
-  if (!rows[0]) {
-    return NextResponse.json(
-      { error: 'Only rejected templates can be removed — an approved one may be in use by a sequence step.' },
-      { status: 400 }
-    )
+  if (!existing) return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+
+  // A template still wired into a sequence step would fail to send once it
+  // is gone, so that is said plainly rather than silently allowed.
+  const inUse = await query<{ day_number: number }>(
+    'SELECT day_number FROM wa_sequence_templates WHERE client_id = $1 AND template_name = $2',
+    [params.clientId, existing.name]
+  )
+
+  const metaError = await removeAtMeta(existing.name)
+  if (metaError) {
+    return NextResponse.json({ error: `Meta would not delete this template: ${metaError}` }, { status: 400 })
   }
-  return NextResponse.json({ deleted: 1 })
+
+  await query('DELETE FROM wa_templates WHERE id = $1 AND client_id = $2', [id, params.clientId])
+  if (inUse.length > 0) {
+    await query('DELETE FROM wa_sequence_templates WHERE client_id = $1 AND template_name = $2', [
+      params.clientId,
+      existing.name,
+    ])
+  }
+
+  return NextResponse.json({
+    deleted: 1,
+    clearedSteps: inUse.map((r) => r.day_number),
+  })
 }
 
 // Updates what each {{n}} variable in a template is filled with. The mapping
