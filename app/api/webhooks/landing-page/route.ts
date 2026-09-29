@@ -38,6 +38,8 @@ export async function POST(req: NextRequest) {
     whatsappNumber: body.phone,
     email: body.email || null,
     grade: body.grade || null,
+    // Where a form asks for the student's name separately.
+    childName: body.childName || body.studentName || null,
     serviceInterestedIn: body.serviceInterestedIn || body.program || null,
     source: 'website_contact_form',
     entryType: 'landing_page',
