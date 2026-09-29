@@ -20,6 +20,9 @@ export interface IntakeInput {
   whatsappNumber: string
   email?: string | null
   grade?: string | null
+  // The student's name, where a form collects it separately from the
+  // parent's — stored on the lead as child_name.
+  childName?: string | null
   source: string
   entryType: string
   campaignId?: string | null
@@ -98,10 +101,10 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
     const rows = await queryAsClient(
       input.clientId,
       `INSERT INTO leads (
-        client_id, campaign_id, full_name, whatsapp_number, email, grade,
+        client_id, campaign_id, full_name, whatsapp_number, email, grade, child_name,
         source, entry_type, external_ref, raw_payload, service_interested_in,
         fbclid, fbc, fbp, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::timestamp, now()))
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamp, now()))
       RETURNING *`,
       [
         input.clientId,
@@ -110,6 +113,7 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
         input.whatsappNumber,
         input.email || null,
         input.grade || null,
+        input.childName || null,
         input.source,
         input.entryType,
         input.externalRef || null,
