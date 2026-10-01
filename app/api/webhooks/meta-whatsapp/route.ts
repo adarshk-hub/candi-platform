@@ -1,3 +1,4 @@
+// path: app/api/webhooks/meta-whatsapp/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
@@ -231,10 +232,29 @@ async function handleStatusUpdate(clientId: string, status: any) {
     return { wamid, skipped: true, reason: `unrecognized status ${newStatus}` }
   }
 
+  // Meta sends the reason alongside a failed status (number not on
+  // WhatsApp, template paused, and so on). Without keeping it, the thread
+  // can only show a red icon on a message whose own text says "sent",
+  // which reads as a contradiction and sends people to Meta's dashboard
+  // for an answer that arrived here in the first place.
+  const failureReason =
+    newStatus === 'failed' && Array.isArray(status.errors) && status.errors.length > 0
+      ? [status.errors[0].title, status.errors[0].error_data?.details, status.errors[0].message]
+          .filter(Boolean)
+          .join(' — ')
+      : null
+
   const rows = await queryAsClient(
     clientId,
-    `UPDATE whatsapp_messages SET status = $1 WHERE wamid = $2 OR external_message_id = $2 RETURNING id, lead_id`,
-    [newStatus, wamid]
+    `UPDATE whatsapp_messages
+        SET status = $1,
+            body = CASE
+                     WHEN $3::text IS NULL THEN body
+                     ELSE regexp_replace(body, ' template sent\\.$', ' template failed: ') || $3::text
+                   END
+      WHERE wamid = $2 OR external_message_id = $2
+      RETURNING id, lead_id`,
+    [newStatus, wamid, failureReason]
   )
 
   await queryAsClient(
