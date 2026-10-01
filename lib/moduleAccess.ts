@@ -44,14 +44,21 @@ const ADMIN_ONLY_PAGES = ['performance']
 // (their own leads, scoped server-side) and Team Day into Performance.
 const COUNSELLOR_ONLY_PAGES: string[] = []
 
-const ADMIN_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin']
+// Counsellors now work at the same level as their institute's admin, so
+// they are in here too — Performance included.
+const ADMIN_ROLES: Role[] = ['agency_admin', 'agency_staff', 'client_admin', 'client_counsellor']
 
 export function canAccessPage(role: Role, allowedPages: string[] | null, pageKey: string): boolean {
-  if (ADMIN_ONLY_PAGES.includes(pageKey)) return ADMIN_ROLES.includes(role)
   if (COUNSELLOR_ONLY_PAGES.includes(pageKey) && role !== 'client_counsellor') return false
+  if (ADMIN_ONLY_PAGES.includes(pageKey)) return ADMIN_ROLES.includes(role)
   if (role !== 'client_counsellor') return true
-  const allowed = allowedPages && allowedPages.length > 0 ? allowedPages : DEFAULT_COUNSELLOR_PAGES
-  return allowed.includes(pageKey)
+
+  // Counsellors reach every page their institute's admin does. The
+  // per-login tick boxes in Settings > Counsellors still apply where an
+  // institute has set them, so a login can be narrowed deliberately — but
+  // an untouched login is no longer limited to the old four pages.
+  const allowed = allowedPages && allowedPages.length > 0 ? allowedPages : null
+  return allowed ? allowed.includes(pageKey) : true
 }
 
 // Maps a URL back to the page it belongs to. Prefix matching, because
