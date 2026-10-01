@@ -1,3 +1,4 @@
+// path: app/api/programs/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getSession } from '@/lib/auth'
@@ -14,8 +15,10 @@ export async function GET(req: NextRequest) {
     params.push(session.clientId)
     where.push(`client_id = $${params.length}`)
   } else if (session.role === 'client_counsellor') {
-    params.push(session.id)
-    where.push(`assigned_counsellor_id = $${params.length}`)
+    // Counsellors work at client-admin level, so they see their whole
+    // institute rather than only the leads assigned to them.
+    params.push(session.clientId)
+    where.push(`client_id = $${params.length}`)
   }
 
   const rows = await query<{ service_interested_in: string }>(
