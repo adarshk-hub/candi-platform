@@ -98,7 +98,7 @@ function StatusTicks({ status }: { status: string }) {
   // through Meta's dashboard for an answer the CRM already has.
   const label: Record<string, string> = {
     queued: 'Queued — not sent to WhatsApp yet',
-    failed: 'Failed — WhatsApp rejected it. The reason is in the message text.',
+    failed: 'Failed — WhatsApp could not deliver it. Usually the number is not on WhatsApp.',
     sent: 'Sent to WhatsApp, no delivery confirmation yet',
     delivered: 'Delivered to the phone',
     read: 'Read by the parent',
