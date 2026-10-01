@@ -5,7 +5,7 @@ import { query } from '@/lib/db'
 import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { handleWriteError } from '@/lib/apiError'
 import { fetchLeadsPage } from '@/lib/leadsQuery'
-import { normalizePhone } from '@/lib/leadIntake'
+import { normalizePhone, toDialNumber } from '@/lib/leadIntake'
 import { resolveAssignee } from '@/lib/leadAssignment'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 import { notifyNewLead } from '@/lib/counsellorAlerts'
@@ -115,7 +115,9 @@ export async function POST(req: NextRequest) {
         clientId,
         fullName,
         body.childName || null,
-        whatsappNumber,
+        // Saved ready to dial, so a number typed as 10 digits still
+        // reaches WhatsApp.
+        toDialNumber(String(whatsappNumber)),
         body.secondPhone || null,
         body.email || null,
         body.occupation || null,
