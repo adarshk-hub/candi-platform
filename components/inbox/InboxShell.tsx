@@ -92,11 +92,25 @@ function dayLabel(value: string): string {
 // in the table: the Meta webhook writes sent → delivered → read against each
 // row. Grey means it left, blue means it was opened.
 function StatusTicks({ status }: { status: string }) {
-  if (status === 'queued') return <Clock size={13} className="text-muted" />
-  if (status === 'failed') return <AlertCircle size={13} className="text-red-400" />
-  if (status === 'read' || status === 'replied') return <CheckCheck size={14} className="text-sky-500" />
-  if (status === 'delivered') return <CheckCheck size={14} className="text-muted" />
-  return <Check size={14} className="text-muted" />
+  // Every state says what it means on hover. Without this, an icon on a
+  // message reading "template sent." is unreadable: is it queued, sent but
+  // undelivered, or failed? That ambiguity is what sends people hunting
+  // through Meta's dashboard for an answer the CRM already has.
+  const label: Record<string, string> = {
+    queued: 'Queued — not sent to WhatsApp yet',
+    failed: 'Failed — WhatsApp rejected it. The reason is in the message text.',
+    sent: 'Sent to WhatsApp, no delivery confirmation yet',
+    delivered: 'Delivered to the phone',
+    read: 'Read by the parent',
+    replied: 'Replied to',
+  }
+  const title = label[status] || status
+
+  if (status === 'queued') return <Clock size={13} className="text-muted" aria-label={title}><title>{title}</title></Clock>
+  if (status === 'failed') return <AlertCircle size={13} className="text-red-400" aria-label={title}><title>{title}</title></AlertCircle>
+  if (status === 'read' || status === 'replied') return <CheckCheck size={14} className="text-sky-500" aria-label={title}><title>{title}</title></CheckCheck>
+  if (status === 'delivered') return <CheckCheck size={14} className="text-muted" aria-label={title}><title>{title}</title></CheckCheck>
+  return <Check size={14} className="text-muted" aria-label={title}><title>{title}</title></Check>
 }
 
 export default function InboxShell() {
