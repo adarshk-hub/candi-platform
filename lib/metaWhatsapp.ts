@@ -1,6 +1,7 @@
 // path: lib/metaWhatsapp.ts
 import crypto from 'crypto'
 import { query } from './db'
+import { toDialNumber } from './leadIntake'
 import { decrypt } from './waEncryption'
 import { defaultClientCode } from './waTemplateNaming'
 import { debitForMessage, refundMessage, attachWamidToLatestDebit } from './waWallet'
@@ -100,7 +101,9 @@ export async function sendTextMessage(params: {
   }
 
   const result = await callMetaSendApi(creds, {
-    to: params.to,
+    // Meta routes on the full international number; a lead saved from a
+    // masked form field arrives here as 10 digits and would be dropped.
+    to: toDialNumber(params.to),
     type: 'text',
     text: { body: params.body },
   })
@@ -236,7 +239,9 @@ export async function sendTemplateMessage(params: {
   }
 
   const result = await callMetaSendApi(creds, {
-    to: params.to,
+    // Meta routes on the full international number; a lead saved from a
+    // masked form field arrives here as 10 digits and would be dropped.
+    to: toDialNumber(params.to),
     type: 'template',
     template: {
       name: params.templateName,
@@ -351,7 +356,9 @@ export async function sendOperationalTemplate(params: {
 
   return sendTemplateMessage({
     clientId: params.clientId,
-    to: params.to,
+    // Meta routes on the full international number; a lead saved from a
+    // masked form field arrives here as 10 digits and would be dropped.
+    to: toDialNumber(params.to),
     templateName,
     components:
       values.length > 0
@@ -416,7 +423,7 @@ export async function submitAndRecordTemplate(params: {
 export async function sendVerificationPing(clientId: string, to: string): Promise<SendResult> {
   return sendTemplateMessage({
     clientId,
-    to,
+    to: toDialNumber(to),
     templateName: 'hello_world',
     languageCode: 'en_US',
   })
