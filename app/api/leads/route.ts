@@ -315,8 +315,10 @@ export async function DELETE(req: NextRequest) {
     [ids]
   )
 
+  // Counsellors work at client-admin level, so they may delete any lead at
+  // their own institute — not only the ones assigned to them.
   const deletable = rows.filter(
-    (r) => session.role !== 'client_counsellor' || r.assigned_counsellor_id === session.id
+    (r) => session.role !== 'client_counsellor' || r.client_id === session.clientId
   )
   const skipped = rows.length - deletable.length
 
