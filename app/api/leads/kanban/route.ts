@@ -22,8 +22,10 @@ export async function GET(req: NextRequest) {
     params.push(session.clientId)
     where.push(`l.client_id = $${params.length}`)
   } else if (session.role === 'client_counsellor') {
-    params.push(session.id)
-    where.push(`l.assigned_counsellor_id = $${params.length}`)
+    // Counsellors work at client-admin level, so they see their whole
+    // institute rather than only the leads assigned to them.
+    params.push(session.clientId)
+    where.push(`l.client_id = $${params.length}`)
   } else if (AGENCY_ROLES.includes(session.role) && clientId) {
     // Institution filter only makes sense for agency roles, who otherwise
     // see leads across every client.
