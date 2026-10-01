@@ -22,11 +22,24 @@ export function normalizePhone(raw: string): string {
 export function toDialNumber(raw: string | null | undefined, defaultCountryCode = '91'): string {
   const digits = (raw || '').replace(/\D/g, '')
   if (!digits) return ''
+
   // Already carries a country code.
   if (digits.length > 10) return digits
-  if (digits.length === 10) return `${defaultCountryCode}${digits}`
+
+  // An Indian mobile is 10 digits starting 6, 7, 8 or 9. Anything else of
+  // that length is not an Indian number, and prefixing 91 to it invents a
+  // number that does not exist — which then fails at WhatsApp with
+  // "not on WhatsApp" and looks like a sending bug rather than bad data.
+  if (digits.length === 10) {
+    return /^[6-9]/.test(digits) ? `${defaultCountryCode}${digits}` : digits
+  }
+
   // A leading trunk zero, as people write it locally.
-  if (digits.length === 11 && digits.startsWith('0')) return `${defaultCountryCode}${digits.slice(1)}`
+  if (digits.length === 11 && digits.startsWith('0')) {
+    const local = digits.slice(1)
+    return /^[6-9]/.test(local) ? `${defaultCountryCode}${local}` : local
+  }
+
   return digits
 }
 
