@@ -74,8 +74,10 @@ export function sectionsForRole(role: string | null | undefined): SettingsSectio
   ]
   if (!role) return []
   if (AGENCY.includes(role)) return all
-  if (role === 'client_admin') return all.filter((s) => !AGENCY_ONLY_SECTIONS.includes(s))
-  if (role === 'client_counsellor') return COUNSELLOR_SECTIONS
+  // A counsellor sees the same sections as their institute's admin.
+  if (role === 'client_admin' || role === 'client_counsellor') {
+    return all.filter((s) => !AGENCY_ONLY_SECTIONS.includes(s))
+  }
   return []
 }
 
