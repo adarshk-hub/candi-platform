@@ -60,8 +60,10 @@ export async function setCounsellorCanAssign(clientId: string, value: boolean): 
 export async function canAssignLeads(session: SessionUser | null, clientId?: string | null): Promise<boolean> {
   if (!session) return false
   if (AGENCY_ROLES.includes(session.role) || session.role === 'client_admin') return true
+  // Counsellors work at client-admin level, so they may reassign within
+  // their own institute. The per-institute setting is kept for anyone who
+  // still reads it, but it no longer gates this.
   if (session.role !== 'client_counsellor') return false
   const scope = clientId || session.clientId
-  if (!scope) return false
-  return counsellorCanAssign(scope)
+  return !!scope && (!!session.clientId && session.clientId === scope)
 }
