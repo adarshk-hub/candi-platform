@@ -14,6 +14,22 @@ export function normalizePhone(raw: string): string {
   return digits.slice(-10)
 }
 
+// The number WhatsApp is actually addressed with. normalizePhone above is a
+// lookup key for matching duplicates; this is what gets dialled, and Meta
+// needs a country code on it. A form with a US-style mask hands us
+// "(990) 173-3558", which Meta reads as another country or rejects, so the
+// send is recorded here while nothing is ever delivered.
+export function toDialNumber(raw: string | null | undefined, defaultCountryCode = '91'): string {
+  const digits = (raw || '').replace(/\D/g, '')
+  if (!digits) return ''
+  // Already carries a country code.
+  if (digits.length > 10) return digits
+  if (digits.length === 10) return `${defaultCountryCode}${digits}`
+  // A leading trunk zero, as people write it locally.
+  if (digits.length === 11 && digits.startsWith('0')) return `${defaultCountryCode}${digits.slice(1)}`
+  return digits
+}
+
 export interface IntakeInput {
   clientId: string
   fullName: string
@@ -110,7 +126,9 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
         input.clientId,
         input.campaignId || null,
         input.fullName,
-        input.whatsappNumber,
+        // Stored ready to dial, so every send path gets a number Meta can
+        // route rather than whatever shape the form produced.
+        toDialNumber(input.whatsappNumber),
         input.email || null,
         input.grade || null,
         input.childName || null,
