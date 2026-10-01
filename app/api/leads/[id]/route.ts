@@ -150,7 +150,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if ((session.role === 'client_admin' || session.role === 'client_staff') && lead.client_id !== session.clientId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
-  if (session.role === 'client_counsellor' && lead.assigned_counsellor_id !== session.id) {
+  // Counsellors work at client-admin level: any lead at their own
+  // institute, not only the ones assigned to them.
+  if (session.role === 'client_counsellor' && lead.client_id !== session.clientId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -166,7 +168,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const isAgency = AGENCY_ROLES.includes(session.role)
   const isOwningCounsellor =
-    session.role === 'client_counsellor' && existing.assigned_counsellor_id === session.id
+    session.role === 'client_counsellor' && existing.client_id === session.clientId
   const isOwningClientAdmin =
     (session.role === 'client_admin' || session.role === 'client_staff') && existing.client_id === session.clientId
   if (!isAgency && !isOwningCounsellor && !isOwningClientAdmin) {
