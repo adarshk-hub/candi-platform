@@ -1,6 +1,7 @@
+// path: lib/metaLeadAdsBackfill.ts
 const GRAPH_API_URL = 'https://graph.facebook.com/v19.0'
 import { fetchPageAccessToken } from './metaPages'
-import { findGradeValue, mapPlatform } from './metaLeadAds'
+import { findGradeValue, findChildNameValue, mapPlatform } from './metaLeadAds'
 import { centralQuery } from './db'
 import { findOrCreateLead, findOrCreateCampaign } from './leadIntake'
 
@@ -13,6 +14,7 @@ export interface HistoricalMetaLead {
   whatsappNumber: string
   email: string | null
   grade: string | null
+  childName: string | null
   campaignId: string | null
   adsetId: string | null
   adId: string | null
@@ -45,6 +47,14 @@ function findGradeFromFieldData(fieldData: any[]): string | null {
   const fields: Record<string, string> = {}
   for (const f of fieldData) fields[f.name] = f.values?.[0] || ''
   return findGradeValue(fields)
+}
+
+// Same student-name detection the live webhook uses (see
+// lib/metaLeadAds.ts's findChildNameValue), so both paths agree.
+function findChildNameFromFieldData(fieldData: any[]): string | null {
+  const fields: Record<string, string> = {}
+  for (const f of fieldData) fields[f.name] = f.values?.[0] || ''
+  return findChildNameValue(fields)
 }
 
 // Lists every lead form ever created on the Page, then pages through every
@@ -108,6 +118,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
           whatsappNumber: fieldValue(fieldData, 'phone_number') || '',
           email: fieldValue(fieldData, 'email'),
           grade,
+          childName: findChildNameFromFieldData(fieldData),
           campaignId: lead.campaign_id || null,
           adsetId: lead.adset_id || null,
           adId: lead.ad_id || null,
@@ -173,6 +184,7 @@ export async function backfillMetaLeadsForClient(clientId: string, metaPageId: s
       whatsappNumber: hl.whatsappNumber,
       email: hl.email,
       grade: hl.grade,
+      childName: hl.childName,
       source: hl.source,
       entryType: 'meta_form_backfill',
       campaignId: internalCampaignId,
