@@ -1,4 +1,4 @@
-//Re
+// path: lib/metaLeadAds.ts
 
 import crypto from 'crypto'
 import { fetchPageAccessToken } from './metaPages'
@@ -24,6 +24,9 @@ export interface MetaLeadFields {
   whatsappNumber: string
   email: string | null
   grade: string | null
+  // The student's name, when the form asks for it. Each school words that
+  // question differently, so it is matched loosely — see findChildNameValue.
+  childName: string | null
   // Meta Lead Ads forms can run on either placement — same form, same
   // campaign, but each individual submission came from whichever app the
   // person was actually using. Previously hardcoded to 'facebook' for
@@ -54,6 +57,16 @@ export function findGradeValue(fields: Record<string, string>): string | null {
   return gradeKey ? fields[gradeKey] || null : null
 }
 
+// Same idea as findGradeValue, for the student's name. Meta builds the key
+// from the question label, so "Enter your Student's Name" arrives as
+// "enter_your_student's_name". Matches the first field whose key mentions a
+// student/child/kid/ward AND "name" — both are required, so questions like
+// "child's age" or "which class is your child in" are not picked up.
+export function findChildNameValue(fields: Record<string, string>): string | null {
+  const key = Object.keys(fields).find((k) => /(student|child|kid|ward)/i.test(k) && /name/i.test(k))
+  return key ? fields[key] || null : null
+}
+
 // Fetches the actual submitted field values for a leadgen_id from the Graph
 // API. Meta's webhook payload only tells you a lead *exists* (its ID); the
 // field data (name/phone/email) requires this separate authenticated call.
@@ -71,6 +84,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
       whatsappNumber: '9000000000',
       email: null,
       grade: null,
+      childName: null,
       source: 'facebook',
     }
   }
@@ -107,6 +121,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     whatsappNumber: fields.phone_number || '',
     email: fields.email || null,
     grade,
+    childName: findChildNameValue(fields),
     source: mapPlatform(data.platform),
   }
 }
