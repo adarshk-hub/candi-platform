@@ -104,7 +104,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
           createdTime: lead.created_time,
           formId: form.id,
           formName: form.name,
-          fullName: fieldValue(fieldData, 'full_name') || fieldValue(fieldData, 'first_name') || 'Unknown',
+          fullName: fieldValue(fieldData, 'full_name') || fieldValue(fieldData, 'full name') || fieldValue(fieldData, 'first_name') || 'Unknown',
           whatsappNumber: fieldValue(fieldData, 'phone_number') || '',
           email: fieldValue(fieldData, 'email'),
           grade,
