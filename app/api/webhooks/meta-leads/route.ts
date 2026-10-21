@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         whatsappNumber: fields.whatsappNumber,
         email: fields.email,
         grade: fields.grade,
+        childName: fields.childName,
         source: fields.source,
         entryType: 'meta_form',
         campaignId: internalCampaignId,
