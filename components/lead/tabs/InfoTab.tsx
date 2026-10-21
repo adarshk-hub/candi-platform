@@ -1,3 +1,4 @@
+// path: components/lead/tabs/InfoTab.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -208,7 +209,7 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
           <EditField label="Child Name" value={form.child_name} onChange={(v) => set('child_name', v)} />
           <EditField label="Email" value={form.email} onChange={(v) => set('email', v)} />
           <EditField label="WhatsApp" value={form.whatsapp_number} onChange={(v) => set('whatsapp_number', v)} />
-          <EditField label="Phone" value={form.second_phone} onChange={(v) => set('second_phone', v)} />
+          <EditField label="Alternate phone" value={form.second_phone} onChange={(v) => set('second_phone', v)} />
           <EditField label="City" value={form.location} onChange={(v) => set('location', v)} />
           <EditField label="Occupation" value={form.occupation} onChange={(v) => set('occupation', v)} />
           <Select label="Source" value={form.source} onChange={(v) => set('source', v)} options={SOURCE_LABEL} placeholder="Select source" />
@@ -303,7 +304,7 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
         <Field label="Child Name" value={lead.child_name} />
         <Field label="Email" value={lead.email} />
         <Field label="WhatsApp" value={lead.whatsapp_number} />
-        <Field label="Phone" value={lead.second_phone} />
+        <Field label="Alternate phone" value={lead.second_phone} />
         <Field label="City" value={lead.location} />
         <Field label="Occupation" value={lead.occupation} />
         <Field label="Source" value={SOURCE_LABEL[lead.source] || lead.source} />
