@@ -103,7 +103,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
   }
 
   return {
-    fullName: fields.full_name || fields.first_name || 'Unknown',
+    fullName: fields.full_name || fields['full name'] || fields.first_name || 'Unknown',
     whatsappNumber: fields.phone_number || '',
     email: fields.email || null,
     grade,
