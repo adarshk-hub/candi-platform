@@ -32,6 +32,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name and phone are required' }, { status: 400 })
   }
 
+  // A form may say where its leads come from (e.g. Queens' site sends
+  // "google"). Only these known values are accepted; anything else, or no
+  // value at all, keeps the default — so forms that don't send it are
+  // unchanged.
+  const ALLOWED_SOURCES = ['website_contact_form', 'google']
+  const source = ALLOWED_SOURCES.includes(body.source) ? body.source : 'website_contact_form'
+
   const { lead, created, duplicate } = await findOrCreateLead({
     clientId: client.id,
     fullName: body.name,
@@ -41,7 +48,7 @@ export async function POST(req: NextRequest) {
     // Where a form asks for the student's name separately.
     childName: body.childName || body.studentName || null,
     serviceInterestedIn: body.serviceInterestedIn || body.program || null,
-    source: 'website_contact_form',
+    source,
     entryType: 'landing_page',
     rawPayload: body,
     // Have the website's form JS read these off the page (fbclid from the
