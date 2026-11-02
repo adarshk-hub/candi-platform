@@ -24,6 +24,7 @@ import WebhookCard from '@/components/settings/WebhookCard'
 import UsersPanel from '@/components/settings/panels/UsersPanel'
 import AdAccountConnector from '@/components/settings/AdAccountConnector'
 import PageConnector from '@/components/settings/PageConnector'
+import GoogleLeadsConnector from '@/components/settings/GoogleLeadsConnector'
 import NotificationBell from '@/components/NotificationBell'
 
 // The same section list the Customize page shows in its left nav, so both
@@ -77,10 +78,12 @@ export default async function SettingsPage() {
     google_ads_customer_id: string | null
     meta_pixel_id: string | null
     capi_enabled: boolean
+    google_leads_enabled: boolean
+    google_leads_key: string | null
   }
 
   const CLIENT_COLUMNS =
-    'id, name, api_key, meta_page_id, meta_whatsapp_phone_number_id, meta_ad_account_id, google_ads_customer_id, meta_pixel_id, capi_enabled'
+    'id, name, api_key, meta_page_id, meta_whatsapp_phone_number_id, meta_ad_account_id, google_ads_customer_id, meta_pixel_id, capi_enabled, google_leads_enabled, google_leads_key'
 
   const clients = isAgency
     ? await query<ClientRow>(`SELECT ${CLIENT_COLUMNS} FROM clients ORDER BY name`)
@@ -192,6 +195,12 @@ export default async function SettingsPage() {
                     { label: 'Status', value: c.capi_enabled ? 'Enabled' : 'Disabled' },
                     { label: 'Meta Pixel / Dataset ID', value: c.meta_pixel_id || 'not configured' },
                   ]}
+                />
+                <GoogleLeadsConnector
+                  clientId={c.id}
+                  webhookUrl={`${baseUrl}/api/webhooks/google-leads`}
+                  initialEnabled={!!c.google_leads_enabled}
+                  initialKey={c.google_leads_key}
                 />
               </div>
             )}
