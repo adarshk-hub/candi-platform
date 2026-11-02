@@ -1,8 +1,9 @@
 // path: app/api/clients/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { resolveLeadColumns } from '@/lib/leadTableColumns'
 import { query, centralQuery } from '@/lib/db'
-import { getSession } from '@/lib/auth'
+import { getSession, AGENCY_ROLES } from '@/lib/auth'
 import { canCustomize } from '@/lib/customizeAccess'
 import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
@@ -145,6 +146,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     values.push(body.metaPageId || null)
     setClauses.push(`meta_page_id = $${values.length}`)
   }
+
+  // Google Ads lead forms: on/off switch and the key Google sends with each
+  // lead. Agency only — this route is also open to counsellors for Display
+  // Preferences / Lead Date Range, and they must not be able to touch this.
+  // A key is created the first time Google leads are switched on, and a new
+  // one only when explicitly asked for (googleLeadsRegenerateKey).
+  const touchesGoogle = body.googleLeadsEnabled !== undefined || body.googleLeadsRegenerateKey
+  let newGoogleKey: string | null = null
+  if (touchesGoogle) {
+    if (!session || !AGENCY_ROLES.includes(session.role)) {
+      return NextResponse.json({ error: 'Only agency users can change Google Ads lead settings' }, { status: 403 })
+    }
+    if (body.googleLeadsEnabled !== undefined) {
+      values.push(!!body.googleLeadsEnabled)
+      setClauses.push(`google_leads_enabled = $${values.length}`)
+    }
+    const current = (await query<{ google_leads_key: string | null }>(
+      'SELECT google_leads_key FROM clients WHERE id = $1',
+      [params.id]
+    ))[0]
+    if (body.googleLeadsRegenerateKey || (body.googleLeadsEnabled && !current?.google_leads_key)) {
+      newGoogleKey = crypto.randomBytes(24).toString('hex')
+      values.push(newGoogleKey)
+      setClauses.push(`google_leads_key = $${values.length}`)
+    }
+  }
+
   if (setClauses.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 
   try {
@@ -172,6 +200,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         'imapHost', 'imapPort', 'imapUser', 'imapPass',
       ],
       'Ad Account Connection': ['metaAdAccountId', 'metaPageId'],
+      'Google Ads Lead Forms': ['googleLeadsEnabled', 'googleLeadsRegenerateKey'],
     }
     for (const [section, fields] of Object.entries(SECTION_FIELDS)) {
       const touched = fields.filter((f) => body[f] !== undefined)
@@ -199,6 +228,31 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
       centralValues.push(params.id)
       await centralQuery(`UPDATE clients SET ${centralSet.join(', ')} WHERE id = $${centralValues.length}`, centralValues)
+    }
+
+    // The Google webhook also routes through the central registry, so the
+    // switch and key are mirrored there the same way.
+    if (touchesGoogle) {
+      const googleSet: string[] = []
+      const googleValues: any[] = []
+      if (body.googleLeadsEnabled !== undefined) {
+        googleValues.push(!!body.googleLeadsEnabled)
+        googleSet.push(`google_leads_enabled = $${googleValues.length}`)
+      }
+      if (newGoogleKey) {
+        googleValues.push(newGoogleKey)
+        googleSet.push(`google_leads_key = $${googleValues.length}`)
+      }
+      if (googleSet.length > 0) {
+        googleValues.push(params.id)
+        await centralQuery(`UPDATE clients SET ${googleSet.join(', ')} WHERE id = $${googleValues.length}`, googleValues)
+      }
+      // Only an agency user gets here, so returning the key is fine.
+      const google = (await query<{ google_leads_enabled: boolean; google_leads_key: string | null }>(
+        'SELECT google_leads_enabled, google_leads_key FROM clients WHERE id = $1',
+        [params.id]
+      ))[0]
+      return NextResponse.json({ ...rows[0], ...google })
     }
 
     return NextResponse.json(rows[0])
