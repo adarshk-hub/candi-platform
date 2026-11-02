@@ -420,13 +420,40 @@ export async function submitAndRecordTemplate(params: {
 // approved body is fully static ("Hello World, Welcome and congratulations
 // on your first message!") — no {{n}} variables — so no components/params
 // are sent with it.
+// Templates the Verify button tries, in order. hello_world is Meta's sample
+// template, but newer WhatsApp accounts don't always get it and its name is
+// reserved, so it can't be created by hand — hi_world is the fallback to
+// create (no variables) in those accounts. Each is tried in both English
+// codes because "English" and "English (US)" are different languages to Meta.
+const VERIFICATION_TEMPLATES: { name: string; languageCode: string }[] = [
+  { name: 'hello_world', languageCode: 'en_US' },
+  { name: 'hi_world', languageCode: 'en' },
+  { name: 'hi_world', languageCode: 'en_US' },
+]
+
+// Meta error #132001: template name doesn't exist in that language.
+function isMissingTemplate(error?: string): boolean {
+  return !!error && error.includes('132001')
+}
+
 export async function sendVerificationPing(clientId: string, to: string): Promise<SendResult> {
-  return sendTemplateMessage({
-    clientId,
-    to: toDialNumber(to),
-    templateName: 'hello_world',
-    languageCode: 'en_US',
-  })
+  let last: SendResult = { ok: false, error: 'No verification template found' }
+  for (const t of VERIFICATION_TEMPLATES) {
+    last = await sendTemplateMessage({
+      clientId,
+      to: toDialNumber(to),
+      templateName: t.name,
+      languageCode: t.languageCode,
+    })
+    // Stop on success, or on any real error (token, number, wallet) — only
+    // "template not found" moves on to the next one. A failed send is
+    // refunded inside sendTemplateMessage, so trying the next costs nothing.
+    if (last.ok || !isMissingTemplate(last.error)) return last
+  }
+  return {
+    ok: false,
+    error: `${last.error} — create an approved template named "hi_world" (no variables) in this WhatsApp account, then verify again.`,
+  }
 }
 
 // Turning on webhook fields (e.g. "messages") at the App level only makes
