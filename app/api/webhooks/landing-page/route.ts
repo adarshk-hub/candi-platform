@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { centralQuery } from '@/lib/db'
-import { findOrCreateLead } from '@/lib/leadIntake'
+import { findOrCreateLead, findOrCreateCampaign } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 
@@ -39,6 +39,26 @@ export async function POST(req: NextRequest) {
   const ALLOWED_SOURCES = ['website_contact_form', 'google']
   const source = ALLOWED_SOURCES.includes(body.source) ? body.source : 'website_contact_form'
 
+  // Google Ads campaign the visitor clicked, when the site passes it on
+  // (Queens' plugin reads it from the ad's ?cid={campaignid} URL suffix).
+  // Linking the lead to that campaign is what makes it count under Google
+  // on the dashboard instead of Organic. Digits only — anything else is
+  // ignored, and forms that don't send it are unchanged.
+  let campaignId: string | null = null
+  const googleCampaignId = String(body.googleCampaignId ?? '').trim()
+  if (source === 'google' && /^\d{1,20}$/.test(googleCampaignId)) {
+    try {
+      campaignId = await findOrCreateCampaign({
+        clientId: client.id,
+        platform: 'google',
+        platformCampaignId: googleCampaignId,
+      })
+    } catch (err: any) {
+      // Never lose the lead over this — it is saved without a campaign.
+      console.error(`[landing-page webhook] could not link Google campaign ${googleCampaignId}:`, err?.message || err)
+    }
+  }
+
   const { lead, created, duplicate } = await findOrCreateLead({
     clientId: client.id,
     fullName: body.name,
@@ -50,6 +70,7 @@ export async function POST(req: NextRequest) {
     serviceInterestedIn: body.serviceInterestedIn || body.program || null,
     source,
     entryType: 'landing_page',
+    campaignId,
     rawPayload: body,
     // Have the website's form JS read these off the page (fbclid from the
     // URL query string, fbp/fbc from the _fbp/_fbc cookies the Meta Pixel
