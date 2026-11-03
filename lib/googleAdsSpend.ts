@@ -1,14 +1,80 @@
+// path: lib/googleAdsSpend.ts
+import crypto from 'crypto'
 import { CampaignSpend } from './metaAdsSpend'
 
-const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v17'
+// v17 has been shut down by Google; v26 is current (Nov 2026). Can still be
+// overridden with the GOOGLE_ADS_API_VERSION env var when Google moves on.
+const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v26'
+const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords'
+const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
-async function getAccessToken(): Promise<string | null> {
+interface ServiceAccountKey {
+  client_email: string
+  private_key: string
+}
+
+// GOOGLE_ADS_SERVICE_ACCOUNT_JSON holds the service account's JSON key file,
+// pasted as-is or base64-encoded (both are accepted, since some dashboards
+// mangle multi-line values).
+function readServiceAccountKey(): ServiceAccountKey | null {
+  const raw = (process.env.GOOGLE_ADS_SERVICE_ACCOUNT_JSON || '').trim()
+  if (!raw) return null
+  try {
+    const text = raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')
+    const key = JSON.parse(text)
+    if (!key.client_email || !key.private_key) throw new Error('missing client_email or private_key')
+    return { client_email: key.client_email, private_key: key.private_key }
+  } catch (err: any) {
+    throw new Error(`GOOGLE_ADS_SERVICE_ACCOUNT_JSON is not a valid service account key: ${err?.message || err}`)
+  }
+}
+
+function base64url(input: Buffer | string): string {
+  return Buffer.from(input).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+// Reused across calls in the same warm instance — a token is valid for an
+// hour, and the sync may run once per school.
+let cachedToken: { value: string; expiresAt: number } | null = null
+
+// Service account sign-in (OAuth 2.0 JWT bearer grant): no person, password
+// or passkey involved. The service account's email is added as a user in the
+// Google Ads manager account, which is what gives it access.
+async function getServiceAccountToken(key: ServiceAccountKey): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value
+
+  const now = Math.floor(Date.now() / 1000)
+  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const claims = base64url(
+    JSON.stringify({ iss: key.client_email, scope: ADWORDS_SCOPE, aud: TOKEN_URL, iat: now, exp: now + 3600 })
+  )
+  const signature = base64url(crypto.createSign('RSA-SHA256').update(`${header}.${claims}`).sign(key.private_key))
+
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: `${header}.${claims}.${signature}`,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`Google service account token request failed: ${res.status} ${await res.text()}`)
+  }
+  const data = await res.json()
+  cachedToken = { value: data.access_token, expiresAt: Date.now() + (data.expires_in || 3600) * 1000 }
+  return data.access_token
+}
+
+// Original sign-in method (a person's refresh token), kept as a fallback so
+// an existing refresh-token setup keeps working unchanged.
+async function getRefreshTokenAccessToken(): Promise<string | null> {
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET
   const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN
   if (!clientId || !clientSecret || !refreshToken) return null
 
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -25,13 +91,22 @@ async function getAccessToken(): Promise<string | null> {
   return data.access_token
 }
 
+// Service account if configured, otherwise refresh token, otherwise null
+// (not set up yet — the sync then skips Google without failing).
+async function getAccessToken(): Promise<string | null> {
+  const key = readServiceAccountKey()
+  if (key) return getServiceAccountToken(key)
+  return getRefreshTokenAccessToken()
+}
+
 // Pulls per-campaign spend for one customer account over a date range from
-// the Google Ads API (GAQL search against the `campaign` resource). Needs a
-// developer token approved for at least Basic Access, plus OAuth
-// credentials for a user with access to the agency's manager (MCC) account —
-// confirm exact scopes/setup in Google Ads API Center once ready. Until
-// GOOGLE_ADS_* env vars are set, returns stub data so the sync pipeline is
-// fully exercisable in dev.
+// the Google Ads API (GAQL search against the `campaign` resource).
+//
+// Since Sept 2026 Google no longer uses developer tokens: access is granted
+// to the Google Cloud project instead (Explorer access is enough here). The
+// developer-token header is therefore only sent if GOOGLE_ADS_DEVELOPER_TOKEN
+// is still set, and is not required. GOOGLE_ADS_LOGIN_CUSTOMER_ID is the
+// manager account the school's account is linked under (digits only).
 export async function fetchGoogleCampaignSpend(params: {
   customerId: string // digits only, no dashes
   since: string // YYYY-MM-DD
@@ -41,9 +116,9 @@ export async function fetchGoogleCampaignSpend(params: {
   const loginCustomerId = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
   const accessToken = await getAccessToken()
 
-  if (!developerToken || !accessToken) {
+  if (!accessToken) {
     console.log(
-      `[google-ads:stub] would fetch campaign spend for customer ${params.customerId} from ${params.since} to ${params.until}`
+      `[google-ads:stub] would fetch campaign spend for customer ${params.customerId} from ${params.since} to ${params.until} — no Google Ads credentials configured`
     )
     return []
   }
@@ -61,7 +136,7 @@ export async function fetchGoogleCampaignSpend(params: {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
-        'developer-token': developerToken,
+        ...(developerToken ? { 'developer-token': developerToken } : {}),
         ...(loginCustomerId ? { 'login-customer-id': loginCustomerId } : {}),
       },
       body: JSON.stringify({ query }),
@@ -78,7 +153,7 @@ export async function fetchGoogleCampaignSpend(params: {
       results.push({
         platformCampaignId: String(row.campaign.id),
         campaignName: row.campaign.name,
-        spend: (row.metrics.costMicros || 0) / 1_000_000,
+        spend: Number(row.metrics.costMicros || 0) / 1_000_000,
       })
     }
   }
