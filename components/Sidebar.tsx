@@ -97,7 +97,7 @@ function NavItem({
   )
 }
 
-// Candid Schools shows its own logo (public/logf.png) in the sidebar; every
+// Candid Schools shows the Localocto logo (public/logf.png) in the sidebar; every
 // other institute keeps the default Candi Connect logo.
 const CANDID_SCHOOLS_CLIENT_ID = '0a9d4675-8179-4d87-a879-decce8d00b86'
 
@@ -209,7 +209,7 @@ export default function Sidebar({
       <div className={clsx('mb-6 flex items-center', collapsed ? 'justify-center' : 'px-2')}>
         <Image
           src={user?.clientId === CANDID_SCHOOLS_CLIENT_ID ? '/logf.png' : '/logo.png'}
-          alt={user?.clientId === CANDID_SCHOOLS_CLIENT_ID ? 'Candid Schools' : 'Candi Connect'}
+          alt={user?.clientId === CANDID_SCHOOLS_CLIENT_ID ? 'Localocto' : 'Candi Connect'}
           width={2172}
           height={724}
           className={collapsed ? 'h-auto w-10' : 'h-auto w-40'}
