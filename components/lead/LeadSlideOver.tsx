@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { leadNameLabels } from '@/lib/localOcto'
 import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Phone, Snowflake } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
@@ -137,11 +138,11 @@ export default function LeadSlideOver({
               <div className="mt-5 grid grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs text-muted">Lead Name</p>
+                    <p className="text-xs text-muted">{leadNameLabels(lead.client_id).parent || 'Lead Name'}</p>
                     <p className="text-fg">{lead.full_name}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted">Child Name</p>
+                    <p className="text-xs text-muted">{leadNameLabels(lead.client_id).child || 'Child Name'}</p>
                     <p className="text-fg">{lead.child_name || '—'}</p>
                   </div>
                   <div>
