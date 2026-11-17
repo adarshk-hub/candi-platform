@@ -129,6 +129,25 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
   // Local Octo only: business labels, and no school-specific sections.
   const localOcto = isLocalOcto(lead.client_id)
   const nameLabels = leadNameLabels(lead.client_id)
+
+  // Lead sources added in Settings > Lead Source, shown in the Source
+  // dropdown after the built-in ones (the Add Lead form already uses them).
+  const [customSources, setCustomSources] = useState<string[]>([])
+  useEffect(() => {
+    if (!lead.client_id) return
+    fetch(`/api/option-items?clientId=${lead.client_id}&listKey=lead_source`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) =>
+        setCustomSources(
+          Array.isArray(data) ? data.filter((s: any) => s.is_active && s.value).map((s: any) => String(s.value)) : []
+        )
+      )
+      .catch(() => setCustomSources([]))
+  }, [lead.client_id])
+  const sourceOptions: Record<string, string> = { ...SOURCE_LABEL }
+  for (const v of customSources) if (!sourceOptions[v]) sourceOptions[v] = v
+  // Keep the lead's current source selectable even if it's no longer in either list.
+  if (lead.source && !sourceOptions[lead.source]) sourceOptions[lead.source] = lead.source
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<FormState>(() => toFormState(lead))
   const [saving, setSaving] = useState(false)
@@ -216,7 +235,7 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
           <EditField label="Alternate phone" value={form.second_phone} onChange={(v) => set('second_phone', v)} />
           <EditField label="City" value={form.location} onChange={(v) => set('location', v)} />
           <EditField label="Occupation" value={form.occupation} onChange={(v) => set('occupation', v)} />
-          <Select label="Source" value={form.source} onChange={(v) => set('source', v)} options={SOURCE_LABEL} placeholder="Select source" />
+          <Select label="Source" value={form.source} onChange={(v) => set('source', v)} options={sourceOptions} placeholder="Select source" />
         </Section>
 
         {!localOcto && (
