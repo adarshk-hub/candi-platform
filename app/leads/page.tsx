@@ -36,5 +36,5 @@ export default async function LeadsPage({
     counsellor: [],
   })
 
-  return <LeadsPageClient initial={initial} />
+  return <LeadsPageClient initial={initial} clientId={session.clientId} />
 }
