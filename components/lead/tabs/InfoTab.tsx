@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { Pencil, X, Check } from 'lucide-react'
 import { Lead, TIMELINE_LABEL, SOURCE_LABEL, DECISION_MAKER_LABEL } from '@/lib/types'
+import { isLocalOcto, leadNameLabels } from '@/lib/localOcto'
 
 interface CustomFieldDef {
   id: string
@@ -125,6 +126,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: () => void }) {
+  // Local Octo only: business labels, and no school-specific sections.
+  const localOcto = isLocalOcto(lead.client_id)
+  const nameLabels = leadNameLabels(lead.client_id)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<FormState>(() => toFormState(lead))
   const [saving, setSaving] = useState(false)
@@ -205,8 +209,8 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
         </div>
 
         <Section title="Full Identity">
-          <EditField label="Lead Name" value={form.full_name} onChange={(v) => set('full_name', v)} />
-          <EditField label="Child Name" value={form.child_name} onChange={(v) => set('child_name', v)} />
+          <EditField label={nameLabels.parent || 'Lead Name'} value={form.full_name} onChange={(v) => set('full_name', v)} />
+          <EditField label={nameLabels.child || 'Child Name'} value={form.child_name} onChange={(v) => set('child_name', v)} />
           <EditField label="Email" value={form.email} onChange={(v) => set('email', v)} />
           <EditField label="WhatsApp" value={form.whatsapp_number} onChange={(v) => set('whatsapp_number', v)} />
           <EditField label="Alternate phone" value={form.second_phone} onChange={(v) => set('second_phone', v)} />
@@ -215,6 +219,7 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
           <Select label="Source" value={form.source} onChange={(v) => set('source', v)} options={SOURCE_LABEL} placeholder="Select source" />
         </Section>
 
+        {!localOcto && (
         <Section title="Program Details">
           <Field label="Institution" value={lead.client_name} />
           <EditField
@@ -225,6 +230,7 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
           <EditField label="Child's Class" value={form.grade} onChange={(v) => set('grade', v)} />
           <Select label="Joining timeline" value={form.timeline} onChange={(v) => set('timeline', v)} options={TIMELINE_LABEL} />
         </Section>
+        )}
 
         <Section title="Decision & Objections">
           <Select
@@ -250,9 +256,11 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
           </div>
         </Section>
 
+        {!localOcto && (
         <Section title="Other">
           <EditField label="Company Name" value={form.company_name} onChange={(v) => set('company_name', v)} />
         </Section>
+        )}
 
         {customDefs.length > 0 && (
           <Section title="Custom Fields">
@@ -300,8 +308,8 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
       </div>
 
       <Section title="Full Identity">
-        <Field label="Lead Name" value={lead.full_name} />
-        <Field label="Child Name" value={lead.child_name} />
+        <Field label={nameLabels.parent || 'Lead Name'} value={lead.full_name} />
+        <Field label={nameLabels.child || 'Child Name'} value={lead.child_name} />
         <Field label="Email" value={lead.email} />
         <Field label="WhatsApp" value={lead.whatsapp_number} />
         <Field label="Alternate phone" value={lead.second_phone} />
@@ -310,12 +318,14 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
         <Field label="Source" value={SOURCE_LABEL[lead.source] || lead.source} />
       </Section>
 
+      {!localOcto && (
       <Section title="Program Details">
         <Field label="Institution" value={lead.client_name} />
         <Field label="Course" value={lead.service_interested_in} />
         <Field label="Child's Class" value={lead.grade} />
         <Field label="Joining timeline" value={lead.timeline ? TIMELINE_LABEL[lead.timeline] : null} />
       </Section>
+      )}
 
       <Section title="Decision & Objections">
         <Field label="Decision maker" value={lead.decision_maker ? DECISION_MAKER_LABEL[lead.decision_maker] || lead.decision_maker : null} />
@@ -325,9 +335,11 @@ export default function InfoTab({ lead, onUpdated }: { lead: Lead; onUpdated?: (
         </div>
       </Section>
 
+      {!localOcto && (
       <Section title="Other">
         <Field label="Company Name" value={lead.company_name} />
       </Section>
+      )}
 
       {customDefs.length > 0 && (
         <Section title="Custom Fields">
