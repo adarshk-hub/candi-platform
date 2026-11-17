@@ -7,6 +7,7 @@ import { ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatLakh } from '@/lib/format'
 import { ClientDashboardMetrics, CampaignRow } from '@/lib/clientDashboardMetrics'
+import { PipelineTerms, DEFAULT_PIPELINE_TERMS, pipelineTerms } from '@/lib/localOcto'
 
 type Tab = 'overall' | 'leads' | 'visited' | 'enrolled'
 
@@ -160,12 +161,14 @@ function CampaignTable({
   onToggle,
   onSetMany,
   saveState = 'idle',
+  terms = DEFAULT_PIPELINE_TERMS,
 }: {
   campaigns: GroupedCampaignRow[]
   checked: Set<string>
   onToggle: (ids: string[]) => void
   onSetMany: (ids: string[], include: boolean) => void
   saveState?: 'idle' | 'saving' | 'error'
+  terms?: PipelineTerms
 }) {
   // An account that has been running for a year or two accumulates dozens of
   // campaigns, almost all of them switched off — listing every one of them
@@ -219,12 +222,12 @@ function CampaignTable({
               <th className="w-8 px-3 py-2.5"></th>
               <th className="px-3 py-2.5">Campaign</th>
               <th className="px-3 py-2.5 text-right">Lead</th>
-              <th className="px-3 py-2.5 text-right">Visit</th>
-              <th className="px-3 py-2.5 text-right">Enrolled</th>
+              <th className="px-3 py-2.5 text-right">{terms.Visit}</th>
+              <th className="px-3 py-2.5 text-right">{terms.Enrolled}</th>
               <th className="px-3 py-2.5 text-right">Spend</th>
               <th className="px-3 py-2.5 text-right">CPL</th>
               <th className="px-3 py-2.5 text-right">CPA</th>
-              <th className="px-3 py-2.5 text-right">Lead→Enrolled</th>
+              <th className="px-3 py-2.5 text-right">Lead→{terms.Enrolled}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -284,10 +287,12 @@ function PlatformCard({
   platform,
   bucket,
   detailed,
+  terms = DEFAULT_PIPELINE_TERMS,
 }: {
   platform: string
   bucket: Bucket
   detailed: boolean
+  terms?: PipelineTerms
 }) {
   const cpl = ratio(bucket.spend, bucket.leads)
   const cpv = ratio(bucket.spend, bucket.visits)
@@ -307,13 +312,13 @@ function PlatformCard({
           <dd className="text-fg">{bucket.leads}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-muted2">Visit</dt>
+          <dt className="text-muted2">{terms.Visit}</dt>
           <dd className="text-fg">
             {bucket.visits} {bucket.leads > 0 && <span className="text-muted">({fmtPct(ratio(bucket.visits, bucket.leads) && ratio(bucket.visits, bucket.leads)! * 100)})</span>}
           </dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-muted2">Enrolled</dt>
+          <dt className="text-muted2">{terms.Enrolled}</dt>
           <dd className="text-fg">
             {bucket.enrolled} {bucket.leads > 0 && <span className="text-muted">({fmtPct(ratio(bucket.enrolled, bucket.leads) && ratio(bucket.enrolled, bucket.leads)! * 100)})</span>}
           </dd>
@@ -329,7 +334,7 @@ function PlatformCard({
               <dd className="text-fg">{fmtMoney(cpl)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-muted2">Cost / visit</dt>
+              <dt className="text-muted2">Cost / {terms.visit}</dt>
               <dd className="text-fg">{fmtMoney(cpv)}</dd>
             </div>
             <div className="flex justify-between">
@@ -348,7 +353,7 @@ function PlatformCard({
         )}
         {!detailed && platform !== 'organic' && (
           <div className="flex justify-between border-t border-border pt-1">
-            <dt className="text-muted2">Cost / enrollment</dt>
+            <dt className="text-muted2">Cost / {terms.enrollment}</dt>
             <dd className="text-fg">{fmtMoney(cpa)}</dd>
           </div>
         )}
@@ -366,6 +371,9 @@ export default function PipelineDashboard({
   clientId: string
   initialExcluded?: string[]
 }) {
+  // Local Octo only: Visit -> Meet, Enrolled -> Purchased.
+  const terms = pipelineTerms(clientId)
+  const tabLabel = (t: Tab) => (t === 'visited' ? terms.Visit : t === 'enrolled' ? terms.Enrolled : TAB_LABELS[t])
   const [tab, setTab] = useState<Tab>('overall')
   const [detailed, setDetailed] = useState(true)
   const [excluded, setExcluded] = useState<Set<string>>(new Set(initialExcluded))
@@ -544,7 +552,7 @@ export default function PipelineDashboard({
               tab === t ? 'bg-blue-500 text-white' : 'text-muted2 hover:text-fg'
             )}
           >
-            {TAB_LABELS[t]}
+            {tabLabel(t)}
           </button>
         ))}
         <label className="ml-auto flex items-center gap-2 pr-2 text-sm text-muted2">
@@ -565,12 +573,12 @@ export default function PipelineDashboard({
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
           <p className="text-4xl font-bold text-fg">{totals.visits}</p>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Visit</p>
+          <p className="mt-1 text-xs uppercase tracking-widest text-muted">{terms.Visit}</p>
           <p className="mt-1 text-xs text-muted2">{fmtPct(leadToVisit !== null ? leadToVisit * 100 : null)} of leads</p>
         </div>
         <div className="rounded-card border border-border bg-card p-6 text-center">
           <p className="text-4xl font-bold text-fg">{totals.enrolled}</p>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted">Enrolled</p>
+          <p className="mt-1 text-xs uppercase tracking-widest text-muted">{terms.Enrolled}</p>
           <p className="mt-1 text-xs text-muted2">{fmtPct(leadToEnrolled !== null ? leadToEnrolled * 100 : null)} of leads</p>
         </div>
       </div>
@@ -586,20 +594,20 @@ export default function PipelineDashboard({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricTile label="Cost / lead (CPL)" value={fmtMoney(cpl)} />
-        <MetricTile label="Cost / visit" value={fmtMoney(costPerVisit)} />
+        <MetricTile label={`Cost / ${terms.visit}`} value={fmtMoney(costPerVisit)} />
         <MetricTile label="Cost / acquisition (CPA)" value={fmtMoney(cpa)} />
         <MetricTile label="Avg fee / student" value={fmtMoney(avgFee)} />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricTile label="ROAS" value={roas !== null ? `${roas.toFixed(1)}x` : '—'} />
-        <MetricTile label="Lead → Visit" value={fmtPct(leadToVisit !== null ? leadToVisit * 100 : null)} />
-        <MetricTile label="Visit → Enrolled" value={fmtPct(visitToEnrolled !== null ? visitToEnrolled * 100 : null)} />
-        <MetricTile label="Lead → Enrolled" value={fmtPct(leadToEnrolled !== null ? leadToEnrolled * 100 : null)} />
+        <MetricTile label={`Lead → ${terms.Visit}`} value={fmtPct(leadToVisit !== null ? leadToVisit * 100 : null)} />
+        <MetricTile label={`${terms.Visit} → ${terms.Enrolled}`} value={fmtPct(visitToEnrolled !== null ? visitToEnrolled * 100 : null)} />
+        <MetricTile label={`Lead → ${terms.Enrolled}`} value={fmtPct(leadToEnrolled !== null ? leadToEnrolled * 100 : null)} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <div className="rounded-card border border-border bg-card p-4">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">Platform share — enrolled</p>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">Platform share — {terms.enrolled}</p>
           <div className="flex items-center justify-center">
             <Donut segments={donutSegments} />
           </div>
@@ -617,9 +625,9 @@ export default function PipelineDashboard({
             ))}
           </div>
         </div>
-        <PlatformCard platform="meta" bucket={buckets.meta} detailed={detailed} />
-        <PlatformCard platform="google" bucket={buckets.google} detailed={detailed} />
-        <PlatformCard platform="organic" bucket={buckets.organic} detailed={detailed} />
+        <PlatformCard platform="meta" bucket={buckets.meta} detailed={detailed} terms={terms} />
+        <PlatformCard platform="google" bucket={buckets.google} detailed={detailed} terms={terms} />
+        <PlatformCard platform="organic" bucket={buckets.organic} detailed={detailed} terms={terms} />
       </div>
 
       {metaCampaigns.length > 0 && (
@@ -630,7 +638,7 @@ export default function PipelineDashboard({
               Meta
             </p>
             <p className="text-xs text-muted2">
-              {buckets.meta.leads} lead · {buckets.meta.visits} visit · {buckets.meta.enrolled} enrolled ·{' '}
+              {buckets.meta.leads} lead · {buckets.meta.visits} {terms.visit} · {buckets.meta.enrolled} {terms.enrolled} ·{' '}
               {formatLakh(buckets.meta.spend)} spent
             </p>
           </div>
@@ -640,6 +648,7 @@ export default function PipelineDashboard({
             onToggle={toggleCampaignGroup}
             onSetMany={setCampaignInclusion}
             saveState={saveState}
+            terms={terms}
           />
         </div>
       )}
@@ -652,7 +661,7 @@ export default function PipelineDashboard({
               Google
             </p>
             <p className="text-xs text-muted2">
-              {buckets.google.leads} leads · {buckets.google.visits} visited · {buckets.google.enrolled} enrolled ·{' '}
+              {buckets.google.leads} leads · {buckets.google.visits} {terms.visited} · {buckets.google.enrolled} {terms.enrolled} ·{' '}
               {formatLakh(buckets.google.spend)} spent
             </p>
           </div>
@@ -662,6 +671,7 @@ export default function PipelineDashboard({
             onToggle={toggleCampaignGroup}
             onSetMany={setCampaignInclusion}
             saveState={saveState}
+            terms={terms}
           />
         </div>
       )}
