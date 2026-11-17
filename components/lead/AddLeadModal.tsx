@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { leadNameLabels } from '@/lib/localOcto'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { SOURCE_LABEL, TIMELINE_LABEL, DECISION_MAKER_LABEL } from '@/lib/types'
@@ -225,7 +226,7 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs text-muted">Lead Name *</label>
+              <label className="mb-1 block text-xs text-muted">{leadNameLabels(clientId).parent || 'Lead Name'} *</label>
               <input
                 required
                 value={fullName}
@@ -234,7 +235,7 @@ export default function AddLeadModal({ onClose, onCreated }: { onClose: () => vo
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted">Child Name</label>
+              <label className="mb-1 block text-xs text-muted">{leadNameLabels(clientId).child || 'Child Name'}</label>
               <input
                 value={childName}
                 onChange={(e) => setChildName(e.target.value)}
