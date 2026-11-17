@@ -8,6 +8,7 @@ import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, 
 import { clsx } from 'clsx'
 import { useNotifications } from '@/lib/useNotifications'
 import { LEAD_COLUMNS, LeadColumnKey, resolveLeadColumns } from '@/lib/leadTableColumns'
+import { leadNameLabels } from '@/lib/localOcto'
 import { useStages } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { useColumnWidths } from '@/lib/useColumnWidths'
@@ -336,7 +337,11 @@ function NextActionCell({ lead }: { lead: LeadRow }) {
   )
 }
 
-export default function LeadsPageClient({ initial }: { initial: LeadsPageResult }) {
+export default function LeadsPageClient({ initial, clientId = null }: { initial: LeadsPageResult; clientId?: string | null }) {
+  // Local Octo only: "Full Name" / "Company Name" column headers.
+  const nameLabels = leadNameLabels(clientId)
+  const columnLabel = (key: string) =>
+    key === 'lead' && nameLabels.parent ? nameLabels.parent : key === 'child_name' && nameLabels.child ? nameLabels.child : COLUMN_LABELS[key]
   const router = useRouter()
   const searchParams = useSearchParams()
   const tab = searchParams.get('tab') || ''
@@ -766,7 +771,7 @@ export default function LeadsPageClient({ initial }: { initial: LeadsPageResult 
                   </th>
                   {visibleColumns.map((key) => (
                     <ResizableTh key={key} width={widths[key]} onResize={(w) => setWidth(key, w)}>
-                      {COLUMN_LABELS[key]}
+                      {columnLabel(key)}
                     </ResizableTh>
                   ))}
                 </tr>
