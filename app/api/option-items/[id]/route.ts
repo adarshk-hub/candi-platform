@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = getSession(req)
   const existing = (await query('SELECT * FROM client_option_items WHERE id = $1', [params.id]))[0]
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : 'cold_reason'))
+  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : existing.list_key === 'capi_event' ? 'capi' : 'cold_reason'))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { value, isActive, sortOrder } = await req.json()
@@ -54,7 +54,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const session = getSession(req)
   const existing = (await query('SELECT * FROM client_option_items WHERE id = $1', [params.id]))[0]
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : 'cold_reason'))
+  if (!canEditSection(session, existing.client_id, existing.list_key === 'lead_source' ? 'lead_source' : existing.list_key === 'capi_event' ? 'capi' : 'cold_reason'))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   await query('DELETE FROM client_option_items WHERE id = $1', [params.id])
