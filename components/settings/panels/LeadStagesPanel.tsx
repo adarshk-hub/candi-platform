@@ -1,8 +1,10 @@
+// path: components/settings/panels/LeadStagesPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowUp, ArrowDown, Pencil, Plus, X } from 'lucide-react'
+import { pipelineTerms } from '@/lib/localOcto'
 
 interface Stage {
   id: string
@@ -19,7 +21,11 @@ interface Stage {
 // The stored values stay warm/hot/cold/won — only what people read
 // changes, to match the Lead / Visit / Enrolled / Cold names used
 // everywhere else.
-const STATUS_LABEL: Record<string, string> = { warm: 'Lead', hot: 'Visit', cold: 'Cold', won: 'Enrolled' }
+// Local Octo reads Meet / Purchased instead of Visit / Enrolled.
+function statusLabels(clientId: string): Record<string, string> {
+  const t = pipelineTerms(clientId)
+  return { warm: 'Lead', hot: t.Visit, cold: 'Cold', won: t.Enrolled }
+}
 const STATUS_PILL: Record<string, string> = {
   warm: 'bg-blue-500/20 text-blue-300',
   hot: 'bg-amber-500/20 text-amber-300',
@@ -38,6 +44,7 @@ function slugify(label: string) {
 export default function LeadStagesPanel({ clientId }: { clientId: string }) {
   const [stages, setStages] = useState<Stage[]>([])
   const [loading, setLoading] = useState(true)
+  const STATUS_LABEL = statusLabels(clientId)
   const [error, setError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -140,6 +147,7 @@ export default function LeadStagesPanel({ clientId }: { clientId: string }) {
               {editingId === s.id ? (
                 <EditRow
                   stage={s}
+                  clientId={clientId}
                   onCancel={() => setEditingId(null)}
                   onSaved={() => {
                     setEditingId(null)
@@ -215,7 +223,18 @@ export default function LeadStagesPanel({ clientId }: { clientId: string }) {
   )
 }
 
-function EditRow({ stage, onCancel, onSaved }: { stage: Stage; onCancel: () => void; onSaved: () => void }) {
+function EditRow({
+  stage,
+  clientId,
+  onCancel,
+  onSaved,
+}: {
+  stage: Stage
+  clientId: string
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const STATUS_LABEL = statusLabels(clientId)
   const [label, setLabel] = useState(stage.label)
   const [color, setColor] = useState(stage.color)
   const [statusGroup, setStatusGroup] = useState(stage.status_group)
@@ -278,9 +297,9 @@ function EditRow({ stage, onCancel, onSaved }: { stage: Stage; onCancel: () => v
             className="rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
           >
             <option value="warm">Lead</option>
-            <option value="hot">Visit</option>
+            <option value="hot">{STATUS_LABEL.hot}</option>
             <option value="cold">Cold</option>
-            <option value="won">Enrolled</option>
+            <option value="won">{STATUS_LABEL.won}</option>
           </select>
         </div>
         <div>
@@ -318,6 +337,7 @@ function NewStageRow({
   onCancel: () => void
   onSaved: () => void
 }) {
+  const STATUS_LABEL = statusLabels(clientId)
   const [label, setLabel] = useState('')
   const [statusGroup, setStatusGroup] = useState<Stage['status_group']>('warm')
   const [color, setColor] = useState('#60a5fa')
@@ -378,9 +398,9 @@ function NewStageRow({
               className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
             >
               <option value="warm">Lead</option>
-              <option value="hot">Visit</option>
+              <option value="hot">{STATUS_LABEL.hot}</option>
               <option value="cold">Cold</option>
-              <option value="won">Enrolled</option>
+              <option value="won">{STATUS_LABEL.won}</option>
             </select>
           </div>
           <button
