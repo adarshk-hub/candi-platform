@@ -130,7 +130,10 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
           metaPixelId: pixelId,
           metaCapiTestEventCode: testEventCode,
           zapierCapiWebhookUrl: zapierWebhookUrl,
-          capiStageEvents: stageEvents,
+          // Every stage row is saved: its event, or "" for "Don't send". What
+          // the dropdowns show is exactly what gets sent.
+          // Existing entries are kept too, in case the stage list failed to load.
+          capiStageEvents: { ...stageEvents, ...Object.fromEntries(allTriggerRows.map((r) => [r.key, stageEvents[r.key] || ''])) },
         }),
       })
       if (!res.ok) {
@@ -149,8 +152,9 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
   function setMapping(stageKey: string, eventName: string) {
     setStageEvents((prev) => {
       const next = { ...prev }
-      if (eventName) next[stageKey] = eventName
-      else delete next[stageKey]
+      // "Don't send" is saved as an empty string rather than removed, so the
+      // server knows it was chosen on purpose (see lib/capiTriggers.ts).
+      next[stageKey] = eventName || ''
       return next
     })
   }
