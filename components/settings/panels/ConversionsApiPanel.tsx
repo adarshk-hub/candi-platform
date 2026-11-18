@@ -63,7 +63,7 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
     ...builtInEvents,
     ...customEvents
       .filter((v) => !builtInEvents.some((e) => e.value === v))
-      .map((v) => ({ value: v, label: `${v} (custom)` })),
+      .map((v) => ({ value: v, label: v })),
   ]
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
