@@ -1,3 +1,4 @@
+// path: components/settings/panels/OptionListPanel.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -15,10 +16,18 @@ export default function OptionListPanel({
   clientId,
   listKey,
   title,
+  placeholder = 'New value',
+  hint,
+  onChanged,
 }: {
   clientId: string
   listKey: string
   title: string
+  placeholder?: string
+  hint?: string
+  // Called after an item is added, renamed or removed (e.g. so another
+  // dropdown on the same page can reload the list).
+  onChanged?: () => void
 }) {
   const [items, setItems] = useState<OptionItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +69,7 @@ export default function OptionListPanel({
       setNewValue('')
       setAdding(false)
       load()
+      onChanged?.()
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     } finally {
@@ -83,6 +93,7 @@ export default function OptionListPanel({
       }
       setEditingId(null)
       load()
+      onChanged?.()
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     }
@@ -99,6 +110,7 @@ export default function OptionListPanel({
         return
       }
       load()
+      onChanged?.()
     } catch (err: any) {
       setError(err?.message || 'Network error — could not reach the server')
     }
@@ -117,6 +129,7 @@ export default function OptionListPanel({
           <Plus size={14} /> Add New
         </button>
       </div>
+      {hint && <p className="mb-3 text-sm text-muted2">{hint}</p>}
       {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
 
       {adding && (
@@ -126,7 +139,7 @@ export default function OptionListPanel({
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addItem()}
-            placeholder="New value"
+            placeholder={placeholder}
             className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
           />
           <button
