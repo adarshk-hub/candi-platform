@@ -5,6 +5,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Check, RefreshCw, ChevronDown } from 'lucide-react'
 import { META_STANDARD_EVENTS } from '@/lib/types'
+import { isLocalOcto, LOCAL_OCTO_CAPI_EVENTS } from '@/lib/localOcto'
+import OptionListPanel from './OptionListPanel'
 
 interface StageRow {
   key: string
@@ -37,6 +39,32 @@ function statusPill(status: CapiEventRow['status']) {
 }
 
 export default function ConversionsApiPanel({ clientId }: { clientId: string }) {
+  // Built-in events (Local Octo gets Meta's full standard list; others the
+  // default 6), plus this institute's own events added under
+  // "Custom Meta events" below (stored in client_option_items, list capi_event).
+  const [customEvents, setCustomEvents] = useState<string[]>([])
+  const loadCustomEvents = useCallback(() => {
+    fetch(`/api/option-items?clientId=${clientId}&listKey=capi_event`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) =>
+        setCustomEvents(
+          Array.isArray(data) ? data.filter((x: any) => x.is_active && x.value).map((x: any) => String(x.value)) : []
+        )
+      )
+      .catch(() => setCustomEvents([]))
+  }, [clientId])
+  useEffect(() => {
+    loadCustomEvents()
+  }, [loadCustomEvents])
+  const builtInEvents: ReadonlyArray<{ value: string; label: string }> = isLocalOcto(clientId)
+    ? LOCAL_OCTO_CAPI_EVENTS
+    : META_STANDARD_EVENTS
+  const eventOptions: { value: string; label: string }[] = [
+    ...builtInEvents,
+    ...customEvents
+      .filter((v) => !builtInEvents.some((e) => e.value === v))
+      .map((v) => ({ value: v, label: `${v} (custom)` })),
+  ]
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -210,6 +238,15 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
         </button>
       </div>
 
+      <OptionListPanel
+        clientId={clientId}
+        listKey="capi_event"
+        title="Custom Meta events"
+        placeholder="e.g. MeetingDone"
+        hint="Add your own event names to use in the stage mapping below, alongside the built-in ones. Use letters and numbers without spaces (e.g. MeetingDone). Meta treats these as custom events."
+        onChanged={loadCustomEvents}
+      />
+
       <div className="rounded-card border border-border bg-card p-5">
         <h3 className="mb-1 font-semibold text-fg">Stage → Event mapping</h3>
         <p className="mb-4 text-sm text-muted2">
@@ -235,11 +272,15 @@ export default function ConversionsApiPanel({ clientId }: { clientId: string }) 
                       className="w-64 rounded-md border border-border bg-card2 px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
                     >
                       <option value="">Don't send</option>
-                      {META_STANDARD_EVENTS.map((ev) => (
+                      {eventOptions.map((ev) => (
                         <option key={ev.value} value={ev.value}>
                           {ev.label}
                         </option>
                       ))}
+                      {/* A mapped event that has since been removed from the lists stays visible, so it isn't silently lost. */}
+                      {stageEvents[s.key] && !eventOptions.some((ev) => ev.value === stageEvents[s.key]) && (
+                        <option value={stageEvents[s.key]}>{stageEvents[s.key]} (removed)</option>
+                      )}
                     </select>
                   </td>
                 </tr>
