@@ -10,7 +10,7 @@ import { logSettingsActivity } from '@/lib/settingsActivityLog'
 // future list an institute wants) — this one generic table/route serves all
 // of them so a new customizable list never needs a schema change.
 function optionListSectionLabel(listKey: string): string {
-  const labels: Record<string, string> = { lead_source: 'Lead Source', service: 'Services', company_type: 'Company Type' }
+  const labels: Record<string, string> = { lead_source: 'Lead Source', service: 'Services', company_type: 'Company Type', capi_event: 'Conversions API events' }
   return labels[listKey] || listKey
 }
 
@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
 
   // lead_source is a section counsellors may edit; every other list
   // (cold reasons, services…) stays with admins.
-  const section = (body?.listKey || '') === 'lead_source' ? 'lead_source' : 'cold_reason'
+  const listKeyIn = body?.listKey || ''
+  const section = listKeyIn === 'lead_source' ? 'lead_source' : listKeyIn === 'capi_event' ? 'capi' : 'cold_reason'
   if (!targetClientId || !canEditSection(session, targetClientId, section)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
