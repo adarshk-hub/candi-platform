@@ -1,4 +1,4 @@
-//Re
+// path: lib/capiTriggers.ts
 import { query } from './db'
 import { sendCapiEvent, logCapiSkipped } from './metaConversionsApi'
 
@@ -95,7 +95,13 @@ export async function fireCapiEventForLead(params: {
     // Meta under a different label than the one used internally. Outside CRM
     // mode the old behaviour holds: unmapped stages are skipped silently
     // rather than filling the log with noise.
-    const eventName = config.capi_stage_events?.[trigger] || (config.capi_crm_mode ? trigger : null)
+    //
+    // A stage saved as "" means "Don't send" was chosen for it in Settings, so
+    // it never fires — not even in CRM mode. Only a stage with no entry at all
+    // (never configured) uses the CRM-mode fallback.
+    const mapped = config.capi_stage_events?.[trigger]
+    if (mapped === '') return
+    const eventName = mapped || (config.capi_crm_mode ? trigger : null)
     if (!eventName) return
     if (!config.meta_pixel_id) {
       await logCapiSkipped({
