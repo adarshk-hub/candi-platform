@@ -11,6 +11,7 @@ import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
 import { notifyNewLead } from '@/lib/counsellorAlerts'
 import { rememberDeletedLeads, forgetDeletedLead } from '@/lib/deletedLeads'
 import { createNotification } from '@/lib/notifications'
+import { isLocalOcto, LOCAL_OCTO_MANUAL_STAGE } from '@/lib/localOcto'
 
 function splitParam(v: string | null): string[] {
   return (v || '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -136,6 +137,21 @@ export async function POST(req: NextRequest) {
     )
     const lead = rows[0]
 
+    // Local Octo only: a lead added by hand starts in its own "no message"
+    // stage, and no WhatsApp welcome is sent. Only applied if that stage
+    // exists, so the lead never lands in a stage the board can't show.
+    const localOctoManual = isLocalOcto(clientId)
+    if (localOctoManual) {
+      const [stage] = await query<{ key: string }>(
+        'SELECT key FROM pipeline_stages WHERE client_id = $1 AND key = $2 AND is_active = true',
+        [clientId, LOCAL_OCTO_MANUAL_STAGE]
+      )
+      if (stage) {
+        await query('UPDATE leads SET pipeline_stage = $1 WHERE id = $2', [stage.key, lead.id])
+        lead.pipeline_stage = stage.key
+      }
+    }
+
     await query(
       `INSERT INTO activity_log (lead_id, activity_type, title, description, actor_id)
        VALUES ($1, 'system', 'Lead Created', $2, $3)`,
@@ -192,11 +208,15 @@ export async function POST(req: NextRequest) {
     // off mid-flight. waitUntil() is the platform-supported way to keep
     // the function alive for this promise without making the response
     // wait for it.
-    waitUntil(
-      startWelcomeOrAsk(clientId, lead.id).catch((err) =>
-        console.error(`[leads] welcome handling threw for lead ${lead.id}`, err)
+    if (localOctoManual) {
+      await query('UPDATE leads SET welcome_message_status = $1 WHERE id = $2', ['skipped', lead.id]).catch(() => {})
+    } else {
+      waitUntil(
+        startWelcomeOrAsk(clientId, lead.id).catch((err) =>
+          console.error(`[leads] welcome handling threw for lead ${lead.id}`, err)
+        )
       )
-    )
+    }
 
     return NextResponse.json(lead)
   } catch (err: any) {
