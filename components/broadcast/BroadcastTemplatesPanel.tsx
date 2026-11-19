@@ -81,7 +81,7 @@ export default function BroadcastTemplatesPanel({
   // Optional media at the top of the message. Meta calls this the header,
   // and an image or PDF there is what turns a fee list or an invitation
   // into something a parent can actually open.
-  const [headerType, setHeaderType] = useState<'none' | 'text' | 'image' | 'document'>('none')
+  const [headerType, setHeaderType] = useState<'none' | 'text' | 'image' | 'video' | 'document'>('none')
   const [headerText, setHeaderText] = useState('')
   const [headerFile, setHeaderFile] = useState<File | null>(null)
   const [headerHandle, setHeaderHandle] = useState<string | null>(null)
@@ -101,6 +101,12 @@ export default function BroadcastTemplatesPanel({
   // file re-uploaded on every send. So two things are kept: the handle Meta
   // returns for approval, and the bytes themselves for later sends.
   async function uploadHeaderMedia(file: File) {
+    // The video is saved with the template for later sends, and the
+    // server can't take a request much over 4MB, so videos are kept small.
+    if (headerType === 'video' && file.size > 3 * 1024 * 1024) {
+      setError('Video is too large — please use an MP4 under 3MB.')
+      return
+    }
     setHeaderFile(file)
     setHeaderHandle(null)
     setHeaderMediaData(null)
@@ -142,7 +148,7 @@ export default function BroadcastTemplatesPanel({
     const components: any[] = []
     if (headerType === 'text' && headerText.trim()) {
       components.push({ type: 'HEADER', format: 'TEXT', text: headerText.trim() })
-    } else if ((headerType === 'image' || headerType === 'document') && headerHandle) {
+    } else if ((headerType === 'image' || headerType === 'video' || headerType === 'document') && headerHandle) {
       components.push({
         type: 'HEADER',
         format: headerType.toUpperCase(),
@@ -166,7 +172,7 @@ export default function BroadcastTemplatesPanel({
           components,
           headerFormat: headerType === 'none' ? null : headerType.toUpperCase(),
           headerText: headerType === 'text' ? headerText.trim() : null,
-          headerMediaData: headerType === 'image' || headerType === 'document' ? headerMediaData : null,
+          headerMediaData: headerType === 'image' || headerType === 'video' || headerType === 'document' ? headerMediaData : null,
           headerMediaMime: headerFile?.type || null,
           headerMediaFilename: headerFile?.name || null,
           variableMap,
@@ -396,6 +402,7 @@ export default function BroadcastTemplatesPanel({
               { key: 'none' as const, label: 'None' },
               { key: 'text' as const, label: 'Heading' },
               { key: 'image' as const, label: 'Image' },
+              { key: 'video' as const, label: 'Video' },
               { key: 'document' as const, label: 'PDF' },
             ]).map((h) => (
               <button
@@ -427,14 +434,22 @@ export default function BroadcastTemplatesPanel({
             />
           )}
 
-          {(headerType === 'image' || headerType === 'document') && (
+          {(headerType === 'image' || headerType === 'video' || headerType === 'document') && (
             <div className="mt-2">
               <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted2 hover:text-fg">
                 <Paperclip size={14} />
-                {headerFile ? 'Choose a different file' : headerType === 'image' ? 'Choose an image' : 'Choose a PDF'}
+                {headerFile
+                  ? 'Choose a different file'
+                  : headerType === 'image'
+                    ? 'Choose an image'
+                    : headerType === 'video'
+                      ? 'Choose a video'
+                      : 'Choose a PDF'}
                 <input
                   type="file"
-                  accept={headerType === 'image' ? 'image/jpeg,image/png' : 'application/pdf'}
+                  accept={
+                    headerType === 'image' ? 'image/jpeg,image/png' : headerType === 'video' ? 'video/mp4' : 'application/pdf'
+                  }
                   onChange={(e) => {
                     const f = e.target.files?.[0]
                     if (f) uploadHeaderMedia(f)
@@ -451,7 +466,7 @@ export default function BroadcastTemplatesPanel({
                   real file is sent with each message. Parents see whatever
                   is attached at send time, not this one. */}
               <p className="mt-1 text-xs text-muted2">
-                {headerType === 'image' ? 'JPG or PNG.' : 'PDF.'} Meta approves the template against this sample
+                {headerType === 'image' ? 'JPG or PNG.' : headerType === 'video' ? 'MP4, up to 3MB.' : 'PDF.'} Meta approves the template against this sample
                 file.
               </p>
             </div>
@@ -465,7 +480,7 @@ export default function BroadcastTemplatesPanel({
             !body.trim() ||
             !!busy ||
             uploading ||
-            ((headerType === 'image' || headerType === 'document') && !headerHandle)
+            ((headerType === 'image' || headerType === 'video' || headerType === 'document') && !headerHandle)
           }
           className="mt-4 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
         >
