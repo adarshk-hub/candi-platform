@@ -4,6 +4,9 @@
 // Every other institute gets exactly the labels it had before.
 export const LOCAL_OCTO_CLIENT_ID = '0a9d4675-8179-4d87-a879-decce8d00b86'
 
+// Stage a manually added Local Octo lead starts in (no WhatsApp sent).
+export const LOCAL_OCTO_MANUAL_STAGE = 'manual_lead'
+
 export function isLocalOcto(clientId: string | null | undefined): boolean {
   return clientId === LOCAL_OCTO_CLIENT_ID
 }
