@@ -1,6 +1,8 @@
 // path: lib/welcomeMessage.ts
 import { queryAsClient, runAsClient } from './db'
 import { startSequence } from './waSequenceEngine'
+import { isLocalOcto } from './localOcto'
+import { sendLocalOctoStageSms } from './msg91Sms'
 
 export type WelcomeStatus = 'pending' | 'sent' | 'skipped'
 
@@ -56,5 +58,13 @@ export async function startWelcomeOrAsk(
     ).catch(() => {})
   }
   await setStatus(clientId, leadId, 'sent')
+
+  // Local Octo only: the "Lead" SMS for new leads from Meta, the website and
+  // WhatsApp. (Leads added by hand never reach here.)
+  if (isLocalOcto(clientId)) {
+    const [lead] = await queryAsClient(clientId, 'SELECT * FROM leads WHERE id = $1', [leadId]).catch(() => [])
+    if (lead) await sendLocalOctoStageSms({ clientId, lead, stage: 'new_lead' })
+  }
+
   return { started: result.ok, pending: false }
 }
