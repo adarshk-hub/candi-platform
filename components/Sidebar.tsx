@@ -27,6 +27,8 @@ import {
   MessageSquareText,
   CalendarCheck,
   CalendarRange,
+  MessageSquare,
+  Send,
 } from 'lucide-react'
 import { useUnreplied } from '@/lib/useUnreplied'
 import { canAccessPage } from '@/lib/moduleAccess'
@@ -327,6 +329,32 @@ export default function Sidebar({
         )}
 
 
+
+        {/* SMS (MSG91) — Local Octo only. Broadcast is hidden from
+            counsellors, same as WhatsApp broadcasts. */}
+        {user?.clientId === CANDID_SCHOOLS_CLIENT_ID && (
+          <div className="pt-3">
+            {!collapsed && (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-muted">SMS</p>
+            )}
+            <NavItem
+              href="/sms"
+              icon={MessageSquare}
+              label="SMS Inbox"
+              active={pathname === '/sms' && searchParams.get('tab') !== 'broadcast'}
+              collapsed={collapsed}
+            />
+            {user.role !== 'client_counsellor' && (
+              <NavItem
+                href="/sms?tab=broadcast"
+                icon={Send}
+                label="SMS Broadcast"
+                active={pathname === '/sms' && searchParams.get('tab') === 'broadcast'}
+                collapsed={collapsed}
+              />
+            )}
+          </div>
+        )}
 
         {/* Counsellor section. Set apart by a gap and a heading rather than
             put behind a disclosure: these are checked several times a day,
