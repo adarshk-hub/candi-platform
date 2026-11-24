@@ -249,10 +249,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         })
       )
 
-      // Local Octo only: the MSG91 SMS mapped to the new stage (lib/msg91Sms.ts).
-      // No-op for every other school.
+      // Local Octo only: the MSG91 SMS mapped to the new stage, if that stage
+      // is set to Automatic in Settings > SMS (lib/msg91Sms.ts). No-op for
+      // every other school.
       waitUntil(
-        sendLocalOctoStageSms({ clientId: existing.client_id, lead: updated, stage: body.pipeline_stage })
+        sendLocalOctoStageSms({ clientId: existing.client_id, lead: updated, stage: body.pipeline_stage, trigger: 'auto' })
       )
 
       // Auto-send a post-visit summary the moment a visit is marked done —
