@@ -5,6 +5,11 @@
 // picks which template goes with which stage and fills its variables from
 // the lead. Every send (or skip) is written to the lead's activity log.
 //
+// Each stage has a mode, set in Settings > SMS (clients.sms_stage_modes):
+//   auto   — sent the moment the lead reaches the stage
+//   manual — the CRM asks before sending (SmsStagePrompt)
+//   off    — never sent (the default until set)
+//
 // Vercel env vars:
 //   MSG91_AUTH_KEY           MSG91 auth key (secret)
 //   LOCAL_OCTO_SMS_PHONE     support number shown in the SMS (##phone##)
@@ -22,22 +27,41 @@ const OFFER_VALID_DAYS = 7
 
 type SmsVar = 'name' | 'company' | 'phone' | 'date' | 'time' | 'amount' | 'link'
 
+export type SmsMode = 'auto' | 'manual' | 'off'
+
 interface SmsTemplate {
   name: string // MSG91 template name, for the activity log
   templateId: string // MSG91 template ID
   vars: SmsVar[]
+  text: string // approved wording, shown in Settings and the send prompt
 }
 
 // Stage key -> MSG91 template. Stages not listed (e.g. manual_lead) send nothing.
 export const LOCAL_OCTO_SMS_TEMPLATES: Record<string, SmsTemplate> = {
-  new_lead: { name: 'lo_lead', templateId: '6b0593b7054165fed2009633', vars: ['name', 'company', 'phone'] },
-  qualified: { name: 'lo_responded', templateId: '6b0594e0996c0ed1b107c195', vars: ['name', 'company', 'phone'] },
-  wa_sent: { name: 'lo_call_booked', templateId: '6b059571963d1baca5046b32', vars: ['name', 'date', 'time'] },
-  visit_done: { name: 'lo_call_done', templateId: '6b059332fe231d178609b682', vars: ['name', 'company', 'phone'] },
-  offer_made: { name: 'lo_offer_made', templateId: '6b0595e20e45d5c9650488d7', vars: ['name', 'company', 'amount', 'date'] },
-  accepted: { name: 'lo_accepted', templateId: '6b059699713c1dfdec08b7e2', vars: ['name', 'company', 'link'] },
-  enrolled: { name: 'lo_payment_in', templateId: '6b05971d88de262f07041cf2', vars: ['name', 'amount', 'company'] },
-  cold: { name: 'lo_cold', templateId: '6b05977c03a33896250e39e5', vars: ['name', 'company', 'phone'] },
+  new_lead: { name: 'lo_lead', templateId: '6b0593b7054165fed2009633', vars: ['name', 'company', 'phone'],
+    text: 'Hi ##name##, thanks for your interest in Local Octo for ##company##. Our team will call you shortly. Call ##phone## for help. -Local Octo',
+  },
+  qualified: { name: 'lo_responded', templateId: '6b0594e0996c0ed1b107c195', vars: ['name', 'company', 'phone'],
+    text: 'Hi ##name##, we received your reply to your enquiry for Google Maps ranking and review management for ##company##. Our team will call you shortly. Call ##phone## for any doubts. - Local Octo',
+  },
+  wa_sent: { name: 'lo_call_booked', templateId: '6b059571963d1baca5046b32', vars: ['name', 'date', 'time'],
+    text: 'Hi ##name##, your call with Local Octo is confirmed for ##date## at ##time##. Our expert will call you on this number. -Local Octo',
+  },
+  visit_done: { name: 'lo_call_done', templateId: '6b059332fe231d178609b682', vars: ['name', 'company', 'phone'],
+    text: 'Hi ##name##, thank you for the consultation call today for ##company##. The proposal discussed on the call is here: https://localocto.com Call ##phone## for any questions. - Local Octo',
+  },
+  offer_made: { name: 'lo_offer_made', templateId: '6b0595e20e45d5c9650488d7', vars: ['name', 'company', 'amount', 'date'],
+    text: 'Hi ##name##, as discussed, the Local Octo Done For You plan for ##company## is ready at Rs ##amount## per month. View plan details: https://localocto.com Valid till ##date##. - Local Octo',
+  },
+  accepted: { name: 'lo_accepted', templateId: '6b059699713c1dfdec08b7e2', vars: ['name', 'company', 'link'],
+    text: 'Hi ##name##, thank you for choosing Local Octo for ##company##. Complete your payment here: ##link## -Local Octo',
+  },
+  enrolled: { name: 'lo_payment_in', templateId: '6b05971d88de262f07041cf2', vars: ['name', 'amount', 'company'],
+    text: 'Hi ##name##, we have received your payment of Rs ##amount## for ##company##. Our team will start work shortly. -Local Octo',
+  },
+  cold: { name: 'lo_cold', templateId: '6b05977c03a33896250e39e5', vars: ['name', 'company', 'phone'],
+    text: 'Hi ##name##, want more calls for ##company## from Google Maps? Local Octo can help. Call ##phone## to get started. -Local Octo',
+  },
 }
 
 // DLT allows at most 30 characters per variable.
@@ -130,32 +154,58 @@ const MISSING_HINT: Record<string, string> = {
   amount: 'no amount',
 }
 
+export async function getSmsModes(clientId: string): Promise<Record<string, SmsMode>> {
+  try {
+    const [row] = await queryAsClient<{ sms_stage_modes: Record<string, SmsMode> | null }>(
+      clientId,
+      'SELECT sms_stage_modes FROM clients WHERE id = $1',
+      [clientId]
+    )
+    return row?.sms_stage_modes || {}
+  } catch {
+    return {} // column not added yet — everything counts as off
+  }
+}
+
+export interface SmsSendResult {
+  ok: boolean
+  skipped?: boolean
+  error?: string
+}
+
 // Sends the SMS mapped to `stage` for a Local Octo lead. Does nothing for
 // other schools or unmapped stages. Never throws.
-export async function sendLocalOctoStageSms(params: { clientId: string; lead: any; stage: string }): Promise<void> {
-  const { clientId, lead, stage } = params
+//   trigger 'auto'   — only sends if that stage is set to Automatic
+//   trigger 'manual' — someone clicked Send in the prompt; sends unless Off
+export async function sendLocalOctoStageSms(params: {
+  clientId: string
+  lead: any
+  stage: string
+  trigger: 'auto' | 'manual'
+}): Promise<SmsSendResult> {
+  const { clientId, lead, stage, trigger } = params
   try {
-    if (!isLocalOcto(clientId)) return
+    if (!isLocalOcto(clientId)) return { ok: false, skipped: true }
     const tpl = LOCAL_OCTO_SMS_TEMPLATES[stage]
-    if (!tpl) return
+    if (!tpl) return { ok: false, skipped: true }
+
+    const mode = (await getSmsModes(clientId))[stage] || 'off'
+    if (mode === 'off') return { ok: false, skipped: true, error: 'SMS is off for this stage.' }
+    if (trigger === 'auto' && mode !== 'auto') return { ok: false, skipped: true }
+
+    const notSent = async (why: string): Promise<SmsSendResult> => {
+      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: ${why}.`)
+      return { ok: false, error: why }
+    }
 
     const authKey = process.env.MSG91_AUTH_KEY
-    if (!authKey) {
-      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: MSG91_AUTH_KEY is not set.`)
-      return
-    }
+    if (!authKey) return notSent('MSG91_AUTH_KEY is not set')
 
     const mobile = toDialNumber(lead.whatsapp_number)
-    if (!mobile) {
-      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: the lead has no phone number.`)
-      return
-    }
+    if (!mobile) return notSent('the lead has no phone number')
 
     const built = await buildVars(clientId, lead, stage, tpl)
-    if (!built.ok) {
-      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: ${MISSING_HINT[built.missing] || built.missing}.`)
-      return
-    }
+    if (!built.ok) return notSent(MISSING_HINT[built.missing] || built.missing)
 
     const res = await fetch(MSG91_FLOW_URL, {
       method: 'POST',
@@ -169,16 +219,17 @@ export async function sendLocalOctoStageSms(params: { clientId: string; lead: an
     const data = await res.json().catch(() => ({}))
     const ok = res.ok && data?.type === 'success'
 
+    const failMsg = String(data?.message || `MSG91 returned ${res.status}`)
     await logActivity(
       clientId,
       lead.id,
       ok ? 'SMS Sent' : 'SMS Failed',
-      ok
-        ? `${tpl.name} sent to ${mobile} via MSG91.`
-        : `${tpl.name} to ${mobile} failed: ${data?.message || `MSG91 returned ${res.status}`}.`
+      ok ? `${tpl.name} sent to ${mobile} via MSG91.` : `${tpl.name} to ${mobile} failed: ${failMsg}.`
     )
+    return ok ? { ok: true } : { ok: false, error: failMsg }
   } catch (err: any) {
     console.error('[msg91] stage SMS failed', err)
     await logActivity(clientId, lead.id, 'SMS Failed', `Stage "${stage}": ${err?.message || 'request failed'}.`)
+    return { ok: false, error: err?.message || 'request failed' }
   }
 }
