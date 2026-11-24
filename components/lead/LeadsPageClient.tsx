@@ -17,6 +17,7 @@ import LeadSlideOver from '@/components/lead/LeadSlideOver'
 import KanbanBoard from '@/components/lead/KanbanBoard'
 import ColdReasonModal, { ColdReasonValue } from '@/components/lead/ColdReasonModal'
 import StageMessagePrompt from '@/components/lead/StageMessagePrompt'
+import SmsStagePrompt from '@/components/lead/SmsStagePrompt'
 import AddLeadModal from '@/components/lead/AddLeadModal'
 import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
 import LeadImportModal from '@/components/lead/LeadImportModal'
@@ -151,6 +152,8 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
   // the new stage has a template attached. Same component the lead panel
   // uses, so the question is identical wherever the stage was changed.
   const [sentStage, setSentStage] = useState<string | null>(null)
+  // Local Octo SMS prompt — shown after the WhatsApp prompt is finished.
+  const [smsStage, setSmsStage] = useState<string | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
   const stages = stagesFor(lead.client_id)
@@ -205,6 +208,7 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
       })
       if (res.ok) {
         setSentStage(next)
+        setSmsStage(next)
         onChanged()
       } else {
         const b = await res.json().catch(() => ({}))
@@ -294,6 +298,19 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
             stageKey={sentStage}
             stageLabel={stageLabel(sentStage, lead.client_id)}
             onDone={() => setSentStage(null)}
+          />
+        </div>
+      )}
+
+      {smsStage && !sentStage && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <SmsStagePrompt
+            leadId={lead.id}
+            clientId={lead.client_id}
+            leadName={lead.full_name}
+            stageKey={smsStage}
+            stageLabel={stageLabel(smsStage, lead.client_id)}
+            onDone={() => setSmsStage(null)}
           />
         </div>
       )}
