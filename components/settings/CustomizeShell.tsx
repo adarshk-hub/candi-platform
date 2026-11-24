@@ -23,6 +23,7 @@ import {
   Radio,
   History,
   Shuffle,
+  MessageSquare,
 } from 'lucide-react'
 import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
@@ -35,6 +36,8 @@ import WhatsAppSettingsPanel from './panels/WhatsAppSettingsPanel'
 import ConversionsApiPanel from './panels/ConversionsApiPanel'
 import SettingsActivityPanel from './panels/SettingsActivityPanel'
 import LeadAssignmentPanel from './panels/LeadAssignmentPanel'
+import SmsSettingsPanel from './panels/SmsSettingsPanel'
+import { isLocalOcto } from '@/lib/localOcto'
 import { sectionsForRole, SettingsSection } from '@/lib/settingsSections'
 
 interface Institute {
@@ -54,6 +57,8 @@ const CATEGORIES = [
   { key: 'email', label: 'School Email', icon: Mail },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'capi', label: 'Conversions API', icon: Radio },
+  // Local Octo only (filtered below).
+  { key: 'sms', label: 'SMS', icon: MessageSquare },
   { key: 'lead_range', label: 'Lead Date Range', icon: CalendarRange },
   { key: 'display', label: 'Display Preferences', icon: Rows3 },
   { key: 'activity', label: 'Activity', icon: History },
@@ -92,7 +97,9 @@ export default function CustomizeShell({
   // Only the sections this role may open, so a panel it can't use is never
   // drawn — and can't be reached by editing ?panel= in the URL either.
   const allowed = sectionsForRole(role)
-  const categories = CATEGORIES.filter((c) => allowed.includes(c.key as SettingsSection))
+  const categories = CATEGORIES.filter(
+    (c) => allowed.includes(c.key as SettingsSection) && (c.key !== 'sms' || isLocalOcto(clientId))
+  )
 
   const requested = searchParams.get('panel') as CategoryKey | null
   const active: CategoryKey = categories.some((c) => c.key === requested)
@@ -186,6 +193,7 @@ export default function CustomizeShell({
           {active === 'email' && <EmailSettingsPanel clientId={clientId} />}
           {active === 'whatsapp' && <WhatsAppSettingsPanel clientId={clientId} role={role} />}
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
+          {active === 'sms' && <SmsSettingsPanel clientId={clientId} />}
           {active === 'lead_range' && <LeadDateRangePanel clientId={clientId} />}
           {active === 'display' && <DisplayPrefsPanel clientId={clientId} />}
           {active === 'activity' && <SettingsActivityPanel clientId={clientId} />}
