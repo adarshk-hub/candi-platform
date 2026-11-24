@@ -173,63 +173,184 @@ export interface SmsSendResult {
   error?: string
 }
 
-// Sends the SMS mapped to `stage` for a Local Octo lead. Does nothing for
-// other schools or unmapped stages. Never throws.
-//   trigger 'auto'   — only sends if that stage is set to Automatic
-//   trigger 'manual' — someone clicked Send in the prompt; sends unless Off
+// 'auto'      — a stage change / new lead; only if the stage is Automatic
+// 'manual'    — Send clicked in the "Ask before sending" prompt; unless Off
+// 'direct'    — sent by hand from the lead's SMS tab (any template)
+// 'broadcast' — part of an SMS broadcast
+export type SmsTrigger = 'auto' | 'manual' | 'direct' | 'broadcast'
+
+function renderText(tpl: SmsTemplate, values: Record<string, string>): string {
+  return tpl.text.replace(/##(\w+)##/g, (_, k) => values[k] ?? '')
+}
+
+// Phone number + variable values for one lead, or the reason it can't be sent.
+async function prepareRecipient(
+  clientId: string,
+  lead: any,
+  stage: string,
+  tpl: SmsTemplate
+): Promise<{ ok: true; mobile: string; values: Record<string, string> } | { ok: false; why: string }> {
+  const mobile = toDialNumber(lead.whatsapp_number)
+  if (!mobile) return { ok: false, why: 'the lead has no phone number' }
+  const built = await buildVars(clientId, lead, stage, tpl)
+  if (!built.ok) return { ok: false, why: MISSING_HINT[built.missing] || built.missing }
+  return { ok: true, mobile, values: built.values }
+}
+
+// One MSG91 Flow call; MSG91 takes many recipients, each with their own values.
+async function postFlow(
+  tpl: SmsTemplate,
+  recipients: Array<{ mobile: string; values: Record<string, string> }>
+): Promise<{ ok: boolean; requestId?: string; error?: string }> {
+  const authKey = process.env.MSG91_AUTH_KEY
+  if (!authKey) return { ok: false, error: 'MSG91_AUTH_KEY is not set' }
+  const res = await fetch(MSG91_FLOW_URL, {
+    method: 'POST',
+    headers: { authkey: authKey, 'Content-Type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      template_id: tpl.templateId,
+      short_url: '0',
+      recipients: recipients.map((r) => ({ mobiles: r.mobile, ...r.values })),
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.ok && data?.type === 'success') return { ok: true, requestId: String(data?.message || '') }
+  return { ok: false, error: String(data?.message || `MSG91 returned ${res.status}`) }
+}
+
+// Successful sends only — this table is what the SMS Inbox shows.
+async function recordSent(
+  clientId: string,
+  row: {
+    leadId: string
+    stage: string
+    tpl: SmsTemplate
+    mobile: string
+    body: string
+    trigger: SmsTrigger
+    sentBy?: string | null
+    broadcastName?: string | null
+    requestId?: string
+  }
+) {
+  await queryAsClient(
+    clientId,
+    `INSERT INTO sms_messages (lead_id, stage_key, template_name, mobile, body, trigger, sent_by, broadcast_name, msg91_request_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      row.leadId,
+      row.stage,
+      row.tpl.name,
+      row.mobile,
+      row.body,
+      row.trigger,
+      row.sentBy || null,
+      row.broadcastName || null,
+      row.requestId || null,
+    ]
+  ).catch((err) => console.error('[msg91] could not record sent SMS', err))
+}
+
+// Sends one stage's SMS to one Local Octo lead. Does nothing for other
+// schools or unmapped stages. Never throws.
 export async function sendLocalOctoStageSms(params: {
   clientId: string
   lead: any
   stage: string
-  trigger: 'auto' | 'manual'
+  trigger: SmsTrigger
+  sentBy?: string | null
 }): Promise<SmsSendResult> {
-  const { clientId, lead, stage, trigger } = params
+  const { clientId, lead, stage, trigger, sentBy } = params
   try {
     if (!isLocalOcto(clientId)) return { ok: false, skipped: true }
     const tpl = LOCAL_OCTO_SMS_TEMPLATES[stage]
     if (!tpl) return { ok: false, skipped: true }
 
-    const mode = (await getSmsModes(clientId))[stage] || 'off'
-    if (mode === 'off') return { ok: false, skipped: true, error: 'SMS is off for this stage.' }
-    if (trigger === 'auto' && mode !== 'auto') return { ok: false, skipped: true }
-
-    const notSent = async (why: string): Promise<SmsSendResult> => {
-      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: ${why}.`)
-      return { ok: false, error: why }
+    // The stage settings only govern stage-driven sends.
+    if (trigger === 'auto' || trigger === 'manual') {
+      const mode = (await getSmsModes(clientId))[stage] || 'off'
+      if (mode === 'off') return { ok: false, skipped: true, error: 'SMS is off for this stage.' }
+      if (trigger === 'auto' && mode !== 'auto') return { ok: false, skipped: true }
     }
 
-    const authKey = process.env.MSG91_AUTH_KEY
-    if (!authKey) return notSent('MSG91_AUTH_KEY is not set')
+    const prep = await prepareRecipient(clientId, lead, stage, tpl)
+    if (!prep.ok) {
+      await logActivity(clientId, lead.id, 'SMS Not Sent', `${tpl.name}: ${prep.why}.`)
+      return { ok: false, error: prep.why }
+    }
 
-    const mobile = toDialNumber(lead.whatsapp_number)
-    if (!mobile) return notSent('the lead has no phone number')
+    const sent = await postFlow(tpl, [{ mobile: prep.mobile, values: prep.values }])
+    if (!sent.ok) {
+      await logActivity(clientId, lead.id, 'SMS Failed', `${tpl.name} to ${prep.mobile} failed: ${sent.error}.`)
+      return { ok: false, error: sent.error }
+    }
 
-    const built = await buildVars(clientId, lead, stage, tpl)
-    if (!built.ok) return notSent(MISSING_HINT[built.missing] || built.missing)
-
-    const res = await fetch(MSG91_FLOW_URL, {
-      method: 'POST',
-      headers: { authkey: authKey, 'Content-Type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        template_id: tpl.templateId,
-        short_url: '0',
-        recipients: [{ mobiles: mobile, ...built.values }],
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    const ok = res.ok && data?.type === 'success'
-
-    const failMsg = String(data?.message || `MSG91 returned ${res.status}`)
-    await logActivity(
-      clientId,
-      lead.id,
-      ok ? 'SMS Sent' : 'SMS Failed',
-      ok ? `${tpl.name} sent to ${mobile} via MSG91.` : `${tpl.name} to ${mobile} failed: ${failMsg}.`
-    )
-    return ok ? { ok: true } : { ok: false, error: failMsg }
+    const body = renderText(tpl, prep.values)
+    await recordSent(clientId, { leadId: lead.id, stage, tpl, mobile: prep.mobile, body, trigger, sentBy, requestId: sent.requestId })
+    await logActivity(clientId, lead.id, 'SMS Sent', `${tpl.name} sent to ${prep.mobile} via MSG91: "${body}"`)
+    return { ok: true }
   } catch (err: any) {
     console.error('[msg91] stage SMS failed', err)
     await logActivity(clientId, lead.id, 'SMS Failed', `Stage "${stage}": ${err?.message || 'request failed'}.`)
     return { ok: false, error: err?.message || 'request failed' }
   }
+}
+
+const BROADCAST_BATCH = 100
+
+// Sends one template to many Local Octo leads, MSG91 recipients batched 100
+// per call. Leads missing a value (e.g. no Company Name) are skipped.
+export async function sendLocalOctoSmsBroadcast(params: {
+  clientId: string
+  stage: string
+  leads: any[]
+  sentBy?: string | null
+  broadcastName?: string | null
+}): Promise<{ sent: number; skipped: number; failed: number; errors: string[] }> {
+  const { clientId, stage, leads, sentBy, broadcastName } = params
+  const out = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  const tpl = LOCAL_OCTO_SMS_TEMPLATES[stage]
+  if (!isLocalOcto(clientId) || !tpl) {
+    out.errors.push('SMS is not set up for this template.')
+    return out
+  }
+
+  const ready: Array<{ lead: any; mobile: string; values: Record<string, string> }> = []
+  for (const lead of leads) {
+    const prep = await prepareRecipient(clientId, lead, stage, tpl)
+    if (prep.ok) ready.push({ lead, mobile: prep.mobile, values: prep.values })
+    else out.skipped++
+  }
+
+  for (let i = 0; i < ready.length; i += BROADCAST_BATCH) {
+    const batch = ready.slice(i, i + BROADCAST_BATCH)
+    const sent = await postFlow(tpl, batch).catch((err: any) => ({ ok: false, error: err?.message, requestId: undefined }))
+    if (!sent.ok) {
+      out.failed += batch.length
+      if (sent.error && !out.errors.includes(sent.error)) out.errors.push(sent.error)
+      continue
+    }
+    out.sent += batch.length
+    for (const r of batch) {
+      const body = renderText(tpl, r.values)
+      await recordSent(clientId, {
+        leadId: r.lead.id,
+        stage,
+        tpl,
+        mobile: r.mobile,
+        body,
+        trigger: 'broadcast',
+        sentBy,
+        broadcastName,
+        requestId: sent.requestId,
+      })
+      await logActivity(
+        clientId,
+        r.lead.id,
+        'SMS Sent',
+        `${tpl.name} sent via SMS broadcast${broadcastName ? ` "${broadcastName}"` : ''}: "${body}"`
+      )
+    }
+  }
+  return out
 }
