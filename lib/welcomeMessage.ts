@@ -60,10 +60,11 @@ export async function startWelcomeOrAsk(
   await setStatus(clientId, leadId, 'sent')
 
   // Local Octo only: the "Lead" SMS for new leads from Meta, the website and
-  // WhatsApp. (Leads added by hand never reach here.)
+  // WhatsApp, if the Lead stage is set to Automatic in Settings > SMS.
+  // (Leads added by hand never reach here.)
   if (isLocalOcto(clientId)) {
     const [lead] = await queryAsClient(clientId, 'SELECT * FROM leads WHERE id = $1', [leadId]).catch(() => [])
-    if (lead) await sendLocalOctoStageSms({ clientId, lead, stage: 'new_lead' })
+    if (lead) await sendLocalOctoStageSms({ clientId, lead, stage: 'new_lead', trigger: 'auto' })
   }
 
   return { started: result.ok, pending: false }
