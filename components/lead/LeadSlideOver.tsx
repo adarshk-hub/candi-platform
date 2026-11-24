@@ -10,6 +10,7 @@ import { formatDateTime } from '@/lib/format'
 import { useStages } from '@/lib/StagesContext'
 import StagePill from './StagePill'
 import StageMessagePrompt from './StageMessagePrompt'
+import SmsStagePrompt from './SmsStagePrompt'
 import { ColdReasonValue } from './ColdReasonModal'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
@@ -55,6 +56,8 @@ export default function LeadSlideOver({
   // Set after a successful stage change so the WhatsApp prompt can look up
   // whether that stage has a template attached.
   const [sentStage, setSentStage] = useState<string | null>(null)
+  // Local Octo SMS prompt — shown after the WhatsApp prompt is finished.
+  const [smsStage, setSmsStage] = useState<string | null>(null)
 
   function load() {
     fetch(`/api/leads/${leadId}`)
@@ -94,6 +97,7 @@ export default function LeadSlideOver({
         setError(body.error || 'Could not update the stage.')
       } else {
         setSentStage(next)
+        setSmsStage(next)
       }
     } finally {
       load() // reconcile with server truth whether the request succeeded or not
@@ -117,6 +121,20 @@ export default function LeadSlideOver({
                 stageLabel={stageLabelLookup(sentStage, lead.client_id)}
                 onDone={() => {
                   setSentStage(null)
+                  load()
+                }}
+              />
+            )}
+
+            {smsStage && !sentStage && (
+              <SmsStagePrompt
+                leadId={lead.id}
+                clientId={lead.client_id}
+                leadName={lead.full_name}
+                stageKey={smsStage}
+                stageLabel={stageLabelLookup(smsStage, lead.client_id)}
+                onDone={() => {
+                  setSmsStage(null)
                   load()
                 }}
               />
