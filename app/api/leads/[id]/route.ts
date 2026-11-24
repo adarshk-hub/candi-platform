@@ -1,5 +1,4 @@
 // path: app/api/leads/[id]/route.ts
-//Re
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { query } from '@/lib/db'
@@ -13,6 +12,7 @@ import { renderEmailTemplate, POST_VISIT_SUMMARY_KEY } from '@/lib/emailTemplate
 import { pauseSequenceForLead, resumeSequenceForLead } from '@/lib/waSequenceEngine'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
 import { normalizePhone } from '@/lib/leadIntake'
+import { sendLocalOctoStageSms } from '@/lib/msg91Sms'
 
 const LEAD_QUERY = `
   SELECT
@@ -247,6 +247,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           trigger: body.pipeline_stage,
           eventIdSeed: `lead:${params.id}:stage:${body.pipeline_stage}`,
         })
+      )
+
+      // Local Octo only: the MSG91 SMS mapped to the new stage (lib/msg91Sms.ts).
+      // No-op for every other school.
+      waitUntil(
+        sendLocalOctoStageSms({ clientId: existing.client_id, lead: updated, stage: body.pipeline_stage })
       )
 
       // Auto-send a post-visit summary the moment a visit is marked done —
