@@ -2,8 +2,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { leadNameLabels } from '@/lib/localOcto'
-import { X, ClipboardList, History, CalendarDays, MessageCircle, MapPin, Phone, Snowflake } from 'lucide-react'
+import { leadNameLabels, isLocalOcto } from '@/lib/localOcto'
+import { X, ClipboardList, History, CalendarDays, MessageCircle, MessageSquare, MapPin, Phone, Snowflake } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
@@ -18,16 +18,19 @@ import InfoTab from './tabs/InfoTab'
 import NextActionTab from './tabs/NextActionTab'
 import HistoryTab from './tabs/HistoryTab'
 import WhatsAppTab from './tabs/WhatsAppTab'
+import SmsTab from './tabs/SmsTab'
 import BookingsTab from './tabs/BookingsTab'
 import CallLogTab from './tabs/CallLogTab'
 import TagEditor from './TagEditor'
 import { markLeadRead } from '@/lib/useNotifications'
 
-type TabKey = 'info' | 'whatsapp' | 'calls' | 'bookings' | 'nextaction' | 'history'
+type TabKey = 'info' | 'whatsapp' | 'sms' | 'calls' | 'bookings' | 'nextaction' | 'history'
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'info', label: 'Info', icon: ClipboardList },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  // Local Octo only (filtered where the tabs are drawn).
+  { key: 'sms', label: 'SMS', icon: MessageSquare },
   { key: 'calls', label: 'Call Log', icon: Phone },
   { key: 'bookings', label: 'Bookings', icon: MapPin },
   { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
@@ -212,7 +215,7 @@ export default function LeadSlideOver({
             <ScoreAndSla lead={lead} />
 
             <div className="flex border-b border-border bg-card2">
-              {TABS.map((t) => (
+              {TABS.filter((t) => t.key !== 'sms' || isLocalOcto(lead.client_id)).map((t) => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
@@ -238,6 +241,7 @@ export default function LeadSlideOver({
                   onLeadChanged={load}
                 />
               )}
+              {tab === 'sms' && isLocalOcto(lead.client_id) && <SmsTab leadId={lead.id} />}
               {tab === 'calls' && <CallLogTab leadId={lead.id} />}
               {tab === 'bookings' && <BookingsTab leadId={lead.id} initialSub={initialBookingSub} />}
               {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
