@@ -349,17 +349,24 @@ export default function CalendarViewPage() {
                         setActiveSub(e.event_type === 'call_booked' ? 'call' : 'visit')
                         setActiveLead(e.lead_id)
                       }}
+                      title={e.status === 'completed' ? 'Completed' : e.status === 'no_show' ? 'No-show' : undefined}
                       className={clsx(
                         'block w-full truncate rounded px-1.5 py-0.5 text-left text-xs',
-                        // Call green, visit blue — matching the green Book
-                        // Call button and the blue Book Visit button on the
-                        // lead, so the colour means the same thing in both
-                        // places.
-                        e.event_type === 'call_booked'
-                          ? 'bg-green-500/20 text-green-300'
-                          : 'bg-blue-500/20 text-blue-300'
+                        // Done bookings stay on the calendar but greyed out,
+                        // ✓ for completed and ✕ for no-show, so past days
+                        // still show what happened without looking upcoming.
+                        e.status === 'completed' || e.status === 'no_show'
+                          ? 'bg-card2 text-muted line-through decoration-1'
+                          : // Call green, visit blue — matching the green Book
+                            // Call button and the blue Book Visit button on the
+                            // lead, so the colour means the same thing in both
+                            // places.
+                            e.event_type === 'call_booked'
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-blue-500/20 text-blue-300'
                       )}
                     >
+                      {e.status === 'completed' ? '✓ ' : e.status === 'no_show' ? '✕ ' : ''}
                       {e.event_time?.slice(0, 5) || ''} {e.full_name}
                     </button>
                   ))}
