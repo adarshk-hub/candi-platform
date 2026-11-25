@@ -8,7 +8,7 @@ import { canEditSection } from '@/lib/settingsSections'
 import { handleWriteError } from '@/lib/apiError'
 import { logSettingsActivity } from '@/lib/settingsActivityLog'
 import { isLocalOcto } from '@/lib/localOcto'
-import type { EmailMode, StageEmailConfig } from '@/lib/stageEmail'
+import { withDefaultEmails, type EmailMode, type StageEmailConfig } from '@/lib/stageEmail'
 
 const MODES: EmailMode[] = ['auto', 'manual', 'off']
 
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   } catch {
     // column not added yet
   }
-  return NextResponse.json({ enabled: true, config })
+  return NextResponse.json({ enabled: true, config: withDefaultEmails(config) })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -48,7 +48,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const subject = String(raw?.subject || '').slice(0, 300)
     const text = String(raw?.body || '').slice(0, 20000)
     const mode: EmailMode = MODES.includes(raw?.mode) ? raw.mode : 'off'
-    if (!subject.trim() && !text.trim() && mode === 'off') continue
     config[stage] = { mode, subject, body: text }
   }
 
@@ -58,7 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       [JSON.stringify(config), params.id]
     )
     await logSettingsActivity(params.id, session, 'Stage Emails', 'Updated stage emails')
-    return NextResponse.json({ enabled: true, config: row?.email_stage_config || config })
+    return NextResponse.json({ enabled: true, config: withDefaultEmails(row?.email_stage_config || config) })
   } catch (err: any) {
     return handleWriteError(err)
   }
