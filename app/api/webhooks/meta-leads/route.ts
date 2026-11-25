@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
         grade: fields.grade,
         // Local Octo shows child_name as "Company Name".
         childName: fields.childName || (isLocalOcto(client.id) ? fields.companyName : null),
+        location: fields.city,
         source: fields.source,
         entryType: 'meta_form',
         campaignId: internalCampaignId,
