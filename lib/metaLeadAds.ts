@@ -27,6 +27,10 @@ export interface MetaLeadFields {
   // The student's name, when the form asks for it. Each school words that
   // question differently, so it is matched loosely — see findChildNameValue.
   childName: string | null
+  // A "company / business / school name" answer, if the form asks for one.
+  // Only used for Local Octo (shown there as Company Name) — see the
+  // meta-leads webhook and the backfill.
+  companyName: string | null
   // Meta Lead Ads forms can run on either placement — same form, same
   // campaign, but each individual submission came from whichever app the
   // person was actually using. Previously hardcoded to 'facebook' for
@@ -67,6 +71,21 @@ export function findChildNameValue(fields: Record<string, string>): string | nul
   return key ? fields[key] || null : null
 }
 
+// The lead's phone. Meta's standard question is `phone_number`; a custom
+// question is named after its wording instead (e.g. "whatsapp_number"),
+// which used to come through blank. phone_number still wins when present.
+export function findPhoneValue(fields: Record<string, string>): string {
+  if (fields.phone_number) return fields.phone_number
+  const key = Object.keys(fields).find((k) => /(whatsapp|phone|mobile)/i.test(k) && fields[k])
+  return key ? fields[key] : ''
+}
+
+// "Company / business / school name" — Local Octo asks businesses for it.
+export function findCompanyValue(fields: Record<string, string>): string | null {
+  const key = Object.keys(fields).find((k) => /(company|business|school)/i.test(k) && /name/i.test(k))
+  return key ? fields[key] || null : null
+}
+
 // Fetches the actual submitted field values for a leadgen_id from the Graph
 // API. Meta's webhook payload only tells you a lead *exists* (its ID); the
 // field data (name/phone/email) requires this separate authenticated call.
@@ -85,6 +104,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
       email: null,
       grade: null,
       childName: null,
+      companyName: null,
       source: 'facebook',
     }
   }
@@ -118,10 +138,11 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
 
   return {
     fullName: fields.full_name || fields['full name'] || fields.first_name || 'Unknown',
-    whatsappNumber: fields.phone_number || '',
+    whatsappNumber: findPhoneValue(fields),
     email: fields.email || null,
     grade,
     childName: findChildNameValue(fields),
+    companyName: findCompanyValue(fields),
     source: mapPlatform(data.platform),
   }
 }
