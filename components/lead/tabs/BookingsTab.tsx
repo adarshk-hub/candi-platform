@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CalendarClock, Check, MapPin, Phone, X as XIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 import { canResolveBooking } from '@/lib/bookingWindow'
+import ClockTimePicker from '@/components/ui/ClockTimePicker'
 
 interface Booking {
   id: string
@@ -195,10 +196,9 @@ function BookingPanel({
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted">Time slot</label>
-            <input
-              type="time"
+            <ClockTimePicker
               value={time}
-              onChange={(e) => setTime(e.target.value)}
+              onChange={setTime}
               className={clsx('rounded-md border border-border bg-card px-3 py-2 text-sm text-fg outline-none', focus)}
             />
           </div>
@@ -292,10 +292,9 @@ function BookingPanel({
                         focus
                       )}
                     />
-                    <input
-                      type="time"
+                    <ClockTimePicker
                       value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
+                      onChange={setNewTime}
                       className={clsx(
                         'rounded-md border border-border bg-card px-3 py-1.5 text-sm text-fg outline-none',
                         focus
