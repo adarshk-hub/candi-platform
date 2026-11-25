@@ -13,7 +13,7 @@
 import { queryAsClient } from './db'
 import { isLocalOcto } from './localOcto'
 import { sendEmail } from './email'
-import { renderStageEmail } from './stageEmailRender'
+import { renderStageEmail, LOCAL_OCTO_DEFAULT_EMAILS } from './stageEmailRender'
 
 export type EmailMode = 'auto' | 'manual' | 'off'
 
@@ -25,17 +25,27 @@ export interface StageEmailEntry {
 
 export type StageEmailConfig = Record<string, StageEmailEntry>
 
+// Saved stage emails, with the built-in starting email (mode Off) filled in
+// for any stage that hasn't been saved yet.
+export function withDefaultEmails(saved: StageEmailConfig): StageEmailConfig {
+  const out: StageEmailConfig = {}
+  for (const [stage, d] of Object.entries(LOCAL_OCTO_DEFAULT_EMAILS)) out[stage] = { mode: 'off', ...d }
+  return { ...out, ...saved }
+}
+
 export async function getStageEmailConfig(clientId: string): Promise<StageEmailConfig> {
+  let saved: StageEmailConfig = {}
   try {
     const [row] = await queryAsClient<{ email_stage_config: StageEmailConfig | null }>(
       clientId,
       'SELECT email_stage_config FROM clients WHERE id = $1',
       [clientId]
     )
-    return row?.email_stage_config || {}
+    saved = row?.email_stage_config || {}
   } catch {
-    return {} // column not added yet — nothing is configured
+    // column not added yet — only the starting emails apply
   }
+  return withDefaultEmails(saved)
 }
 
 // Variable values for one lead.
