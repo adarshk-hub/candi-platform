@@ -1,7 +1,7 @@
 // path: lib/metaLeadAdsBackfill.ts
 const GRAPH_API_URL = 'https://graph.facebook.com/v19.0'
 import { fetchPageAccessToken } from './metaPages'
-import { findGradeValue, findChildNameValue, findPhoneValue, findCompanyValue, mapPlatform } from './metaLeadAds'
+import { findGradeValue, findChildNameValue, findPhoneValue, findCompanyValue, findCityValue, mapPlatform } from './metaLeadAds'
 import { isLocalOcto } from './localOcto'
 import { centralQuery } from './db'
 import { findOrCreateLead, findOrCreateCampaign } from './leadIntake'
@@ -24,6 +24,7 @@ export interface HistoricalMetaLead {
   grade: string | null
   childName: string | null
   companyName: string | null
+  city: string | null
   campaignId: string | null
   adsetId: string | null
   adId: string | null
@@ -135,6 +136,7 @@ export async function fetchHistoricalMetaLeads(pageId: string): Promise<Historic
           grade,
           childName: findChildNameFromFieldData(fieldData),
           companyName: findCompanyValue(fieldMap(fieldData)),
+          city: findCityValue(fieldMap(fieldData)),
           campaignId: lead.campaign_id || null,
           adsetId: lead.adset_id || null,
           adId: lead.ad_id || null,
@@ -202,6 +204,7 @@ export async function backfillMetaLeadsForClient(clientId: string, metaPageId: s
       grade: hl.grade,
       // Local Octo shows child_name as "Company Name".
       childName: hl.childName || (isLocalOcto(clientId) ? hl.companyName : null),
+      location: hl.city,
       source: hl.source,
       entryType: 'meta_form_backfill',
       campaignId: internalCampaignId,
