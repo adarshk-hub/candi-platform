@@ -1,6 +1,8 @@
 // path: components/lead/StageMessagePrompt.tsx
 'use client'
 
+import { isLocalOcto } from '@/lib/localOcto'
+
 import { useEffect, useRef, useState } from 'react'
 import { MessageCircle, X } from 'lucide-react'
 
@@ -76,8 +78,12 @@ export default function StageMessagePrompt({
           `/api/clients/${clientId}/whatsapp-sequence-templates`
         ).then((r) => (r.ok ? r.json() : []))
 
+        // Local Octo only: moving a lead into Lead (new_lead) also sends the
+        // Step 1 / Day 0 welcome assigned to that stage. Everywhere else
+        // Day 0 stays creation-only, as described above.
+        const allowDay0 = isLocalOcto(clientId) && stageKey === 'new_lead'
         const match = (Array.isArray(assignments) ? assignments : []).find(
-          (a) => a.stage_key === stageKey && a.day_number !== 0 && a.template_name
+          (a) => a.stage_key === stageKey && (a.day_number !== 0 || allowDay0) && a.template_name
         )
         if (!match) {
           // Nothing configured for this stage — resolve immediately so the
