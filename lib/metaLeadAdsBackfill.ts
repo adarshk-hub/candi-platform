@@ -5,6 +5,13 @@ import { findGradeValue, findChildNameValue, findPhoneValue, findCompanyValue, m
 import { isLocalOcto } from './localOcto'
 import { centralQuery } from './db'
 import { findOrCreateLead, findOrCreateCampaign } from './leadIntake'
+import { startWelcomeOrAsk } from './welcomeMessage'
+
+// Backfilled leads submitted within this window get the automatic WhatsApp
+// welcome (and Local Octo's Lead SMS), the same as a live webhook lead —
+// covers leads the webhook missed. Older ones are left alone so a backfill
+// never messages people who enquired weeks ago.
+const WELCOME_RECENT_MS = 24 * 60 * 60 * 1000
 
 export interface HistoricalMetaLead {
   leadgenId: string
@@ -203,6 +210,14 @@ export async function backfillMetaLeadsForClient(clientId: string, metaPageId: s
       createdAt: hl.createdTime,
     })
 
+    if (result.created && result.lead) {
+      const submittedAt = new Date(hl.createdTime).getTime()
+      if (Number.isFinite(submittedAt) && Date.now() - submittedAt <= WELCOME_RECENT_MS) {
+        await startWelcomeOrAsk(clientId, result.lead.id).catch((err) =>
+          console.error(`[meta-backfill] welcome handling threw for lead ${result.lead.id}`, err)
+        )
+      }
+    }
     if (result.created) created++
     else duplicate++
   }
