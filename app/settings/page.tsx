@@ -43,6 +43,7 @@ const CUSTOMIZE_LINKS = [
   { panel: 'capi', label: 'Conversions API', icon: Radio },
   // Local Octo only (filtered below).
   { panel: 'sms', label: 'SMS', icon: MessageSquare },
+  { panel: 'stage_email', label: 'Stage Emails', icon: Mail },
   { panel: 'lead_range', label: 'Lead Date Range', icon: CalendarRange },
   { panel: 'display', label: 'Display Preferences', icon: Rows3 },
   { panel: 'activity', label: 'Activity', icon: History },
@@ -116,7 +117,7 @@ export default async function SettingsPage() {
           <Webhook size={16} />
           Agency Settings
         </span>
-        {CUSTOMIZE_LINKS.filter((c) => c.panel !== 'sms' || isLocalOcto(session.clientId)).map((c) => (
+        {CUSTOMIZE_LINKS.filter((c) => (c.panel !== 'sms' && c.panel !== 'stage_email') || isLocalOcto(session.clientId)).map((c) => (
           <Link
             key={c.panel}
             href={`/settings/customize?panel=${c.panel}`}
