@@ -13,6 +13,7 @@ import { pauseSequenceForLead, resumeSequenceForLead } from '@/lib/waSequenceEng
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
 import { normalizePhone } from '@/lib/leadIntake'
 import { sendLocalOctoStageSms } from '@/lib/msg91Sms'
+import { sendLocalOctoStageEmail } from '@/lib/stageEmail'
 
 const LEAD_QUERY = `
   SELECT
@@ -254,6 +255,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       // every other school.
       waitUntil(
         sendLocalOctoStageSms({ clientId: existing.client_id, lead: updated, stage: body.pipeline_stage, trigger: 'auto' })
+      )
+      // Local Octo only: the stage email, if set to Automatic in Settings > Stage Emails.
+      waitUntil(
+        sendLocalOctoStageEmail({ clientId: existing.client_id, lead: updated, stage: body.pipeline_stage, trigger: 'auto' })
       )
 
       // Auto-send a post-visit summary the moment a visit is marked done —
