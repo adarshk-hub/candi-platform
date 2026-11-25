@@ -52,6 +52,8 @@ export interface IntakeInput {
   // The student's name, where a form collects it separately from the
   // parent's — stored on the lead as child_name.
   childName?: string | null
+  // The lead's city (stored in leads.location, shown as "City").
+  location?: string | null
   source: string
   entryType: string
   campaignId?: string | null
@@ -132,8 +134,8 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
       `INSERT INTO leads (
         client_id, campaign_id, full_name, whatsapp_number, email, grade, child_name,
         source, entry_type, external_ref, raw_payload, service_interested_in,
-        fbclid, fbc, fbp, created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamp, now()))
+        fbclid, fbc, fbp, created_at, location
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE($16::timestamp, now()),$17)
       RETURNING *`,
       [
         input.clientId,
@@ -154,6 +156,7 @@ export async function findOrCreateLead(input: IntakeInput): Promise<IntakeResult
         input.fbc || null,
         input.fbp || null,
         input.createdAt || null,
+        input.location || null,
       ]
     )
     const lead = rows[0]
