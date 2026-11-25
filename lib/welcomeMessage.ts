@@ -3,6 +3,7 @@ import { queryAsClient, runAsClient } from './db'
 import { startSequence } from './waSequenceEngine'
 import { isLocalOcto } from './localOcto'
 import { sendLocalOctoStageSms } from './msg91Sms'
+import { sendLocalOctoStageEmail } from './stageEmail'
 
 export type WelcomeStatus = 'pending' | 'sent' | 'skipped'
 
@@ -64,7 +65,10 @@ export async function startWelcomeOrAsk(
   // (Leads added by hand never reach here.)
   if (isLocalOcto(clientId)) {
     const [lead] = await queryAsClient(clientId, 'SELECT * FROM leads WHERE id = $1', [leadId]).catch(() => [])
-    if (lead) await sendLocalOctoStageSms({ clientId, lead, stage: 'new_lead', trigger: 'auto' })
+    if (lead) {
+      await sendLocalOctoStageSms({ clientId, lead, stage: 'new_lead', trigger: 'auto' })
+      await sendLocalOctoStageEmail({ clientId, lead, stage: 'new_lead', trigger: 'auto' })
+    }
   }
 
   return { started: result.ok, pending: false }
