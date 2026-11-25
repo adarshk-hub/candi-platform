@@ -29,6 +29,7 @@ import {
   CalendarRange,
   MessageSquare,
   Send,
+  Mail,
 } from 'lucide-react'
 import { useUnreplied } from '@/lib/useUnreplied'
 import { canAccessPage } from '@/lib/moduleAccess'
@@ -353,6 +354,16 @@ export default function Sidebar({
                 collapsed={collapsed}
               />
             )}
+          </div>
+        )}
+
+        {/* Email — Local Octo only. */}
+        {user?.clientId === CANDID_SCHOOLS_CLIENT_ID && (
+          <div className="pt-3">
+            {!collapsed && (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-muted">Email</p>
+            )}
+            <NavItem href="/emails" icon={Mail} label="Sent Emails" active={pathname === '/emails'} collapsed={collapsed} />
           </div>
         )}
 
