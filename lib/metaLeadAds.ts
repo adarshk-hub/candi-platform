@@ -31,6 +31,8 @@ export interface MetaLeadFields {
   // Only used for Local Octo (shown there as Company Name) — see the
   // meta-leads webhook and the backfill.
   companyName: string | null
+  // The "city" answer, if the form asks for it — saved as the lead's City.
+  city: string | null
   // Meta Lead Ads forms can run on either placement — same form, same
   // campaign, but each individual submission came from whichever app the
   // person was actually using. Previously hardcoded to 'facebook' for
@@ -80,6 +82,14 @@ export function findPhoneValue(fields: Record<string, string>): string {
   return key ? fields[key] : ''
 }
 
+// The lead's city — Meta's standard `city` question, or a custom question
+// worded with city / town / location.
+export function findCityValue(fields: Record<string, string>): string | null {
+  if (fields.city) return fields.city
+  const key = Object.keys(fields).find((k) => /(city|town|location)/i.test(k) && fields[k])
+  return key ? fields[key] : null
+}
+
 // "Company / business / school name" — Local Octo asks businesses for it.
 export function findCompanyValue(fields: Record<string, string>): string | null {
   const key = Object.keys(fields).find((k) => /(company|business|school)/i.test(k) && /name/i.test(k))
@@ -105,6 +115,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
       grade: null,
       childName: null,
       companyName: null,
+      city: null,
       source: 'facebook',
     }
   }
@@ -143,6 +154,7 @@ export async function fetchLeadFields(leadgenId: string, pageId: string): Promis
     grade,
     childName: findChildNameValue(fields),
     companyName: findCompanyValue(fields),
+    city: findCityValue(fields),
     source: mapPlatform(data.platform),
   }
 }
