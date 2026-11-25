@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { leadNameLabels, isLocalOcto } from '@/lib/localOcto'
-import { X, ClipboardList, History, CalendarDays, MessageCircle, MessageSquare, MapPin, Phone, Snowflake } from 'lucide-react'
+import { X, ClipboardList, History, CalendarDays, MessageCircle, MessageSquare, Mail, MapPin, Phone, Snowflake } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Lead, SOURCE_LABEL } from '@/lib/types'
 import { formatDateTime } from '@/lib/format'
@@ -11,6 +11,7 @@ import { useStages } from '@/lib/StagesContext'
 import StagePill from './StagePill'
 import StageMessagePrompt from './StageMessagePrompt'
 import SmsStagePrompt from './SmsStagePrompt'
+import EmailStagePrompt from './EmailStagePrompt'
 import { ColdReasonValue } from './ColdReasonModal'
 import ScoreAndSla from './ScoreAndSla'
 import CounsellorAssign from './CounsellorAssign'
@@ -19,18 +20,20 @@ import NextActionTab from './tabs/NextActionTab'
 import HistoryTab from './tabs/HistoryTab'
 import WhatsAppTab from './tabs/WhatsAppTab'
 import SmsTab from './tabs/SmsTab'
+import StageEmailTab from './tabs/StageEmailTab'
 import BookingsTab from './tabs/BookingsTab'
 import CallLogTab from './tabs/CallLogTab'
 import TagEditor from './TagEditor'
 import { markLeadRead } from '@/lib/useNotifications'
 
-type TabKey = 'info' | 'whatsapp' | 'sms' | 'calls' | 'bookings' | 'nextaction' | 'history'
+type TabKey = 'info' | 'whatsapp' | 'sms' | 'email' | 'calls' | 'bookings' | 'nextaction' | 'history'
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'info', label: 'Info', icon: ClipboardList },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   // Local Octo only (filtered where the tabs are drawn).
   { key: 'sms', label: 'SMS', icon: MessageSquare },
+  { key: 'email', label: 'Email', icon: Mail },
   { key: 'calls', label: 'Call Log', icon: Phone },
   { key: 'bookings', label: 'Bookings', icon: MapPin },
   { key: 'nextaction', label: 'Next Action', icon: CalendarDays },
@@ -61,6 +64,8 @@ export default function LeadSlideOver({
   const [sentStage, setSentStage] = useState<string | null>(null)
   // Local Octo SMS prompt — shown after the WhatsApp prompt is finished.
   const [smsStage, setSmsStage] = useState<string | null>(null)
+  // Local Octo email prompt — shown after the WhatsApp and SMS prompts.
+  const [emailStage, setEmailStage] = useState<string | null>(null)
 
   function load() {
     fetch(`/api/leads/${leadId}`)
@@ -101,6 +106,7 @@ export default function LeadSlideOver({
       } else {
         setSentStage(next)
         setSmsStage(next)
+        setEmailStage(next)
       }
     } finally {
       load() // reconcile with server truth whether the request succeeded or not
@@ -138,6 +144,20 @@ export default function LeadSlideOver({
                 stageLabel={stageLabelLookup(smsStage, lead.client_id)}
                 onDone={() => {
                   setSmsStage(null)
+                  load()
+                }}
+              />
+            )}
+
+            {emailStage && !sentStage && !smsStage && (
+              <EmailStagePrompt
+                leadId={lead.id}
+                clientId={lead.client_id}
+                leadName={lead.full_name}
+                stageKey={emailStage}
+                stageLabel={stageLabelLookup(emailStage, lead.client_id)}
+                onDone={() => {
+                  setEmailStage(null)
                   load()
                 }}
               />
@@ -215,7 +235,7 @@ export default function LeadSlideOver({
             <ScoreAndSla lead={lead} />
 
             <div className="flex border-b border-border bg-card2">
-              {TABS.filter((t) => t.key !== 'sms' || isLocalOcto(lead.client_id)).map((t) => (
+              {TABS.filter((t) => (t.key !== 'sms' && t.key !== 'email') || isLocalOcto(lead.client_id)).map((t) => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
@@ -242,6 +262,7 @@ export default function LeadSlideOver({
                 />
               )}
               {tab === 'sms' && isLocalOcto(lead.client_id) && <SmsTab leadId={lead.id} />}
+              {tab === 'email' && isLocalOcto(lead.client_id) && <StageEmailTab leadId={lead.id} />}
               {tab === 'calls' && <CallLogTab leadId={lead.id} />}
               {tab === 'bookings' && <BookingsTab leadId={lead.id} initialSub={initialBookingSub} />}
               {tab === 'nextaction' && <NextActionTab leadId={lead.id} onChanged={load} />}
