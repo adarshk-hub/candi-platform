@@ -18,6 +18,7 @@ import KanbanBoard from '@/components/lead/KanbanBoard'
 import ColdReasonModal, { ColdReasonValue } from '@/components/lead/ColdReasonModal'
 import StageMessagePrompt from '@/components/lead/StageMessagePrompt'
 import SmsStagePrompt from '@/components/lead/SmsStagePrompt'
+import EmailStagePrompt from '@/components/lead/EmailStagePrompt'
 import AddLeadModal from '@/components/lead/AddLeadModal'
 import LeadListFilters, { EMPTY_LEAD_FILTERS, LeadListFilterState } from '@/components/lead/LeadListFilters'
 import LeadImportModal from '@/components/lead/LeadImportModal'
@@ -154,6 +155,8 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
   const [sentStage, setSentStage] = useState<string | null>(null)
   // Local Octo SMS prompt — shown after the WhatsApp prompt is finished.
   const [smsStage, setSmsStage] = useState<string | null>(null)
+  // Local Octo email prompt — shown after the WhatsApp and SMS prompts.
+  const [emailStage, setEmailStage] = useState<string | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
   const stages = stagesFor(lead.client_id)
@@ -209,6 +212,7 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
       if (res.ok) {
         setSentStage(next)
         setSmsStage(next)
+        setEmailStage(next)
         onChanged()
       } else {
         const b = await res.json().catch(() => ({}))
@@ -311,6 +315,19 @@ function StageCell({ lead, onChanged }: { lead: LeadRow; onChanged: () => void }
             stageKey={smsStage}
             stageLabel={stageLabel(smsStage, lead.client_id)}
             onDone={() => setSmsStage(null)}
+          />
+        </div>
+      )}
+
+      {emailStage && !sentStage && !smsStage && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <EmailStagePrompt
+            leadId={lead.id}
+            clientId={lead.client_id}
+            leadName={lead.full_name}
+            stageKey={emailStage}
+            stageLabel={stageLabel(emailStage, lead.client_id)}
+            onDone={() => setEmailStage(null)}
           />
         </div>
       )}
