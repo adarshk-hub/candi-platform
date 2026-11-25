@@ -33,6 +33,7 @@ export type SettingsSection =
   | 'whatsapp'
   | 'capi'
   | 'sms'
+  | 'stage_email'
   | 'lead_range'
   | 'display'
   | 'activity'
@@ -70,6 +71,7 @@ export function sectionsForRole(role: string | null | undefined): SettingsSectio
     'whatsapp',
     'capi',
     'sms',
+    'stage_email',
     'lead_range',
     'display',
     'activity',
