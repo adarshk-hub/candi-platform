@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { centralQuery } from '@/lib/db'
 import { verifySignature, fetchLeadFields } from '@/lib/metaLeadAds'
+import { isLocalOcto } from '@/lib/localOcto'
 import { findOrCreateLead, findOrCreateCampaign } from '@/lib/leadIntake'
 import { fireCapiEventForLead } from '@/lib/capiTriggers'
 import { startWelcomeOrAsk } from '@/lib/welcomeMessage'
@@ -75,7 +76,8 @@ export async function POST(req: NextRequest) {
         whatsappNumber: fields.whatsappNumber,
         email: fields.email,
         grade: fields.grade,
-        childName: fields.childName,
+        // Local Octo shows child_name as "Company Name".
+        childName: fields.childName || (isLocalOcto(client.id) ? fields.companyName : null),
         source: fields.source,
         entryType: 'meta_form',
         campaignId: internalCampaignId,
