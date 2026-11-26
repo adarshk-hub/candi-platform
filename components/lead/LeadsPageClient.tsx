@@ -4,11 +4,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, MessageCircle } from 'lucide-react'
+import { Search, Plus, List, LayoutGrid, Trash2, Upload, Download, ChevronDown, MessageCircle, MessageSquare, Mail } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useNotifications } from '@/lib/useNotifications'
 import { LEAD_COLUMNS, LeadColumnKey, resolveLeadColumns } from '@/lib/leadTableColumns'
-import { leadNameLabels } from '@/lib/localOcto'
+import { leadNameLabels, isLocalOcto } from '@/lib/localOcto'
 import { useStages } from '@/lib/StagesContext'
 import { SOURCE_LABEL, initials } from '@/lib/types'
 import { useColumnWidths } from '@/lib/useColumnWidths'
@@ -38,13 +38,54 @@ const TAB_TITLE: Record<string, string> = {
 // Widths for every column that can be shown, taken from the shared
 // registry so a newly added column arrives with a sensible width instead
 // of collapsing to nothing.
-const COLUMN_DEFAULTS: Record<string, number> = Object.fromEntries(
-  LEAD_COLUMNS.map((c) => [c.key, c.width])
-)
+const COLUMN_DEFAULTS: Record<string, number> = {
+  ...Object.fromEntries(LEAD_COLUMNS.map((c) => [c.key, c.width])),
+  messages: 150,
+}
 
-const COLUMN_LABELS: Record<string, string> = Object.fromEntries(
-  LEAD_COLUMNS.map((c) => [c.key, c.label])
-)
+const COLUMN_LABELS: Record<string, string> = {
+  ...Object.fromEntries(LEAD_COLUMNS.map((c) => [c.key, c.label])),
+  messages: 'Messages',
+}
+
+// Local Octo's Messages column: one mark per channel for the latest message.
+// Green ✓ delivered/sent, grey ✓ sent but not yet delivered (WhatsApp),
+// red ✕ failed or undelivered, — nothing sent on that channel yet.
+function MessageMarks({ msg }: { msg?: LeadRow['msg'] }) {
+  const items: { key: string; label: string; icon: any; status: string | null }[] = [
+    { key: 'wa', label: 'WhatsApp', icon: MessageCircle, status: msg?.wa ?? null },
+    { key: 'sms', label: 'SMS', icon: MessageSquare, status: msg?.sms ?? null },
+    { key: 'email', label: 'Email', icon: Mail, status: msg?.email ?? null },
+  ]
+  return (
+    <div className="flex items-center gap-3">
+      {items.map(({ key, label, icon: Icon, status }) => {
+        let mark = '—'
+        let tone = 'text-muted'
+        let title = `${label}: nothing sent yet`
+        if (status === 'failed') {
+          mark = '✕'
+          tone = 'text-red-500'
+          title = `${label}: last message failed / undelivered`
+        } else if (status === 'queued' || (key === 'wa' && status === 'sent')) {
+          mark = '✓'
+          tone = 'text-muted2'
+          title = `${label}: last message sent, not yet delivered`
+        } else if (status) {
+          mark = '✓'
+          tone = 'text-green-500'
+          title = `${label}: last message ${key === 'wa' ? status : 'sent'}`
+        }
+        return (
+          <span key={key} title={title} className={clsx('flex items-center gap-0.5 text-xs font-bold', tone)}>
+            <Icon size={13} />
+            {mark}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 // One cell renderer keyed by column, so the header list and the body can
 // never disagree about what's on screen — both walk the same array.
@@ -117,6 +158,8 @@ function renderCell(
       )
     case 'next_action':
       return <NextActionCell lead={l} />
+    case 'messages':
+      return <MessageMarks msg={l.msg} />
     case 'counsellor':
       return l.counsellor_name ? (
         <span
@@ -451,6 +494,15 @@ export default function LeadsPageClient({ initial, clientId = null }: { initial:
 
   // Drives the duplicate-suppression in the Lead cell below.
   const showsChildColumn = visibleColumns.includes('child_name')
+  // Local Octo only: the Messages column, placed right after Stage.
+  const columns: LeadColumnKey[] = isLocalOcto(clientId)
+    ? (() => {
+        const i = visibleColumns.indexOf('stage')
+        const out = [...visibleColumns]
+        out.splice(i >= 0 ? i + 1 : out.length, 0, 'messages')
+        return out
+      })()
+    : visibleColumns
 
   function buildQueryParams() {
     const params = new URLSearchParams()
@@ -803,7 +855,7 @@ export default function LeadsPageClient({ initial, clientId = null }: { initial:
                       className="h-3.5 w-3.5 rounded border-border accent-blue-600"
                     />
                   </th>
-                  {visibleColumns.map((key) => (
+                  {columns.map((key) => (
                     <ResizableTh key={key} width={widths[key]} onResize={(w) => setWidth(key, w)}>
                       {columnLabel(key)}
                     </ResizableTh>
@@ -829,7 +881,7 @@ export default function LeadsPageClient({ initial, clientId = null }: { initial:
                         className="h-3.5 w-3.5 rounded border-border accent-blue-600"
                       />
                     </td>
-                    {visibleColumns.map((key) => (
+                    {columns.map((key) => (
                       <td
                         key={key}
                         style={{ width: widths[key] }}
