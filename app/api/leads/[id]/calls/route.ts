@@ -5,6 +5,9 @@ import { getSession } from '@/lib/auth'
 import { assertLeadAccess } from '@/lib/leadAccess'
 import { handleWriteError } from '@/lib/apiError'
 import { AUTO_CANCEL_PAST_SQL } from '@/lib/bookingWindow'
+import { waitUntil } from '@vercel/functions'
+import { isLocalOcto } from '@/lib/localOcto'
+import { sendBookingNotifications, clearBookingReminders } from '@/lib/bookingNotify'
 
 // Scheduled calls, stored in the same `events` table as campus visits under
 // a different event_type.
@@ -63,6 +66,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ]
     )
 
+    // Local Octo only: the "right after booking" WhatsApp / SMS / email set
+    // to Automatic in Settings > Booking Reminders. ("Ask before sending"
+    // ones are offered by the Bookings tab right after this returns.)
+    if (isLocalOcto(access.lead.client_id)) {
+      waitUntil(
+        sendBookingNotifications({
+          clientId: access.lead.client_id,
+          eventId: rows[0].id,
+          kind: 'on_booking',
+          trigger: 'auto',
+          sentBy: session?.id || null,
+        })
+      )
+    }
+
     return NextResponse.json(rows[0])
   } catch (err: any) {
     return handleWriteError(err)
@@ -95,6 +113,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
          VALUES ($1, 'system', 'Call Rescheduled', $2, $3)`,
         [params.id, `Call moved to ${eventDate} at ${eventTime}.`, session!.id]
       )
+      // Local Octo only: remind again at the new time, and confirm the new
+      // time the same way a new booking is confirmed.
+      if (isLocalOcto(access.lead.client_id)) {
+        await clearBookingReminders(access.lead.client_id, eventId)
+        waitUntil(
+          sendBookingNotifications({
+            clientId: access.lead.client_id,
+            eventId,
+            kind: 'on_booking',
+            trigger: 'auto',
+            sentBy: session?.id || null,
+          })
+        )
+      }
       return NextResponse.json(moved[0])
     }
 
