@@ -1,4 +1,6 @@
+// path: app/api/cron/leads-backfill/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { backfillMetaLeadsForAllClients } from '@/lib/metaLeadAdsBackfill'
 
 // Looping over every client, each pulling every lead form's full history,
@@ -19,6 +21,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const results = await backfillMetaLeadsForAllClients()
-  return NextResponse.json({ ok: true, clients: results.length, results })
+  // Going through every school takes longer than cron-job.org waits for a
+  // reply (30s), so every run showed as "Failed (timeout)". Answer straight
+  // away and keep working in the background (up to maxDuration); the
+  // summary goes to the Vercel logs.
+  waitUntil(
+    backfillMetaLeadsForAllClients()
+      .then((results) => console.log(`[cron/leads-backfill] done for ${results.length} clients`, JSON.stringify(results)))
+      .catch((err) => console.error('[cron/leads-backfill] failed', err))
+  )
+  return NextResponse.json({ ok: true, started: true })
 }
