@@ -177,7 +177,7 @@ export interface SmsSendResult {
 // 'manual'    — Send clicked in the "Ask before sending" prompt; unless Off
 // 'direct'    — sent by hand from the lead's SMS tab (any template)
 // 'broadcast' — part of an SMS broadcast
-export type SmsTrigger = 'auto' | 'manual' | 'direct' | 'broadcast'
+export type SmsTrigger = 'auto' | 'manual' | 'direct' | 'broadcast' | 'booking'
 
 function renderText(tpl: SmsTemplate, values: Record<string, string>): string {
   return tpl.text.replace(/##(\w+)##/g, (_, k) => values[k] ?? '')
@@ -353,4 +353,51 @@ export async function sendLocalOctoSmsBroadcast(params: {
     }
   }
   return out
+}
+
+// Sends any DLT-approved MSG91 template (not tied to a stage) to one lead,
+// with the variable values already worked out by the caller. Used by booking
+// notifications (lib/bookingNotify.ts), whose templates are saved in
+// Settings. Records successful sends for the SMS Inbox and logs the result
+// on the lead. Never throws.
+export async function sendMsg91TemplateToLead(params: {
+  clientId: string
+  lead: any
+  template: { name: string; templateId: string; text: string }
+  values: Record<string, string>
+  trigger: SmsTrigger
+  stageKey: string
+  sentBy?: string | null
+}): Promise<SmsSendResult> {
+  const { clientId, lead, template, values, trigger, stageKey, sentBy } = params
+  try {
+    const mobile = toDialNumber(lead.whatsapp_number)
+    if (!mobile) {
+      await logActivity(clientId, lead.id, 'SMS Not Sent', `${template.name}: the lead has no phone number.`)
+      return { ok: false, error: 'the lead has no phone number' }
+    }
+    // Every ##variable## in the approved text must have a value (max 30 chars, DLT's limit).
+    const clipped: Record<string, string> = {}
+    for (const m of template.text.matchAll(/##(\w+)##/g)) {
+      const v = clip(values[m[1]])
+      if (!v) {
+        await logActivity(clientId, lead.id, 'SMS Not Sent', `${template.name}: no value for ##${m[1]}##.`)
+        return { ok: false, error: `no value for ##${m[1]}##` }
+      }
+      clipped[m[1]] = v
+    }
+    const tpl: SmsTemplate = { name: template.name, templateId: template.templateId, vars: [], text: template.text }
+    const sent = await postFlow(tpl, [{ mobile, values: clipped }])
+    if (!sent.ok) {
+      await logActivity(clientId, lead.id, 'SMS Failed', `${template.name} to ${mobile} failed: ${sent.error}.`)
+      return { ok: false, error: sent.error }
+    }
+    const body = renderText(tpl, clipped)
+    await recordSent(clientId, { leadId: lead.id, stage: stageKey, tpl, mobile, body, trigger, sentBy, requestId: sent.requestId })
+    await logActivity(clientId, lead.id, 'SMS Sent', `${template.name} sent to ${mobile} via MSG91: "${body}"`)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('[msg91] template SMS failed', err)
+    return { ok: false, error: err?.message || 'request failed' }
+  }
 }
