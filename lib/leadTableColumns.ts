@@ -17,6 +17,8 @@ export type LeadColumnKey =
   | 'created'
   | 'counsellor'
   | 'next_action'
+  // Local Octo only — added by the table itself, not offered in the picker.
+  | 'messages'
 
 export interface LeadColumnDef {
   key: LeadColumnKey
