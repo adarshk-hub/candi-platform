@@ -34,6 +34,7 @@ export type SettingsSection =
   | 'capi'
   | 'sms'
   | 'stage_email'
+  | 'booking_notify'
   | 'lead_range'
   | 'display'
   | 'activity'
@@ -72,6 +73,7 @@ export function sectionsForRole(role: string | null | undefined): SettingsSectio
     'capi',
     'sms',
     'stage_email',
+    'booking_notify',
     'lead_range',
     'display',
     'activity',
