@@ -6,6 +6,7 @@ import { CalendarClock, Check, MapPin, Phone, X as XIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 import { canResolveBooking } from '@/lib/bookingWindow'
 import ClockTimePicker from '@/components/ui/ClockTimePicker'
+import BookingNotifyPrompt from '@/components/lead/BookingNotifyPrompt'
 
 interface Booking {
   id: string
@@ -110,6 +111,8 @@ function BookingPanel({
   const [rescheduling, setRescheduling] = useState<string | null>(null)
   const [newDate, setNewDate] = useState('')
   const [newTime, setNewTime] = useState('')
+  // Booking just made — offers any "Ask before sending" confirmation (Local Octo).
+  const [justBooked, setJustBooked] = useState<string | null>(null)
 
   const load = useCallback(() => {
     fetch(`/api/leads/${leadId}/${endpoint}`)
@@ -148,6 +151,7 @@ function BookingPanel({
       }
       setDate('')
       setTime('')
+      if (endpoint === 'calls' && b?.id) setJustBooked(b.id)
       load()
     } finally {
       setSaving(false)
@@ -182,6 +186,7 @@ function BookingPanel({
 
   return (
     <div className="space-y-4">
+      {justBooked && <BookingNotifyPrompt leadId={leadId} eventId={justBooked} onDone={() => setJustBooked(null)} />}
       <div className="rounded-card border border-border bg-card2 p-5">
         <p className="mb-4 font-semibold text-fg">Schedule a {noun}:</p>
         <div className="flex flex-wrap items-end gap-3">
