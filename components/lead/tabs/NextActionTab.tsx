@@ -104,7 +104,10 @@ export default function NextActionTab({ leadId, onChanged }: { leadId: string; o
       const res = await fetch(`/api/leads/${leadId}/next-action`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, dueAt }),
+        // dueAt is the picker's local time with no zone ("2026-11-26T12:00").
+        // Sent as-is, the database read it as UTC, so 12:00 showed as
+        // 5:30 pm. Converting here pins it to the user's own time zone.
+        body: JSON.stringify({ action, dueAt: new Date(dueAt).toISOString() }),
       })
       const b = await res.json().catch(() => ({}))
       if (!res.ok) {
