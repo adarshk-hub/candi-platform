@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { SessionUser } from '@/lib/auth'
 import { leadDateRangeSql } from '@/lib/leadDateRange'
 import { leadBucketSql, normalizeBucket } from '@/lib/leadBuckets'
+import { isLocalOcto } from '@/lib/localOcto'
 
 const DEFAULT_PAGE_SIZE = 250
 
@@ -24,6 +25,55 @@ export interface LeadRow {
   // Preferences. Always fetched; the table decides whether to show them.
   email: string | null
   campaign_display_name: string | null
+  // Local Octo only: how the latest WhatsApp / SMS / email to this lead went
+  // (the Messages column). null = nothing sent on that channel yet.
+  msg?: LeadMessageStatus
+}
+
+export interface LeadMessageStatus {
+  // queued | sent | delivered | read | replied | failed
+  wa: string | null
+  // sent (accepted by MSG91) | failed
+  sms: string | null
+  // sent | failed
+  email: string | null
+}
+
+// Latest outbound message per channel for each lead on the page. As the lead
+// moves through stages and new messages go out, this always shows the most
+// recent one. SMS failures are only kept in the activity log, so the latest
+// of "sent" (sms_messages) and "failed" (activity log) wins.
+async function attachMessageStatus(leads: LeadRow[]): Promise<void> {
+  if (leads.length === 0) return
+  try {
+    const rows = await query<{ id: string; wa: string | null; sms: string | null; email: string | null }>(
+      `SELECT l.id,
+              (SELECT w.status FROM whatsapp_messages w
+                WHERE w.lead_id = l.id AND w.direction = 'outbound'
+                ORDER BY w.created_at DESC LIMIT 1) AS wa,
+              (SELECT CASE
+                        WHEN s.t IS NULL AND f.t IS NULL THEN NULL
+                        WHEN f.t IS NULL OR (s.t IS NOT NULL AND s.t >= f.t) THEN 'sent'
+                        ELSE 'failed'
+                      END
+                 FROM (SELECT max(created_at) AS t FROM sms_messages WHERE lead_id = l.id) s,
+                      (SELECT max(created_at) AS t FROM activity_log
+                        WHERE lead_id = l.id AND title IN ('SMS Failed', 'SMS Not Sent')) f) AS sms,
+              (SELECT e.status FROM email_messages e
+                WHERE e.lead_id = l.id ORDER BY e.created_at DESC LIMIT 1) AS email
+       FROM leads l
+       WHERE l.id = ANY($1::uuid[])`,
+      [leads.map((l) => l.id)]
+    )
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    for (const l of leads) {
+      const r = byId.get(l.id)
+      l.msg = { wa: r?.wa || null, sms: r?.sms || null, email: r?.email || null }
+    }
+  } catch (err) {
+    // e.g. sms_messages not created yet — the column just stays empty.
+    console.error('[leads] message status lookup failed', err)
+  }
 }
 
 export interface LeadsPageParams {
@@ -142,6 +192,8 @@ export async function fetchLeadsPage(session: SessionUser, params: LeadsPagePara
      LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
     sqlParams
   )
+
+  if (leads.length > 0 && isLocalOcto(leads[0].client_id)) await attachMessageStatus(leads)
 
   return { leads, total: Number(count), page, pageSize: PAGE_SIZE }
 }
