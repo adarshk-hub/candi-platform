@@ -24,6 +24,7 @@ import {
   History,
   Shuffle,
   MessageSquare,
+  CalendarClock,
 } from 'lucide-react'
 import LeadStagesPanel from './panels/LeadStagesPanel'
 import OptionListPanel from './panels/OptionListPanel'
@@ -38,6 +39,7 @@ import SettingsActivityPanel from './panels/SettingsActivityPanel'
 import LeadAssignmentPanel from './panels/LeadAssignmentPanel'
 import SmsSettingsPanel from './panels/SmsSettingsPanel'
 import StageEmailPanel from './panels/StageEmailPanel'
+import BookingNotifyPanel from './panels/BookingNotifyPanel'
 import { isLocalOcto } from '@/lib/localOcto'
 import { sectionsForRole, SettingsSection } from '@/lib/settingsSections'
 
@@ -61,6 +63,7 @@ const CATEGORIES = [
   // Local Octo only (filtered below).
   { key: 'sms', label: 'SMS', icon: MessageSquare },
   { key: 'stage_email', label: 'Stage Emails', icon: Mail },
+  { key: 'booking_notify', label: 'Booking Reminders', icon: CalendarClock },
   { key: 'lead_range', label: 'Lead Date Range', icon: CalendarRange },
   { key: 'display', label: 'Display Preferences', icon: Rows3 },
   { key: 'activity', label: 'Activity', icon: History },
@@ -102,7 +105,7 @@ export default function CustomizeShell({
   const categories = CATEGORIES.filter(
     (c) =>
       allowed.includes(c.key as SettingsSection) &&
-      ((c.key !== 'sms' && c.key !== 'stage_email') || isLocalOcto(clientId))
+      (!['sms', 'stage_email', 'booking_notify'].includes(c.key) || isLocalOcto(clientId))
   )
 
   const requested = searchParams.get('panel') as CategoryKey | null
@@ -199,6 +202,7 @@ export default function CustomizeShell({
           {active === 'capi' && <ConversionsApiPanel clientId={clientId} />}
           {active === 'sms' && <SmsSettingsPanel clientId={clientId} />}
           {active === 'stage_email' && <StageEmailPanel clientId={clientId} />}
+          {active === 'booking_notify' && <BookingNotifyPanel clientId={clientId} />}
           {active === 'lead_range' && <LeadDateRangePanel clientId={clientId} />}
           {active === 'display' && <DisplayPrefsPanel clientId={clientId} />}
           {active === 'activity' && <SettingsActivityPanel clientId={clientId} />}
